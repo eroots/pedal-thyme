@@ -276,6 +276,53 @@ export function deleteSelection(doc: Schematic, partIds: Set<string>, wireIds: S
   return { ...doc, parts: doc.parts.filter(p => !partIds.has(p.id)), wires: doc.wires.filter(w => !wireIds.has(w.id)) };
 }
 
+/** Distance from point p to segment a–b. */
+function segDist(p: Pt, a: Pt, b: Pt): number {
+  const dx = b[0] - a[0], dy = b[1] - a[1], len2 = dx * dx + dy * dy;
+  const t = len2 ? Math.max(0, Math.min(1, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / len2)) : 0;
+  return Math.hypot(p[0] - (a[0] + t * dx), p[1] - (a[1] + t * dy));
+}
+
+/** Index of the segment of `w` nearest to point `p`. */
+export function nearestSegment(w: SchWire, p: Pt): number {
+  let best = 0, bd = Infinity;
+  for (let i = 1; i < w.pts.length; i++) {
+    const d = segDist(p, w.pts[i - 1], w.pts[i]);
+    if (d < bd) { bd = d; best = i - 1; }
+  }
+  return best;
+}
+
+/** The stretch of wire `wireId` nearest `p`, bounded by corners and taps (what delete mode removes). */
+export function wireSegmentAt(doc: Schematic, wireId: string, p: Pt): [Pt, Pt] | null {
+  const split = splitAtTaps(doc);
+  const pieces = (split.ids.get(wireId) ?? [wireId]).map(id => split.doc.wires.find(x => x.id === id)!).filter(Boolean);
+  let best: [Pt, Pt] | null = null, bd = Infinity;
+  for (const w of pieces) {
+    const i = nearestSegment(w, p), seg: [Pt, Pt] = [w.pts[i], w.pts[i + 1]], d = segDist(p, ...seg);
+    if (d < bd) { bd = d; best = seg; }
+  }
+  return best;
+}
+
+/**
+ * Delete one segment of a wire (the one nearest `p`), keeping the pieces on either side. Taps
+ * (pins or wire ends touching the middle of a wire) count as segment boundaries, as in LTspice.
+ */
+export function deleteWireSegment(doc0: Schematic, wireId: string, p: Pt): Schematic {
+  const split = splitAtTaps(doc0), doc = split.doc;
+  const pieces = (split.ids.get(wireId) ?? [wireId]).map(id => doc.wires.find(x => x.id === id)!).filter(Boolean);
+  const dist = (x: SchWire) => { const i = nearestSegment(x, p), [a, b] = [x.pts[i], x.pts[i + 1]]; return segDist(p, a, b); };
+  const w = pieces.sort((a, b) => dist(a) - dist(b))[0];
+  if (!w) return doc0;
+  const i = nearestSegment(w, p);
+  const before = w.pts.slice(0, i + 1), after = w.pts.slice(i + 1);
+  const wires = doc.wires.filter(x => x.id !== w.id);
+  if (before.length >= 2) wires.push({ id: w.id, pts: before });
+  if (after.length >= 2) wires.push({ id: nextId(doc, 'w'), pts: after });
+  return { ...doc, wires };
+}
+
 export function updatePart(doc: Schematic, id: string, patch: Partial<SchPart>): Schematic {
   return { ...doc, parts: doc.parts.map(p => (p.id === id ? { ...p, ...patch, props: patch.props ? { ...p.props, ...patch.props } : p.props } : p)) };
 }

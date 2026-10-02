@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  addPart, addWire, emptyDoc, makePart, mirrorParts, moveSelection, nearestAnchor, nextRef, paste, copySelection,
+  addPart, addWire, deleteWireSegment, emptyDoc, makePart, mirrorParts, moveSelection, nearestAnchor, nearestSegment, nextRef, paste, copySelection,
   rotateSelection, simplifyWire,
 } from '../src/builder/doc';
 import { sch } from '../src/schematic/build';
@@ -90,6 +90,28 @@ describe('dragging any part of any Playground circuit keeps it electrically iden
       }
     });
   }
+});
+
+describe('delete mode', () => {
+  it('deletes only the clicked segment of a wire, keeping both sides', () => {
+    const d = addWire(emptyDoc(), [[0, 0], [100, 0], [100, 100], [200, 100]]);
+    const id = d.wires[0].id;
+    const r = deleteWireSegment(d, id, [100, 40]); // the vertical middle segment
+    expect(r.wires.map(w => w.pts)).toEqual([[[0, 0], [100, 0]], [[100, 100], [200, 100]]]);
+    expect(nearestSegment(d.wires[0], [180, 98])).toBe(2);
+  });
+  it('treats a tap as a segment boundary (only the clicked stretch goes)', () => {
+    const d = divider(); // R2 taps the node wire at (100, 0); the wire runs 70 → 130
+    const w = d.wires.find(x => x.pts.some(p => p[0] === 130))!;
+    const r = deleteWireSegment(d, w.id, [120, 0]);
+    expect(r.wires.some(x => x.pts.some(p => p[0] === 70) && x.pts.some(p => p[0] === 100))).toBe(true);
+    expect(r.wires.some(x => x.pts.some(p => p[0] === 130))).toBe(false);
+    expect(errorsOf(r)).toEqual(['OUT pin io is not connected.'].map(s => s.replace('OUT', 'Output jack')));
+  });
+  it('removing an end segment leaves the rest', () => {
+    const d = addWire(emptyDoc(), [[0, 0], [100, 0], [100, 100]]);
+    expect(deleteWireSegment(d, d.wires[0].id, [10, 2]).wires.map(w => w.pts)).toEqual([[[100, 0], [100, 100]]]);
+  });
 });
 
 describe('placing and pasting', () => {

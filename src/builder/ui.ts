@@ -74,7 +74,10 @@ export function initBuilder(): BuilderApi {
     document.querySelectorAll<HTMLElement>('#bPalette [data-kind]').forEach(b => b.classList.toggle('active', mode === 'place' && b.dataset.kind === kind));
     $('#bToolSelect').classList.toggle('active', mode === 'select');
     $('#bToolWire').classList.toggle('active', mode === 'wire');
-    $('#bHint').textContent = mode === 'wire'
+    $('#bDelete').classList.toggle('active', mode === 'delete');
+    $('#bHint').textContent = mode === 'delete'
+      ? 'Delete mode: click a part or wire segment to delete it, or drag a box to delete everything inside. Esc or right-click to stop.'
+      : mode === 'wire'
       ? 'Click to start a wire, click to bend it; it finishes on a pin or another wire (or double-click / right-click). Esc cancels.'
       : mode === 'place' ? `Click to place a ${PARTS[kind!].label.toLowerCase()}. Right-click or Ctrl+R rotates, Ctrl+E mirrors, Esc stops placing.`
         : 'Drag parts to stretch (wires follow) or move (detach): see the toolbar, or hold Alt to switch for one drag. Drag on empty space to box-select. Space+drag or middle-drag pans; wheel zooms.';
@@ -87,7 +90,7 @@ export function initBuilder(): BuilderApi {
     bDragMove: () => editor.setDragMode('move'),
     bRotate: () => editor.rotate(),
     bMirror: () => editor.mirror(),
-    bDelete: () => editor.deleteSel(),
+    bDelete: () => editor.deleteOrMode(),
     bUndo: () => editor.undo(),
     bRedo: () => editor.redo(),
     bFit: () => editor.fit(),
@@ -115,7 +118,7 @@ export function initBuilder(): BuilderApi {
         <tr><td>G P O</td><td>Ground, pot, op-amp</td></tr>
         <tr><td>W</td><td>Wire tool</td></tr><tr><td>V / Esc</td><td>Select tool</td></tr>
         <tr><td>S / M</td><td>Drag stretches / moves (Alt flips)</td></tr>
-        <tr><td>Ctrl+R / Ctrl+E</td><td>Rotate / mirror</td></tr><tr><td>Del</td><td>Delete</td></tr>
+        <tr><td>Ctrl+R / Ctrl+E</td><td>Rotate / mirror</td></tr><tr><td>Del</td><td>Delete selection, or delete mode</td></tr>
         <tr><td>Ctrl+Z / Y</td><td>Undo / redo</td></tr><tr><td>Ctrl+C / V / D</td><td>Copy / paste / duplicate</td></tr>
         <tr><td>Arrows</td><td>Nudge</td></tr><tr><td>F</td><td>Fit to view</td></tr></table>`;
       return;

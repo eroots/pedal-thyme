@@ -2,17 +2,19 @@
 //
 // Modes: 'select' (click/drag parts and wires, box-select on empty space), 'place' (a ghost part
 // follows the cursor; click to drop, keep placing until Esc), 'wire' (click to start and bend,
-// ending on a pin or wire finishes it; double-click or right-click also finishes).
+// ending on a pin or wire finishes it; double-click or right-click also finishes), 'delete' (each
+// click deletes the part or wire segment under the cursor, a dragged box deletes everything inside;
+// stays on until Esc or right-click, like LTspice).
 import { renderSchematicBody } from '../schematic/render';
 import { pinsOf } from '../schematic/extract';
 import type { Pt } from '../schematic/geometry';
 import type { PartKind, Rot, Schematic } from '../schematic/types';
 import {
-  addPart, addWire, copySelection, deleteSelection, isConnection, makePart, mirrorParts, moveSelection,
-  nearestAnchor, partBox, paste, rotateSelection, snapPt, type Clip,
+  addPart, addWire, copySelection, deleteSelection, deleteWireSegment, isConnection, makePart, mirrorParts, moveSelection,
+  nearestAnchor, partBox, paste, rotateSelection, snapPt, wireSegmentAt, type Clip,
 } from './doc';
 
-export type Mode = 'select' | 'wire' | 'place';
+export type Mode = 'select' | 'wire' | 'place' | 'delete';
 /** Dragging either stretches attached wires (connections kept) or moves the selection on its own. */
 export type DragMode = 'stretch' | 'move';
 
@@ -42,12 +44,14 @@ export class Editor {
   private draft: Pt[] | null = null;
   private cursor: Pt = [0, 0];
   private hover: Pt | null = null;
+  /** Delete mode: the part id or wire id under the cursor. */
+  private delHover: string | null = null;
   private view = { x: -60, y: -150, zoom: 1.4 };
   private undoStack: string[] = [];
   private redoStack: string[] = [];
   private clip: Clip | null = null;
   private drag: null | { kind: 'move'; start: Pt; orig: Schematic; moved: boolean; stretch: boolean }
-    | { kind: 'box'; start: Pt; now: Pt; add: boolean }
+    | { kind: 'box'; start: Pt; now: Pt; add: boolean; del?: boolean }
     | { kind: 'pan'; sx: number; sy: number; vx: number; vy: number } = null;
   private spaceDown = false;
   /** Document state before the current run of previews, if any. */
@@ -72,6 +76,7 @@ export class Editor {
     this.mode = mode;
     this.draft = null;
     this.placing = mode === 'place' && kind ? { kind, rot: 0, mirror: false } : null;
+    this.delHover = null;
     if (mode !== 'select') { this.sel.clear(); this.on.select(this.sel); }
     this.wrap.dataset.mode = mode;
     this.on.mode(mode, this.placing?.kind ?? null);
@@ -118,6 +123,11 @@ export class Editor {
   mirror(): void {
     if (this.placing) { this.placing.mirror = !this.placing.mirror; this.render(); return; }
     if (this.selParts().size) this.commit(mirrorParts(this.doc, this.selParts(), this.dragMode === 'stretch'));
+  }
+
+  /** Delete the selection, or (with nothing selected) enter delete mode. */
+  deleteOrMode(): void {
+    if (this.sel.size) this.deleteSel(); else this.setMode('delete');
   }
 
   deleteSel(): void {
@@ -289,6 +299,17 @@ export class Editor {
       return;
     }
 
+    if (this.mode === 'delete') {
+      const t = e.target as Element;
+      const partId = t.closest<SVGElement>('[data-id]')?.dataset.id, wireId = t.closest<SVGElement>('[data-wire]')?.dataset.wire;
+      if (partId) this.commit(deleteSelection(this.doc, new Set([partId]), new Set()));
+      else if (wireId) this.commit(deleteWireSegment(this.doc, wireId, p));
+      else { this.drag = { kind: 'box', start: p, now: p, add: false, del: true }; this.svg.setPointerCapture(e.pointerId); }
+      this.delHover = null;
+      this.render();
+      return;
+    }
+
     // Select mode.
     const t = e.target as Element;
     const id = t.closest<SVGElement>('[data-id]')?.dataset.id ?? t.closest<SVGElement>('[data-wire]')?.dataset.wire;
@@ -323,6 +344,12 @@ export class Editor {
     }
     if (d?.kind === 'box') { d.now = p; this.render(); return; }
     this.hover = this.mode === 'wire' ? this.wireTarget(p) : null;
+    if (this.mode === 'delete') {
+      const t = e.target as Element;
+      const id = t.closest<SVGElement>('[data-id]')?.dataset.id ?? t.closest<SVGElement>('[data-wire]')?.dataset.wire ?? null;
+      if (id !== this.delHover || id) { this.delHover = id; this.render(); }
+      return;
+    }
     if (this.mode !== 'select') this.render();
   }
 
@@ -337,6 +364,13 @@ export class Editor {
       const [y0, y1] = [Math.min(d.start[1], d.now[1]), Math.max(d.start[1], d.now[1])];
       if (x1 - x0 > 2 || y1 - y0 > 2) {
         const inside = (x: number, y: number) => x >= x0 && x <= x1 && y >= y0 && y <= y1;
+        if (d.del) {
+          const parts = new Set(this.doc.parts.filter(p => { const [a, b, c, dd] = partBox(p); return inside(a, b) && inside(c, dd); }).map(p => p.id));
+          const wires = new Set(this.doc.wires.filter(w => w.pts.every(([x, y]) => inside(x, y))).map(w => w.id));
+          if (parts.size || wires.size) this.commit(deleteSelection(this.doc, parts, wires));
+          this.render();
+          return;
+        }
         if (!d.add) this.sel.clear();
         for (const p of this.doc.parts) { const [a, b, c, dd] = partBox(p); if (inside(a, b) && inside(c, dd)) this.sel.add(p.id); }
         for (const w of this.doc.wires) if (w.pts.every(([x, y]) => inside(x, y))) this.sel.add(w.id);
@@ -366,7 +400,7 @@ export class Editor {
         else if (this.mode !== 'select') this.setMode('select');
         else { this.sel.clear(); this.on.select(this.sel); this.render(); }
         break;
-      case 'Delete': case 'Backspace': e.preventDefault(); this.deleteSel(); break;
+      case 'Delete': case 'Backspace': e.preventDefault(); this.deleteOrMode(); break;
       case 'w': case 'W': this.setMode('wire'); break;
       case 'v': case 'V': this.setMode('select'); break;
       case 's': case 'S': this.setDragMode('stretch'); break;
@@ -390,7 +424,8 @@ export class Editor {
     const W = this.wrap.clientWidth || 800, H = this.wrap.clientHeight || 500;
     const { x, y, zoom } = this.view;
     this.svg.setAttribute('viewBox', `${x} ${y} ${W / zoom} ${H / zoom}`);
-    const body = renderSchematicBody(this.doc, { editor: true, selected: this.sel }).body;
+    const delPart = this.mode === 'delete' && this.delHover && this.doc.parts.some(p => p.id === this.delHover) ? this.delHover : null;
+    const body = renderSchematicBody(this.doc, { editor: true, selected: this.sel, highlight: delPart ? [delPart] : [] }).body;
     const over: string[] = [];
 
     // Unconnected pins as small rings, so you can see what still needs wiring.
@@ -409,9 +444,13 @@ export class Editor {
       }
       over.push(`<circle class="cursor-mark${this.hover && isConnection(this.doc, at) ? ' hot' : ''}" cx="${at[0]}" cy="${at[1]}" r="4.5"/>`);
     }
+    if (this.mode === 'delete' && this.delHover && !delPart) {
+      const seg = wireSegmentAt(this.doc, this.delHover, this.cursor);
+      if (seg) { const [a, b] = seg; over.push(`<line class="del-seg" x1="${a[0]}" y1="${a[1]}" x2="${b[0]}" y2="${b[1]}"/>`); }
+    }
     if (this.drag?.kind === 'box') {
       const { start: s, now: n } = this.drag;
-      over.push(`<rect class="rubber" x="${Math.min(s[0], n[0])}" y="${Math.min(s[1], n[1])}" width="${Math.abs(n[0] - s[0])}" height="${Math.abs(n[1] - s[1])}"/>`);
+      over.push(`<rect class="rubber${this.drag.del ? ' del' : ''}" x="${Math.min(s[0], n[0])}" y="${Math.min(s[1], n[1])}" width="${Math.abs(n[0] - s[0])}" height="${Math.abs(n[1] - s[1])}"/>`);
     }
     const big = 1e5;
     this.svg.innerHTML =

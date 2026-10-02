@@ -52,10 +52,17 @@ export function impedances(ex: Extraction, f: number, term?: Term | null): { zin
 export interface SweepTarget { id: string; label: string }
 export interface Variant { label: string; r: number; doc: Schematic }
 
-/** Pots sweep their rotation; any R, C, L or pot sweeps its value (÷3 … ×3, log-spaced). */
+/** Parts whose value can be swept (and pots, whose rotation can). */
+export const SWEEPABLE_KINDS = ['R', 'C', 'L', 'POT', 'RHEO'];
+
+/**
+ * Sweep options for parts marked Sweepable: pots sweep their rotation, and any marked R, C, L or
+ * pot can sweep its value (÷3 … ×3, log-spaced).
+ */
 export function sweepTargets(doc: Schematic): SweepTarget[] {
-  const pots = doc.parts.filter(p => (p.kind === 'POT' || p.kind === 'RHEO') && p.ref);
-  const valued = doc.parts.filter(p => ['R', 'C', 'L', 'POT', 'RHEO'].includes(p.kind) && p.ref && (p.value ?? 0) > 0);
+  const marked = doc.parts.filter(p => SWEEPABLE_KINDS.includes(p.kind) && p.ref && p.props?.sweep);
+  const pots = marked.filter(p => p.kind === 'POT' || p.kind === 'RHEO');
+  const valued = marked.filter(p => (p.value ?? 0) > 0);
   return [
     ...pots.map(p => ({ id: `turn:${p.id}`, label: `${p.ref} rotation` })),
     ...valued.map(p => ({ id: `value:${p.id}`, label: `${p.ref} value (÷3 … ×3)` })),

@@ -23,6 +23,8 @@ export interface PartProps {
   pos?: 'a' | 'b';
   /** Net name for LABEL and SUPPLY parts (e.g. "VREF", "9V"). */
   name?: string;
+  /** Builder: offer this part (value, and rotation for pots) in the Sweep menu. */
+  sweep?: boolean;
 }
 
 export interface SchPart {

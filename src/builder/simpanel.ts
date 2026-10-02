@@ -17,6 +17,7 @@ const fmtDb = (x: number) => (isFinite(x) ? `${x >= 0 ? '+' : ''}${x.toFixed(1)}
 
 interface SimSettings {
   term: Term;
+  showOut: boolean;
   showTol: boolean;
   showPhase: boolean;
   sweep: string;
@@ -24,7 +25,7 @@ interface SimSettings {
 }
 const DEFAULTS: SimSettings = {
   term: { src: { on: false, preset: 'single', R: 6e3, L: 2.5, C: 470e-12 }, load: { on: false, preset: 'pedal', R: 1e6, C: 0 } },
-  showTol: false, showPhase: false, sweep: '', steps: 5,
+  showOut: true, showTol: false, showPhase: false, sweep: '', steps: 5,
 };
 
 function loadSettings(): SimSettings {
@@ -93,6 +94,8 @@ export function initSimPanel(): SimPanel {
   });
 
   /* ---------- Toggles & sweep ---------- */
+  $('#bShowOut').checked = st.showOut;
+  $('#bShowOut').addEventListener('change', e => { st.showOut = (e.target as HTMLInputElement).checked; save(); draw(); });
   $('#bShowTol').checked = st.showTol;
   $('#bShowPhase').checked = st.showPhase;
   $('#bShowTol').addEventListener('change', e => { st.showTol = (e.target as HTMLInputElement).checked; save(); schedule(true); });
@@ -108,7 +111,7 @@ export function initSimPanel(): SimPanel {
     if (!doc) return;
     const targets = sweepTargets(doc);
     if (st.sweep && !targets.some(t => t.id === st.sweep)) st.sweep = '';
-    $('#bSweep').innerHTML = `<option value="">Off</option>` + targets.map(t => `<option value="${t.id}" ${t.id === st.sweep ? 'selected' : ''}>${esc(t.label)}</option>`).join('');
+    $('#bSweep').innerHTML = `<option value="">${targets.length ? 'Off' : 'Off (mark parts Sweepable in Properties)'}</option>` + targets.map(t => `<option value="${t.id}" ${t.id === st.sweep ? 'selected' : ''}>${esc(t.label)}</option>`).join('');
   }
 
   /* ---------- Compute ---------- */
@@ -163,14 +166,14 @@ export function initSimPanel(): SimPanel {
   function seriesList(kind: 'mag' | 'ph'): PlotSeries[] {
     if (!res) return [];
     const out: PlotSeries[] = [];
-    sweep.forEach(s => out.push({ vals: s[kind], color: sweepColor(s.r), width: 1.4, label: s.label }));
-    if (ideal) out.push({ vals: ideal.out[kind], color: cssVar('--muted'), width: 1.4, dash: [5, 4], label: 'Ideal source/load' });
+    if (st.showOut) sweep.forEach(s => out.push({ vals: s[kind], color: sweepColor(s.r), width: 1.4, label: s.label }));
+    if (ideal && st.showOut) out.push({ vals: ideal.out[kind], color: cssVar('--muted'), width: 1.4, dash: [5, 4], label: 'Ideal source/load' });
     res.probes.forEach(p => out.push({ vals: p[kind], color: p.color, width: 1.8, label: p.ref }));
-    out.push({ vals: res.out[kind], color: cssVar('--accent'), width: 2.4, label: 'Output' });
+    if (st.showOut) out.push({ vals: res.out[kind], color: cssVar('--accent'), width: 2.4, label: 'Output' });
     return out;
   }
   function currentRange(): [number, number] {
-    return magRange(seriesList('mag').map(s => s.vals).concat(tolBand ? [tolBand.hi] : []));
+    return magRange(seriesList('mag').map(s => s.vals).concat(tolBand && st.showOut ? [tolBand.hi] : []));
   }
   function draw(): void {
     const mc = $<HTMLCanvasElement>('#bSimCanvas'), pc = $<HTMLCanvasElement>('#bSimPhase');
@@ -181,14 +184,14 @@ export function initSimPanel(): SimPanel {
       return;
     }
     const [y0, y1] = locked ?? currentRange();
-    drawPlot(mc, { freqs, fr: fRange(), y0, y1, step: (y1 - y0) > 48 ? 12 : 6, unit: '', hoverF, band: st.showTol ? tolBand : null, series: seriesList('mag') });
+    drawPlot(mc, { freqs, fr: fRange(), y0, y1, step: (y1 - y0) > 48 ? 12 : 6, unit: '', hoverF, band: st.showTol && st.showOut ? tolBand : null, series: seriesList('mag') });
     if (st.showPhase) drawPlot(pc, { freqs, fr: fRange(), y0: -180, y1: 180, step: 90, unit: '°', wrap: true, hoverF, series: seriesList('ph') });
-    const items = [`<span><span class="sw" style="background:${cssVar('--accent')}"></span>Output</span>`];
+    const items: string[] = st.showOut ? [`<span><span class="sw" style="background:${cssVar('--accent')}"></span>Output</span>`] : [];
     res.probes.forEach(p => items.push(`<span><span class="sw" style="background:${p.color}"></span>${esc(p.ref)}</span>`));
-    if (ideal) items.push('<span><span class="sw" style="background:repeating-linear-gradient(90deg, var(--muted) 0 4px, transparent 4px 7px)"></span>Ideal source/load</span>');
-    if (sweep.length) items.push(`<span><span class="ramp" style="background:linear-gradient(90deg, ${sweepColor(0)}, ${sweepColor(1)})"></span>${esc(sweep[0].label)} → ${esc(sweep[sweep.length - 1].label)}</span>`);
-    if (st.showTol && tolBand) items.push(`<span><span class="sw" style="background:var(--accent-soft);height:8px"></span>R ±${S.settings.rTol}% · C ±${S.settings.cTol}%</span>`);
-    if (!res.probes.length) items.push('<span class="hint">Add probes (Measure → Probe) to see other nets.</span>');
+    if (ideal && st.showOut) items.push('<span><span class="sw" style="background:repeating-linear-gradient(90deg, var(--muted) 0 4px, transparent 4px 7px)"></span>Ideal source/load</span>');
+    if (sweep.length && st.showOut) items.push(`<span><span class="ramp" style="background:linear-gradient(90deg, ${sweepColor(0)}, ${sweepColor(1)})"></span>${esc(sweep[0].label)} → ${esc(sweep[sweep.length - 1].label)}</span>`);
+    if (st.showTol && tolBand && st.showOut) items.push(`<span><span class="sw" style="background:var(--accent-soft);height:8px"></span>R ±${S.settings.rTol}% · C ±${S.settings.cTol}%</span>`);
+    if (!res.probes.length) items.push(st.showOut ? '<span class="hint">Add probes (Measure → Probe) to see other nets.</span>' : '<span class="hint">Output is hidden and there are no probes: add a probe or tick Output.</span>');
     $('#bLegend').innerHTML = items.join('');
   }
   for (const id of ['#bSimCanvas', '#bSimPhase']) {

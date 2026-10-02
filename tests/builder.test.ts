@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  addPart, addWire, deleteWireSegment, emptyDoc, makePart, mirrorParts, moveSelection, nearestAnchor, nearestSegment, nextRef, paste, copySelection,
+  addPart, addWire, deleteWireSegment, emptyDoc, makePart, mirrorParts, moveSelection, nearestAnchor, nearestSegment, nextRef, paste, copySelection, splitAtTaps,
   rotateSelection, simplifyWire,
 } from '../src/builder/doc';
 import { sch } from '../src/schematic/build';
@@ -15,6 +15,8 @@ import { TOPOS } from '../src/topologies';
 const divider = () => sch().IN(0, 0).wire([0, 0], [10, 0]).R('R1', 40, 0, 0, 10e3).wire([70, 0], [130, 0])
   .R('R2', 100, 30, 90, 10e3).GND(100, 60).OUT(130, 0).build();
 const errorsOf = (d: Parameters<typeof extract>[0]) => extract(d).issues.map(i => i.message);
+/** Wire count after splitting at taps (what a stretch move starts from). */
+const splitCount = (d: Parameters<typeof extract>[0]) => splitAtTaps(d).doc.wires.length;
 
 describe('wire helpers', () => {
   it('simplifies duplicate and collinear points', () => {
@@ -58,6 +60,19 @@ describe('moving keeps wires attached', () => {
     const m = moveSelection(divider(), new Set(['R2']), new Set(), 0, 40);
     expect(m.parts.find(p => p.kind === 'GND')!.y).toBe(100);
     expect(errorsOf(m)).toEqual([]);
+  });
+  it('dragging a probe never pulls wires, even in stretch mode', () => {
+    const d = addPart(divider(), { id: 'pr', kind: 'PROBE', ref: 'P1', x: 70, y: 0, rot: 0 }); // on R1's pin / a wire end
+    const m = moveSelection(d, new Set(['pr']), new Set(), 40, -60);
+    expect(m.wires).toEqual(splitAtTaps(d).doc.wires); // only split at taps, nothing moved
+    expect(errorsOf(m).filter(e => !e.includes('P1'))).toEqual([]);
+  });
+  it('a probe sitting on a moved pin travels with it (no new wire)', () => {
+    const d = addPart(divider(), { id: 'pr', kind: 'PROBE', ref: 'P1', x: 10, y: 0, rot: 0 }); // on R1 pin 1
+    const m = moveSelection(d, new Set(['R1']), new Set(), 0, -40);
+    const probe = m.parts.find(p => p.id === 'pr')!;
+    expect([probe.x, probe.y]).toEqual([10, -40]);
+    expect(m.wires.length).toBe(splitCount(d));
   });
   it('rotating a lone part re-routes its wires to the new pins', () => {
     const r = rotateSelection(divider(), new Set(['R1']), new Set());

@@ -342,3 +342,4 @@ ul.erc li:hover { outline: 1px solid var(--line); }
 .knob .kval { font: 11px var(--mono); color: var(--muted); }
 .knob .toggle { width: 54px; height: 30px; margin: 14px 0 14px; border-radius: 15px; font-weight: 600; font-size: 12px; color: var(--muted); }
 .knob .toggle.on { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.prop .chk { display: flex; gap: 6px; align-items: center; }

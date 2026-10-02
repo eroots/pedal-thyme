@@ -12,6 +12,7 @@ import { emptyDoc, updatePart } from './doc';
 import { Editor, PART_KEYS, type DragMode, type Mode } from './editor';
 import { initFrontPanel } from './frontpanel';
 import { initSimPanel } from './simpanel';
+import { SWEEPABLE_KINDS } from './sim';
 
 const LS_KEY = 'pedal-filter-lab.builder.v1';
 const $ = <T extends HTMLElement = HTMLInputElement>(sel: string): T => document.querySelector(sel) as T;
@@ -143,6 +144,9 @@ export function initBuilder(): BuilderApi {
       const turn = Math.round((p.props?.turn ?? 0.5) * 100);
       h += row(`Rotation <output>${turn}%</output>`, `<input type="range" data-field="turn" min="0" max="100" value="${turn}">`);
     }
+    if (SWEEPABLE_KINDS.includes(p.kind)) {
+      h += row('Sweepable', `<span class="chk"><input type="checkbox" data-field="sweep" ${p.props?.sweep ? 'checked' : ''}> <span class="hint">offer ${p.kind === 'POT' || p.kind === 'RHEO' ? 'its rotation and value' : 'its value'} in the Sweep menu</span></span>`);
+    }
     if (p.kind === 'OA') h += row('Model', `<select data-field="model">${Object.entries(OPAMP_MODELS).map(([k, m]) => `<option value="${k}" ${p.props?.model === k ? 'selected' : ''}>${esc(m.label)}</option>`).join('')}</select>`);
     if (p.kind === 'D' || p.kind === 'LED') h += row('Model', `<select data-field="model">${Object.entries(DIODE_MODELS).map(([k, m]) => `<option value="${k}" ${p.props?.model === k ? 'selected' : ''}>${esc(m.label)}</option>`).join('')}</select>`);
     if (p.kind === 'SW') h += row('State', `<select data-field="closed"><option value="1" ${p.props?.closed ? 'selected' : ''}>Closed</option><option value="0" ${!p.props?.closed ? 'selected' : ''}>Open</option></select>`);
@@ -179,6 +183,7 @@ export function initBuilder(): BuilderApi {
     else if (f === 'closed') patch = { props: { closed: el.value === '1' } };
     else if (f === 'pos') patch = { props: { pos: el.value as 'a' | 'b' } };
     else if (f === 'name') patch = { props: { name: el.value.trim() } };
+    else if (f === 'sweep') patch = { props: { sweep: el.checked || undefined } };
     if (!patch) return;
     const next = updatePart(editor.doc, p.id, patch);
     if (live) editor.preview(next); else editor.commit(next);

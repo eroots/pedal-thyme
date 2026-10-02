@@ -197,7 +197,7 @@ export function splitAtTaps(doc: Schematic, keep: Set<string> = new Set()): { do
 }
 
 /** Single-pin markers that should travel with whatever they sit on. */
-const FOLLOWERS = new Set(['GND', 'SUPPLY', 'LABEL']);
+const FOLLOWERS = new Set(['GND', 'SUPPLY', 'LABEL', 'PROBE']);
 
 /**
  * Apply a transform to selected parts (and selected wire points), keeping connections:
@@ -215,9 +215,11 @@ function transformSelection(doc0: Schematic, partIds: Set<string>, wireIds: Set<
     };
   }
   const doc = splitAtTaps(doc0, wireIds).doc;
-  const before = pinMap(doc.parts.filter(p => partIds.has(p.id)));
+  // Probes always move on their own: their pins never drag wires (they only observe a net).
+  const pulls = (p: SchPart) => partIds.has(p.id) && p.kind !== 'PROBE';
+  const before = pinMap(doc.parts.filter(pulls));
   let parts = doc.parts.map(p => (partIds.has(p.id) ? partFn({ ...p }) : p));
-  const after = pinMap(parts.filter(p => partIds.has(p.id)));
+  const after = pinMap(parts.filter(pulls));
   const moved = new Map<string, Pt>();
   for (const [k, at] of before) { const to = after.get(k)!; if (!samePt(at, to)) moved.set(key(at), to); }
   // Markers sitting on moved pins travel with them; other pin-to-pin contacts are noted for a new wire.

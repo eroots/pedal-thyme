@@ -49,10 +49,16 @@ describe('source and load in the Builder', () => {
 });
 
 describe('sweeps', () => {
-  it('pots sweep rotation, any part sweeps its value', () => {
+  it('only parts marked Sweepable are offered', () => {
     const t = topoById('ts-fmv')!, v = Object.fromEntries(t.parts.map(p => [p.key, p.def])) as Values;
-    const doc = t.schematic(v, { treble: 5, mid: 5, bass: 5 });
+    expect(sweepTargets(t.schematic(v, { treble: 5, mid: 5, bass: 5 }))).toEqual([]);
+  });
+  it('marked pots sweep rotation and value; marked parts sweep their value', () => {
+    const t = topoById('ts-fmv')!, v = Object.fromEntries(t.parts.map(p => [p.key, p.def])) as Values;
+    const base = t.schematic(v, { treble: 5, mid: 5, bass: 5 });
+    const doc = { ...base, parts: base.parts.map(p => (['RT', 'RM', 'C2'].includes(p.id) ? { ...p, props: { ...p.props, sweep: true } } : p)) };
     const targets = sweepTargets(doc).map(x => x.id);
+    expect(targets).not.toContain('turn:RB');
     expect(targets).toContain('turn:RT');
     expect(targets).toContain('value:C2');
     const vs = sweepVariants(doc, 'turn:RM', 5);

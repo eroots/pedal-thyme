@@ -9,6 +9,7 @@ import type { Opts, Values } from '../core/types';
 import { TAU, db, fmtEng, parseEng } from '../core/units';
 import { TOPOS, topoById } from '../topologies';
 import type { Topology } from '../topologies/types';
+import { download } from '../ui/download';
 import { cssVar, drawPlot, magRange, PLOT_MARGIN, type PlotMarker } from '../ui/plot';
 import { freqGrid, response, toleranceCorners, valuesValid } from './analysis';
 import { searchDesigns, snapAllValues, type DesignRow } from './design';
@@ -544,13 +545,6 @@ function onTermChange(e: Event): void {
   update();
 }
 
-function download(filename: string, text: string, type: string): void {
-  const url = URL.createObjectURL(new Blob([text], { type }));
-  const a = document.createElement('a');
-  a.href = url; a.download = filename;
-  document.body.appendChild(a); a.click(); a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
-}
 
 /** Download the current circuit (values, knob positions, op-amp model, source/load) as a SPICE deck. */
 function exportSpice(): void {

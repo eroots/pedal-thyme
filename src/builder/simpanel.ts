@@ -8,6 +8,7 @@ import { LOAD_PRESETS, S, SRC_PRESETS, fRange, sweepColor } from '../playground/
 import { cssVar, drawPlot, magRange, PLOT_MARGIN, type PlotSeries } from '../ui/plot';
 import { band, impedances, probesOf, simulate, sweepTargets, sweepVariants, toleranceVariants, type SimResult } from './sim';
 import { extract } from '../schematic/extract';
+import type { ProjectSim } from './files';
 
 const LS_KEY = 'pedal-filter-lab.builder.sim.v1';
 const $ = <T extends HTMLElement = HTMLInputElement>(sel: string): T => document.querySelector(sel) as T;
@@ -40,6 +41,10 @@ export interface SimPanel {
   /** The document changed: recompute (cheap parts now, the tolerance band once things settle). */
   update(doc: Schematic, ex: Extraction, committed: boolean): void;
   redraw(): void;
+  /** Current settings, for saving with a project. */
+  settings(): ProjectSim;
+  /** Apply settings loaded from a project. */
+  apply(sim: ProjectSim): void;
 }
 
 export function initSimPanel(): SimPanel {
@@ -208,8 +213,21 @@ export function initSimPanel(): SimPanel {
   // Header settings (range, tolerances) affect the plot.
   for (const id of ['#range', '#rTol', '#cTol']) document.querySelector(id)?.addEventListener('change', () => schedule(true));
 
+  function syncControls(): void {
+    $('#bShowOut').checked = st.showOut; $('#bShowTol').checked = st.showTol; $('#bShowPhase').checked = st.showPhase;
+    $('#bSweepSteps').value = String(st.steps);
+    renderTerm(); renderSweepOptions();
+  }
+
   renderTerm();
   return {
+    settings: () => JSON.parse(JSON.stringify({ term: st.term, showOut: st.showOut, showTol: st.showTol, showPhase: st.showPhase, sweep: st.sweep, steps: st.steps })),
+    apply: sim => {
+      const d = DEFAULTS;
+      Object.assign(st, { showOut: sim.showOut ?? d.showOut, showTol: sim.showTol ?? d.showTol, showPhase: sim.showPhase ?? d.showPhase, sweep: sim.sweep ?? '', steps: sim.steps ?? d.steps });
+      st.term = { src: { ...d.term.src, ...sim.term?.src }, load: { ...d.term.load, ...sim.term?.load } };
+      save(); syncControls(); schedule(true);
+    },
     update: (d, x, committed) => { doc = d; ex = x; schedule(committed); },
     redraw: draw,
   };

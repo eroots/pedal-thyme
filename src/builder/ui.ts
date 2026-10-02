@@ -10,6 +10,7 @@ import type { PartKind, SchPart, Schematic } from '../schematic/types';
 import { S } from '../playground/state';
 import { emptyDoc, updatePart } from './doc';
 import { Editor, PART_KEYS, type DragMode, type Mode } from './editor';
+import { initFileBar } from './filebar';
 import { initFrontPanel } from './frontpanel';
 import { initSimPanel } from './simpanel';
 import { SWEEPABLE_KINDS } from './sim';
@@ -57,6 +58,7 @@ export function initBuilder(): BuilderApi {
   if (saved.view) editor.setView(saved.view);
   const sim = initSimPanel();
   const panel = initFrontPanel($('#bKnobs'), editor);
+  initFileBar(editor, sim);
 
   function save(): void {
     try { localStorage.setItem(LS_KEY, JSON.stringify({ doc: editor.doc, view: editor.getView() })); } catch { /* ignore */ }
@@ -97,7 +99,6 @@ export function initBuilder(): BuilderApi {
     bUndo: () => editor.undo(),
     bRedo: () => editor.redo(),
     bFit: () => editor.fit(),
-    bNew: () => { if (confirm('Start a new, empty pedal? (You can undo this.)')) editor.load(emptyDoc()); },
   };
   for (const [id, fn] of Object.entries(actions)) $('#' + id).addEventListener('click', fn);
   function renderDragMode(m: DragMode): void {

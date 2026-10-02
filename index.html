@@ -149,9 +149,19 @@
       <button id="bUndo" title="Undo (Ctrl+Z)">Undo</button>
       <button id="bRedo" title="Redo (Ctrl+Y)">Redo</button>
       <button id="bFit" title="Fit to view (F)">Fit</button>
-      <span class="sep"></span>
-      <button id="bNew" title="Start a new pedal">New</button>
       <span class="b-status" id="bErcStatus"></span>
+    </div>
+    <div class="b-toolbar b-filebar card">
+      <input type="text" id="bName" placeholder="Untitled pedal" aria-label="Pedal name" spellcheck="false">
+      <details class="menu" id="bNewMenu"><summary>New ▾</summary><div class="menu-items" id="bTemplates"></div></details>
+      <label class="btn" title="Open a saved pedal (.pfl.json)">Open<input type="file" id="bOpen" accept=".json,application/json" hidden></label>
+      <button id="bSave" title="Download this pedal as a .pfl.json file">Save</button>
+      <details class="menu" id="bExportMenu"><summary>Export ▾</summary><div class="menu-items">
+        <button data-export="spice">SPICE netlist (.cir)</button>
+        <button data-export="bom">Parts list (.csv)</button>
+        <button data-export="svg">Schematic image (.svg)</button>
+        <button data-export="png">Schematic image (.png)</button>
+      </div></details>
     </div>
     <div class="b-canvas-wrap" id="bCanvasWrap" tabindex="0" aria-label="Schematic editor">
       <svg id="bCanvas" xmlns="http://www.w3.org/2000/svg"></svg>

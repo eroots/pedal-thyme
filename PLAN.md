@@ -19,7 +19,7 @@ pins and wires**, extracted into a netlist and solved by a single MNA (modified 
 | Builder v1 extras | SPICE/LTspice `.cir` export, parts list (BOM) CSV export, real op-amp models (finite GBW). |
 | Time-domain / audio | Deferred to the end (Phase 5). The engine must not preclude it. |
 
-## Phase 0 — Restructure
+## Phase 0 — Restructure ✅ (2026-10-02)
 - Vite + TypeScript project, with `vite-plugin-singlefile` (or equivalent) so `dist/index.html` still opens by double-click.
 - Layout: `src/core` (complex, units, E-series, MNA, analyses), `src/parts` (part models and symbols),
   `src/schematic` (format, renderer, netlist extraction, checks), `src/playground`, `src/builder`,

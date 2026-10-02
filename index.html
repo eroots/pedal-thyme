@@ -155,15 +155,29 @@
     <div class="b-toolbar b-filebar card">
       <input type="text" id="bName" placeholder="Untitled pedal" aria-label="Pedal name" spellcheck="false">
       <details class="menu" id="bNewMenu"><summary>New ▾</summary><div class="menu-items" id="bTemplates"></div></details>
-      <label class="btn" title="Open a saved pedal (.pfl.json)">Open<input type="file" id="bOpen" accept=".json,application/json" hidden></label>
+      <label class="btn" title="Open a saved pedal (.pfl.json), or import an LTspice schematic (.asc — select its .asy symbol files too for third-party parts such as pots)">Open<input type="file" id="bOpen" accept=".json,application/json,.asc,.asy" multiple hidden></label>
       <button id="bSave" title="Download this pedal as a .pfl.json file">Save</button>
       <details class="menu" id="bExportMenu"><summary>Export ▾</summary><div class="menu-items">
+        <button data-export="asc">LTspice schematic (.asc)</button>
         <button data-export="spice">SPICE netlist (.cir)</button>
         <button data-export="bom">Parts list (.csv)</button>
         <button data-export="svg">Schematic image (.svg)</button>
         <button data-export="png">Schematic image (.png)</button>
       </div></details>
+      <details class="menu" id="bTraceMenu"><summary title="Show a picture of a schematic (image or PDF) under the canvas to draw over">Trace ▾</summary><div class="menu-items trace-menu">
+        <label class="btn">Load image or PDF…<input type="file" id="bTraceFile" accept="image/*,.pdf,application/pdf" hidden></label>
+        <p class="hint" id="bTraceName">No picture loaded.</p>
+        <div id="bTraceCtl" hidden>
+          <label class="chk"><input type="checkbox" id="bTraceShow" checked> Show picture</label>
+          <label class="row">Opacity <input type="range" id="bTraceOpacity" min="5" max="100" value="45"></label>
+          <label class="row" id="bTracePageRow" hidden>Page <select id="bTracePage"></select></label>
+          <button id="bTraceAdjust" title="Drag the picture to move it, scroll to scale it">Move / scale</button>
+          <button id="bTraceRotate">Rotate 90°</button>
+          <button id="bTraceRemove">Remove picture</button>
+        </div>
+      </div></details>
     </div>
+    <div class="b-notice card" id="bNotice" hidden></div>
     <div class="b-canvas-wrap" id="bCanvasWrap" tabindex="0" aria-label="Schematic editor">
       <svg id="bCanvas" xmlns="http://www.w3.org/2000/svg"></svg>
     </div>

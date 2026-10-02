@@ -270,6 +270,27 @@ nav.sections button.active { background: var(--accent); color: var(--accent-ink)
 #bCanvas .comp.sel .pn { fill: var(--accent); }
 #bCanvas .schem .wire.sel { stroke: var(--accent); stroke-width: 2.6; }
 #bCanvas .overlay { pointer-events: none; }
+#bCanvas .trace-layer { pointer-events: none; }
+#bCanvas .trace-frame { fill: none; stroke: none; }
+/* Scans are dark lines on white: in dark mode, invert them so they read as light lines on the dark canvas. */
+@media (prefers-color-scheme: dark) { #bCanvas .trace image { filter: invert(1) hue-rotate(180deg); } }
+#bCanvas .trace.adjust .trace-frame { stroke: var(--accent); stroke-width: 1.5; stroke-dasharray: 6 4; vector-effect: non-scaling-stroke; }
+.b-canvas-wrap[data-trace="adjust"] { cursor: move; }
+#bTraceMenu summary.on { color: var(--accent); }
+.trace-menu { min-width: 240px; }
+.trace-menu .hint { margin: 2px 9px 4px; font-size: 12px; overflow-wrap: anywhere; }
+.trace-menu #bTraceCtl { display: flex; flex-direction: column; gap: 2px; }
+.trace-menu #bTraceCtl[hidden] { display: none; }
+.trace-menu label.btn { padding: 7px 9px; border-radius: 5px; cursor: pointer; }
+.trace-menu label.btn:hover { background: var(--panel-2); }
+.trace-menu .row, .trace-menu .chk { display: flex; align-items: center; gap: 8px; padding: 5px 9px; font-size: 13px; }
+.trace-menu .row input[type="range"] { flex: 1; }
+.trace-menu .row[hidden] { display: none; }
+.trace-menu button.active { background: var(--accent-soft); }
+.b-notice { position: relative; padding: 10px 36px 10px 14px; font-size: 13px; border-left: 3px solid var(--accent); }
+.b-notice ul { margin: 6px 0 0; padding-left: 18px; color: var(--muted); }
+.b-notice li { margin: 2px 0; }
+.b-notice .close { position: absolute; top: 6px; right: 8px; border: none; background: none; font-size: 18px; line-height: 1; color: var(--muted); cursor: pointer; }
 #bCanvas .vbias rect { fill: var(--panel); stroke: var(--accent); stroke-width: .8; opacity: .92; }
 #bCanvas .vbias text { fill: var(--accent); font: 600 9.5px var(--mono); }
 #bCanvas .vbias.bad rect { stroke: var(--bad); }

@@ -8,6 +8,7 @@ import { extract } from '../schematic/extract';
 import { PARTS } from '../schematic/library';
 import { renderSchematic } from '../schematic/render';
 import type { SchPart, Schematic } from '../schematic/types';
+import { isTrace, type Trace } from './trace';
 
 export const PROJECT_KIND = 'pedal-filter-lab/builder-project';
 
@@ -29,10 +30,12 @@ export interface Project {
   schematic: Schematic;
   sim?: ProjectSim;
   view?: { x: number; y: number; zoom: number };
+  /** Trace picture shown under the drawing, if any. */
+  trace?: Trace;
 }
 
-export function makeProject(name: string, schematic: Schematic, sim?: ProjectSim, view?: Project['view']): Project {
-  return { kind: PROJECT_KIND, version: 1, name: name || 'Untitled pedal', saved: new Date().toISOString(), schematic, sim, view };
+export function makeProject(name: string, schematic: Schematic, sim?: ProjectSim, view?: Project['view'], trace?: Trace | null): Project {
+  return { kind: PROJECT_KIND, version: 1, name: name || 'Untitled pedal', saved: new Date().toISOString(), schematic, sim, view, ...(trace ? { trace } : {}) };
 }
 
 /** Parse a project file. Accepts a bare schematic too (e.g. hand-written JSON). Throws a readable error. */
@@ -54,7 +57,7 @@ export function parseProject(text: string): Project {
   }
   const schematic: Schematic = { version: 1, parts: sch.parts, wires: sch.wires, ...(sch.notes ? { notes: sch.notes } : {}) };
   return d.kind === PROJECT_KIND
-    ? { ...(d as Project), schematic }
+    ? { ...(d as Project), schematic, trace: isTrace(d.trace) ? d.trace : undefined }
     : makeProject('Imported pedal', schematic);
 }
 

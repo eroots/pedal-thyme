@@ -16,6 +16,7 @@ import { Editor, PART_KEYS, type DragMode, type Mode } from './editor';
 import { initFileBar } from './filebar';
 import { initFrontPanel } from './frontpanel';
 import { initSimPanel } from './simpanel';
+import { initTrace } from './trace';
 import { SWEEPABLE_KINDS, biasOf } from './sim';
 
 /** Signed volts with two decimals (one above 10 V). */
@@ -65,7 +66,8 @@ export function initBuilder(): BuilderApi {
   if (saved.view) editor.setView(saved.view);
   const sim = initSimPanel();
   const panel = initFrontPanel($('#bKnobs'), editor);
-  initFileBar(editor, sim);
+  const trace = initTrace(editor, msg => { if (msg) $('#bHint').textContent = msg; else renderModes(editor.mode, null); });
+  initFileBar(editor, sim, trace);
 
   function save(): void {
     try { localStorage.setItem(LS_KEY, JSON.stringify({ doc: editor.doc, view: editor.getView() })); } catch { /* ignore */ }

@@ -52,7 +52,8 @@ export const JFET_MODELS: Record<string, JfetModel> = {
 /**
  * Enhancement MOSFET, SPICE level 1 (square law) with the source tied to the body, plus the
  * body diode (source → drain for N-channel). Discrete parts' thresholds vary widely between
- * samples (2N7000: roughly 0.8–3 V), so every preset is approximate.
+ * samples (2N7000: roughly 0.8–3 V), so every preset is approximate. In the SPICE cards, Cgso/Cgdo are per
+ * metre of width, so instances are written with W=L=1 (W/L = 1, as Kp assumes).
  */
 export interface MosModel {
   label: string;
@@ -68,11 +69,11 @@ export interface MosModel {
 
 export const MOS_MODELS: Record<string, MosModel> = {
   '2N7000': { label: '2N7000 (N-MOSFET)', pol: 'n', vth: 2.0, kp: 0.1, lambda: 0.01, cgs: 20e-12, cgd: 5e-12, bodyIs: 1e-13, bodyN: 1.2,
-    spice: 'NMOS(Level=1 Vto=2 Kp=0.1 Lambda=10m)', approx: true },
+    spice: 'NMOS(Level=1 Vto=2 Kp=0.1 Lambda=10m Is=100f Cgso=20p Cgdo=5p)', approx: true },
   BS170: { label: 'BS170 (N-MOSFET)', pol: 'n', vth: 2.1, kp: 0.12, lambda: 0.01, cgs: 24e-12, cgd: 5e-12, bodyIs: 1e-13, bodyN: 1.2,
-    spice: 'NMOS(Level=1 Vto=2.1 Kp=0.12 Lambda=10m)', approx: true },
+    spice: 'NMOS(Level=1 Vto=2.1 Kp=0.12 Lambda=10m Is=100f Cgso=24p Cgdo=5p)', approx: true },
   BS250: { label: 'BS250 (P-MOSFET)', pol: 'p', vth: 2.4, kp: 0.06, lambda: 0.01, cgs: 25e-12, cgd: 6e-12, bodyIs: 1e-13, bodyN: 1.2,
-    spice: 'PMOS(Level=1 Vto=-2.4 Kp=0.06 Lambda=10m)', approx: true },
+    spice: 'PMOS(Level=1 Vto=-2.4 Kp=0.06 Lambda=10m Is=100f Cgso=25p Cgdo=6p)', approx: true },
 };
 
 export const bjtModel = (k: string): BjtModel => BJT_MODELS[k] || BJT_MODELS['2N3904'];

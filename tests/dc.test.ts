@@ -214,11 +214,10 @@ describe('MOSFETs', () => {
     expect(circuit.transfer(s(1000)).abs()).toBeCloseTo(expected, 1);
   });
 
-  it('exports M lines with the body diode and model cards', () => {
+  it('exports M lines (body tied to source, bulk junction = body diode) and model cards', () => {
     const deck = toSpice(nl([V('V1', 'a', 9), R('R1', 'a', 'd', 10e3), M('Q1', 'd', 'd', GND), R('R2', 'in', 'out', 1)]));
-    expect(deck).toMatch(/^MQ1 d d 0 0 2N7000$/m);
-    expect(deck).toMatch(/^DQ1_body 0 d DBODY_2N7000$/m);
-    expect(deck).toMatch(/^\.model 2N7000 NMOS\(Level=1/m);
-    expect(deck).toMatch(/^\.model DBODY_2N7000 D\(/m);
+    expect(deck).toMatch(/^MQ1 d d 0 0 2N7000 W=1 L=1$/m);
+    expect(deck).toMatch(/^\.model 2N7000 NMOS\(Level=1 .*Is=100f Cgso=20p Cgdo=5p\)/m);
+    expect(deck).not.toMatch(/DBODY/);
   });
 });

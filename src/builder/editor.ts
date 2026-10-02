@@ -6,6 +6,7 @@
 // click deletes the part or wire segment under the cursor, a dragged box deletes everything inside;
 // stays on until Esc or right-click, like LTspice).
 import { renderSchematicBody } from '../schematic/render';
+import { traceTransform, type Trace } from './trace';
 import { pinsOf } from '../schematic/extract';
 import type { Pt } from '../schematic/geometry';
 import type { PartKind, Rot, Schematic } from '../schematic/types';
@@ -54,13 +55,33 @@ export class Editor {
   private clip: Clip | null = null;
   private drag: null | { kind: 'move'; start: Pt; orig: Schematic; moved: boolean; stretch: boolean }
     | { kind: 'box'; start: Pt; now: Pt; add: boolean; del?: boolean }
-    | { kind: 'pan'; sx: number; sy: number; vx: number; vy: number } = null;
+    | { kind: 'pan'; sx: number; sy: number; vx: number; vy: number }
+    | { kind: 'trace'; start: Pt; x0: number; y0: number } = null;
   private spaceDown = false;
   /** Document state before the current run of previews, if any. */
   private base: Schematic | null = null;
+  /** Trace picture under the drawing, and whether pointer input moves/scales it. */
+  trace: Trace | null = null;
+  traceAdjust = false;
+  /** Called when the trace changes (to persist it) and when adjust mode toggles. */
+  onTrace?: () => void;
+  onTraceAdjust?: (on: boolean) => void;
+  private readonly traceLayer: SVGGElement;
+  private readonly content: SVGGElement;
+  private traceTimer = 0;
 
   constructor(private readonly svg: SVGSVGElement, private readonly wrap: HTMLElement, doc: Schematic, private readonly on: EditorEvents) {
     this.doc = doc;
+    // Static layers: grid patterns, the trace picture (under the grid dots) and the drawing.
+    svg.innerHTML =
+      `<defs><pattern id="bGrid" width="10" height="10" patternUnits="userSpaceOnUse"><circle cx="0" cy="0" r="0.9" class="griddot"/></pattern>` +
+      `<pattern id="bGridMajor" width="50" height="50" patternUnits="userSpaceOnUse"><circle cx="0" cy="0" r="1.4" class="griddot major"/></pattern></defs>` +
+      '<g class="trace-layer"></g>' +
+      '<rect x="-100000" y="-100000" width="200000" height="200000" fill="url(#bGrid)"/>' +
+      '<rect x="-100000" y="-100000" width="200000" height="200000" fill="url(#bGridMajor)"/>' +
+      '<g class="content"></g>';
+    this.traceLayer = svg.querySelector<SVGGElement>('.trace-layer')!;
+    this.content = svg.querySelector<SVGGElement>('.content')!;
     this.bind();
     new ResizeObserver(() => this.render()).observe(wrap);
   }
@@ -180,6 +201,39 @@ export class Editor {
     this.render();
   }
 
+  /** Show (or remove) the trace picture. `notify` = false for live changes (e.g. while dragging a slider). */
+  setTrace(t: Trace | null, notify = true): void {
+    this.trace = t;
+    if (!t) this.traceAdjust = false;
+    this.renderTrace(true);
+    if (notify) this.onTrace?.();
+  }
+
+  setTraceAdjust(on: boolean): void {
+    this.traceAdjust = on && !!this.trace;
+    this.wrap.dataset.trace = this.traceAdjust ? 'adjust' : '';
+    this.renderTrace(true);
+    this.onTraceAdjust?.(this.traceAdjust);
+    this.wrap.focus({ preventScroll: true });
+  }
+
+  /** Update the picture's placement; rebuild the <image> only when the picture itself changes. */
+  private renderTrace(rebuild = false): void {
+    const t = this.trace;
+    if (!t || !t.visible) { this.traceLayer.innerHTML = ''; return; }
+    const img = this.traceLayer.querySelector('image');
+    if (rebuild || !img || img.getAttribute('href') !== t.src) {
+      const w = t.w * t.scale, h = t.h * t.scale;
+      this.traceLayer.innerHTML = `<g class="trace${this.traceAdjust ? ' adjust' : ''}"><image preserveAspectRatio="none" width="${w}" height="${h}"/>` +
+        `<rect class="trace-frame" width="${w}" height="${h}"/></g>`;
+      this.traceLayer.querySelector('image')!.setAttribute('href', t.src);
+    }
+    const g = this.traceLayer.firstElementChild as SVGGElement;
+    g.setAttribute('transform', traceTransform(t));
+    g.setAttribute('opacity', String(t.opacity));
+    for (const el of g.children) { el.setAttribute('width', String(t.w * t.scale)); el.setAttribute('height', String(t.h * t.scale)); }
+  }
+
   getView() { return { ...this.view }; }
   setView(v: { x: number; y: number; zoom: number }) { this.view = { ...v }; this.render(); }
 
@@ -264,7 +318,17 @@ export class Editor {
     });
     svg.addEventListener('wheel', e => {
       e.preventDefault();
-      this.zoomBy(Math.exp(-e.deltaY * 0.0015), this.toWorld(e));
+      const f = Math.exp(-e.deltaY * 0.0015), at = this.toWorld(e);
+      if (this.traceAdjust && this.trace) {
+        // Scale the trace picture about the cursor.
+        const t = this.trace;
+        this.trace = { ...t, scale: t.scale * f, x: at[0] - (at[0] - t.x) * f, y: at[1] - (at[1] - t.y) * f };
+        this.renderTrace();
+        clearTimeout(this.traceTimer);
+        this.traceTimer = window.setTimeout(() => this.onTrace?.(), 300);
+        return;
+      }
+      this.zoomBy(f, at);
     }, { passive: false });
     this.wrap.addEventListener('keydown', e => this.onKey(e));
     this.wrap.addEventListener('keyup', e => { if (e.key === ' ') this.spaceDown = false; });
@@ -280,6 +344,12 @@ export class Editor {
       return;
     }
     if (e.button !== 0) return;
+
+    if (this.traceAdjust && this.trace) {
+      this.drag = { kind: 'trace', start: p, x0: this.trace.x, y0: this.trace.y };
+      try { this.svg.setPointerCapture(e.pointerId); } catch { /* pointer already gone */ }
+      return;
+    }
 
     if (this.mode === 'place' && this.placing) {
       // Probes stick to the nearest pin or wire, so they land on a net.
@@ -340,6 +410,11 @@ export class Editor {
       this.render();
       return;
     }
+    if (d?.kind === 'trace' && this.trace) {
+      this.trace = { ...this.trace, x: d.x0 + p[0] - d.start[0], y: d.y0 + p[1] - d.start[1] };
+      this.renderTrace();
+      return;
+    }
     if (d?.kind === 'move') {
       const q = snapPt(p), dx = q[0] - d.start[0], dy = q[1] - d.start[1];
       d.moved = d.moved || dx !== 0 || dy !== 0;
@@ -361,7 +436,9 @@ export class Editor {
     const d = this.drag;
     this.drag = null;
     if (this.svg.hasPointerCapture(e.pointerId)) this.svg.releasePointerCapture(e.pointerId);
-    if (d?.kind === 'move' && d.moved) {
+    if (d?.kind === 'trace') {
+      this.onTrace?.();
+    } else if (d?.kind === 'move' && d.moved) {
       this.commit(this.doc);
     } else if (d?.kind === 'box') {
       const [x0, x1] = [Math.min(d.start[0], d.now[0]), Math.max(d.start[0], d.now[0])];
@@ -400,6 +477,7 @@ export class Editor {
     switch (e.key) {
       case ' ': this.spaceDown = true; e.preventDefault(); break;
       case 'Escape':
+        if (this.traceAdjust) { this.setTraceAdjust(false); break; }
         if (this.draft) { this.draft = null; this.render(); }
         else if (this.mode !== 'select') this.setMode('select');
         else { this.sel.clear(); this.on.select(this.sel); this.render(); }
@@ -466,13 +544,7 @@ export class Editor {
       const { start: s, now: n } = this.drag;
       over.push(`<rect class="rubber${this.drag.del ? ' del' : ''}" x="${Math.min(s[0], n[0])}" y="${Math.min(s[1], n[1])}" width="${Math.abs(n[0] - s[0])}" height="${Math.abs(n[1] - s[1])}"/>`);
     }
-    const big = 1e5;
-    this.svg.innerHTML =
-      `<defs><pattern id="bGrid" width="10" height="10" patternUnits="userSpaceOnUse"><circle cx="0" cy="0" r="0.9" class="griddot"/></pattern>` +
-      `<pattern id="bGridMajor" width="50" height="50" patternUnits="userSpaceOnUse"><circle cx="0" cy="0" r="1.4" class="griddot major"/></pattern></defs>` +
-      `<rect x="${-big}" y="${-big}" width="${2 * big}" height="${2 * big}" fill="url(#bGrid)"/>` +
-      `<rect x="${-big}" y="${-big}" width="${2 * big}" height="${2 * big}" fill="url(#bGridMajor)"/>` +
-      `<g class="schem">${body}</g><g class="overlay">${this.annotations}${over.join('')}</g>`;
+    this.content.innerHTML = `<g class="schem">${body}</g><g class="overlay">${this.annotations}${over.join('')}</g>`;
   }
 }
 

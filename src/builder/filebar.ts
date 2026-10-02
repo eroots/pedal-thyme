@@ -3,7 +3,11 @@ import { termActive } from '../core/termination';
 import { fRange } from '../playground/state';
 import { download } from '../ui/download';
 import type { Editor } from './editor';
+import { decodeLtspice } from '../ltspice/asc';
+import { exportAsc } from '../ltspice/export';
+import { importAsc } from '../ltspice/import';
 import { bomCsv, makeProject, parseProject, projectSpice, safeFileName, schematicSvg, svgToPng } from './files';
+import type { Trace } from './trace';
 import type { SimPanel } from './simpanel';
 import { TEMPLATES } from './templates';
 
@@ -12,7 +16,13 @@ const $ = <T extends HTMLElement = HTMLInputElement>(sel: string): T => document
 const esc = (s: unknown): string =>
   String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!));
 
-export function initFileBar(editor: Editor, sim: SimPanel): void {
+/** LTspice reads schematics as Latin-1; keep comments readable there. */
+function latin1(text: string): Uint8Array<ArrayBuffer> {
+  const t = text.replace(/Ω/g, 'ohm').replace(/[–—]/g, '-').replace(/≈/g, '~').replace(/…/g, '...').replace(/→/g, '->').replace(/×/g, 'x').replace(/[‘’]/g, "'").replace(/[“”]/g, '"');
+  return Uint8Array.from(t, c => (c.charCodeAt(0) < 256 ? c.charCodeAt(0) : 63));
+}
+
+export function initFileBar(editor: Editor, sim: SimPanel, trace: { set(t: Trace | null): void }): void {
   const nameEl = $('#bName');
   try { nameEl.value = localStorage.getItem(NAME_KEY) || ''; } catch { /* ignore */ }
   const name = () => nameEl.value.trim() || 'Untitled pedal';
@@ -34,25 +44,49 @@ export function initFileBar(editor: Editor, sim: SimPanel): void {
     setName(t.id === 'empty' ? '' : t.name);
   });
 
-  // Open a project file.
+  // Import notes (LTspice substitutions and the like).
+  const notice = $<HTMLDivElement>('#bNotice');
+  const showNotice = (title: string, items: string[]) => {
+    notice.hidden = false;
+    notice.innerHTML = `<button class="close" aria-label="Dismiss">×</button><b>${esc(title)}</b>` +
+      (items.length ? `<ul>${items.map(i => `<li>${esc(i)}</li>`).join('')}</ul>` : '');
+  };
+  notice.addEventListener('click', e => { if ((e.target as Element).closest('.close')) notice.hidden = true; });
+
+  // Open a project file, or import an LTspice schematic (with any .asy symbol files selected alongside it).
   $('#bOpen').addEventListener('change', async e => {
-    const input = e.target as HTMLInputElement, f = input.files?.[0];
+    const input = e.target as HTMLInputElement, files = [...(input.files ?? [])];
     input.value = '';
-    if (!f) return;
+    if (!files.length) return;
+    const asc = files.find(f => /\.asc$/i.test(f.name));
     try {
+      if (asc) {
+        const asy: Record<string, string> = {};
+        for (const f of files.filter(f => /\.asy$/i.test(f.name))) asy[f.name] = decodeLtspice(new Uint8Array(await f.arrayBuffer()));
+        const r = importAsc(decodeLtspice(new Uint8Array(await asc.arrayBuffer())), asy);
+        editor.load(r.schematic);
+        setName(asc.name.replace(/\.asc$/i, ''));
+        const n = r.stats.parts;
+        showNotice(`Imported ${asc.name}: ${n} part${n === 1 ? '' : 's'}${r.stats.skipped ? `, ${r.stats.skipped} skipped` : ''}.`, r.report);
+        return;
+      }
+      const f = files[0];
+      if (/\.asy$/i.test(f.name)) throw new Error('select the .asc schematic together with its .asy symbol files.');
       const p = parseProject(await f.text());
       editor.load(p.schematic);
       if (p.view) editor.setView(p.view);
       if (p.sim) sim.apply(p.sim);
+      trace.set(p.trace ?? null);
       setName(p.name);
+      notice.hidden = true;
     } catch (err) {
-      alert(`Couldn’t open ${f.name}: ${(err as Error).message}`);
+      alert(`Couldn’t open ${(asc ?? files[0]).name}: ${(err as Error).message}`);
     }
   });
 
   // Save the project.
   $('#bSave').addEventListener('click', () => {
-    const p = makeProject(name(), editor.doc, sim.settings(), editor.getView());
+    const p = makeProject(name(), editor.doc, sim.settings(), editor.getView(), editor.trace);
     download(`${safeFileName(name())}.pfl.json`, JSON.stringify(p, null, 2), 'application/json');
   });
 
@@ -63,6 +97,12 @@ export function initFileBar(editor: Editor, sim: SimPanel): void {
     closeMenus();
     const base = safeFileName(name());
     switch (b.dataset.export) {
+      case 'asc': {
+        const [fmin, fmax] = fRange();
+        const blob = new Blob([latin1(exportAsc(editor.doc, { title: name(), fmin, fmax }))], { type: 'text/plain' });
+        download(`${base}.asc`, blob);
+        break;
+      }
       case 'spice': {
         const st = sim.settings(), [fmin, fmax] = fRange();
         download(`${base}.cir`, projectSpice(name(), editor.doc, termActive(st.term) ? st.term : null, fmin, fmax));

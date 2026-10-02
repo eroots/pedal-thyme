@@ -31,7 +31,7 @@ pins and wires**, extracted into a netlist and solved by a single MNA (modified 
 Done: `src/engine/` (netlist, MNA, models, SPICE export); all 17 topologies are netlists, checked against
 the old closed-form H(s) with and without source/load (`tests/legacy.ts`). The Playground gained an op-amp
 model selector, Zin/Zout readouts and "Export SPICE (.cir)". Switches, inductors and diodes (open in AC) are in
-the engine but not yet used by any Playground topology. Still to do: an LTspice cross-check run.
+the engine but not yet used by any Playground topology. LTspice cross-check done (2026-10-02, see below).
 - MNA with stamps for R, C, L, independent V sources, VCVS, ideal op-amp (nullor),
   real op-amp macromodel (A0, GBW pole, Rout; TL072 / 4558 / LM308 / NE5532 presets),
   3-terminal pot (track value, taper A/B/C, rotation), rheostat, switch (SPST/SPDT, kept simple),
@@ -85,6 +85,22 @@ Not done: a Big Muff template; temperature effects; charge-storage (diffusion) c
 - Small-signal AC around the bias point, with node voltages shown on the schematic.
 - Templates: Fuzz Face, Big Muff, LPB-1-style booster.
 
+## LTspice import/export and trace overlay ✅ (2026-10-02)
+- **Import (.asc)**: keeps the layout (scaled 10/16), places each part where its pins best match and bridges
+  the difference with short wires, then checks the result net-for-net against LTspice's connectivity and
+  reconnects any mismatch with net labels. Built-in symbols, all 651 OpAmps symbols, .param expressions,
+  .model types; third-party symbols (e.g. pots) via their .asy files. Signal source → input jack, grounded DC
+  sources → supply rails, flags → labels / ground / output jack. Substitutions are listed in an import report.
+  Connectivity verified against LTspice 24's own netlister on 158 example schematics (3,969 pins, no
+  differences); it models LTspice's rule that a part cuts the wire it sits on.
+- **Export (.asc)**: same layout (×1.6), net names as flags, the signal source and supplies as voltage sources,
+  models and op-amp macromodels in a directive. Every template and Playground circuit runs in LTspice with no
+  warnings; |H| at 100 Hz/1 kHz/10 kHz matches this app to 0.00 dB for all passive, op-amp and MOSFET circuits.
+  BJT circuits differ by 0.6–3.5 dB (LPB-1, Fuzz Face) because LTspice's 2N3904 model has more parameters
+  (Ikf, Ise/Ne, Rb …) than ours; the TS differs by 0.15 dB at 10 kHz (diode junction capacitance).
+- **Trace overlay**: an image or PDF page (pdf.js) under the canvas, with opacity, rotate, page choice and a
+  move/scale mode; saved with the project.
+
 ## Phase 5 — Time domain (deferred)
 - Transient analysis (trapezoidal companion models, Newton per step), waveforms, clipping, harmonics,
   audio through the circuit (Web Audio, in a worker).
@@ -92,4 +108,4 @@ Not done: a Big Muff template; temperature effects; charge-storage (diffusion) c
 ## Verification
 - Closed-form oracles for every Playground topology.
 - Netlist-extraction unit tests.
-- LTspice cross-checks on a few reference circuits via `.cir` export.
+- LTspice cross-checks: every template and Playground circuit, via .asc export (see above).

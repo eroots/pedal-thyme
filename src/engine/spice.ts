@@ -65,7 +65,7 @@ export function toSpice(nl: Netlist, opt: SpiceOptions = {}): string {
       case 'OA': {
         const key = OPAMP_MODELS[e.model] ? e.model : 'ideal';
         opamps.add(key);
-        lines.push(`X${safe(e.name)} ${nodeName(e.inP)} ${nodeName(e.inN)} ${nodeName(e.out)} OPAMP_${safe(key)}`);
+        lines.push(`X${safe(e.name)} ${nodeName(e.inP)} ${nodeName(e.inN)} ${nodeName(e.out)} ${opAmpSubcktName(key)}`);
         break;
       }
       case 'POT': {
@@ -97,27 +97,41 @@ export function toSpice(nl: Netlist, opt: SpiceOptions = {}): string {
         jmodels.add(e.model);
         lines.push(`${ename('J', e.name)} ${nn[0]} ${nn[1]} ${nn[2]} ${safe(e.model)}`);
         break;
-      case 'M': {
-        // Discrete MOSFET: body tied to source, plus its body diode and the gate capacitances.
+      case 'M':
+        // Discrete MOSFET: body tied to source (its bulk junction is the body diode). W=L=1 makes the
+        // model's per-metre gate overlap capacitances (Cgso, Cgdo) come out in farads.
         mmodels.add(e.model);
-        const m = MOS_MODELS[e.model], isP = m?.pol === 'p';
-        lines.push(`${ename('M', e.name)} ${nn[0]} ${nn[1]} ${nn[2]} ${nn[2]} ${safe(e.model)}`);
-        lines.push(`${ename('D', e.name + '_body')} ${isP ? nn[0] : nn[2]} ${isP ? nn[2] : nn[0]} DBODY_${safe(e.model)}`);
-        if (m) {
-          lines.push(`${ename('C', e.name + '_gs')} ${nn[1]} ${nn[2]} ${spiceNum(m.cgs)}`);
-          lines.push(`${ename('C', e.name + '_gd')} ${nn[1]} ${nn[0]} ${spiceNum(m.cgd)}`);
-        }
+        lines.push(`${ename('M', e.name)} ${nn[0]} ${nn[1]} ${nn[2]} ${nn[2]} ${safe(e.model)} W=1 L=1`);
         break;
-      }
       case 'G': lines.push(`${ename('G', e.name)} ${nn[0]} ${nn[1]} ${nn[2]} ${nn[3]} ${spiceNum(e.gm)}`); break;
     }
   }
 
-  if (opamps.size || models.size || qmodels.size || jmodels.size || mmodels.size) lines.push('');
-  for (const key of opamps) {
+  const lib = modelLines({ opamps, diodes: models, bjts: qmodels, jfets: jmodels, mosfets: mmodels });
+  if (lib.length) lines.push('', ...lib);
+
+  lines.push('');
+  lines.push(`.ac dec 100 ${spiceNum(opt.fmin ?? 10)} ${spiceNum(opt.fmax ?? 100e3)}`);
+  lines.push('.end');
+  return lines.join('\n') + '\n';
+}
+
+export interface UsedModels { opamps: Set<string>; diodes: Set<string>; bjts: Set<string>; jfets: Set<string>; mosfets: Set<string> }
+
+export const opAmpSubcktName = (key: string): string => `OPAMP_${safe(OPAMP_MODELS[key] ? key : 'ideal')}`;
+
+/**
+ * .subckt definitions for op-amps and .model cards for semiconductors. `ports` sets the op-amp subckt's
+ * port order: 'p-n' = (in+, in−, out) as used by toSpice; 'n-p' = (in−, in+, out) as LTspice's opamp symbol.
+ * `suffix` renames the models (LTspice already ships 2N3904, 1N914 … and rejects a second definition).
+ */
+export function modelLines(u: UsedModels, ports: 'p-n' | 'n-p' = 'p-n', suffix = ''): string[] {
+  const lines: string[] = [];
+  for (const key of u.opamps) {
     const m = opAmpModel(key);
     lines.push(`* ${m.label}: single-pole macromodel (A0, GBW, Rin, Rout); no slew or swing limits`);
-    lines.push(`.subckt OPAMP_${safe(key)} inp inn out`);
+    // LTspice's opamp symbol passes Aol/GBW parameters, so that variant accepts (and ignores) them.
+    lines.push(`.subckt ${opAmpSubcktName(key)} ${ports === 'p-n' ? 'inp inn out' : 'inn inp out params: Aol=100K GBW=10Meg'}`);
     if (m.a0 === Infinity) {
       lines.push('E1 out 0 inp inn 1e9');
     } else {
@@ -131,28 +145,11 @@ export function toSpice(nl: Netlist, opt: SpiceOptions = {}): string {
     }
     lines.push('.ends');
   }
-  for (const key of models) {
-    const m = DIODE_MODELS[key];
-    if (m) lines.push(`.model ${safe(key)} ${m.spice}${m.approx ? ' ; approximate' : ''}`);
-    else lines.push(`* unknown diode model ${key}`);
-  }
-  for (const key of qmodels) {
-    const m = BJT_MODELS[key];
-    lines.push(m ? `.model ${safe(key)} ${m.spice}${m.approx ? ' ; approximate' : ''}` : `* unknown transistor model ${key}`);
-  }
-  for (const key of jmodels) {
-    const m = JFET_MODELS[key];
-    lines.push(m ? `.model ${safe(key)} ${m.spice}${m.approx ? ' ; approximate' : ''}` : `* unknown JFET model ${key}`);
-  }
-  for (const key of mmodels) {
-    const m = MOS_MODELS[key];
-    if (!m) { lines.push(`* unknown MOSFET model ${key}`); continue; }
-    lines.push(`.model ${safe(key)} ${m.spice} ; approximate: thresholds vary between samples`);
-    lines.push(`.model DBODY_${safe(key)} D(Is=${spiceNum(m.bodyIs)} N=${m.bodyN})`);
-  }
-
-  lines.push('');
-  lines.push(`.ac dec 100 ${spiceNum(opt.fmin ?? 10)} ${spiceNum(opt.fmax ?? 100e3)}`);
-  lines.push('.end');
-  return lines.join('\n') + '\n';
+  const card = (key: string, m: { spice: string; approx?: boolean } | undefined, what: string, note = ' ; approximate') =>
+    lines.push(m ? `.model ${safe(key)}${suffix} ${m.spice}${m.approx ? note : ''}` : `* unknown ${what} model ${key}`);
+  for (const key of u.diodes) card(key, DIODE_MODELS[key], 'diode');
+  for (const key of u.bjts) card(key, BJT_MODELS[key], 'transistor');
+  for (const key of u.jfets) card(key, JFET_MODELS[key], 'JFET');
+  for (const key of u.mosfets) card(key, MOS_MODELS[key], 'MOSFET', ' ; approximate: thresholds vary between samples');
+  return lines;
 }

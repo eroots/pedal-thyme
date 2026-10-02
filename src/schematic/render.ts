@@ -1,7 +1,7 @@
 // Render a schematic to an SVG string. Symbols are drawn in local coordinates under a transform;
 // text (refs, values, op-amp signs, jack names) is placed in world coordinates so it stays upright.
 import { dirToWorld, key, onSegment, svgTransform, toWorld, type Pt } from './geometry';
-import { PARTS, boxOf, labelLen } from './library';
+import { PARTS, boxOf, labelLen, probeColor } from './library';
 import type { LabelSide, SchPart, Schematic } from './types';
 
 export interface RenderOptions {
@@ -89,6 +89,9 @@ export function renderSchematicBody(sch: Schematic, opt: RenderOptions = {}): { 
     }
     if (p.kind === 'IN' || p.kind === 'OUT') {
       g += p.kind === 'IN' ? text(p.x - 8, p.y + 4, 'IN', 'tl', 'end') : text(p.x + 8, p.y + 4, 'OUT', 'tl', 'start');
+    } else if (p.kind === 'PROBE') {
+      const [x, y] = toWorld(p, [24, -12]);
+      if (p.ref) g += text(x, y, p.ref, 'pn probe-ref', 'start');
     } else if (p.kind === 'LABEL' || p.kind === 'SUPPLY') {
       const name = p.props?.name || (p.kind === 'SUPPLY' ? `${p.value ?? 9}V` : '?');
       if (p.kind === 'SUPPLY') { const [x, y] = toWorld(p, [0, -14]); g += text(x, y, name, 'pn', 'middle'); }
@@ -111,14 +114,15 @@ export function renderSchematicBody(sch: Schematic, opt: RenderOptions = {}): { 
     }
     const cls = `comp${hl.has(p.id) ? ' hl' : ''}${sel.has(p.id) ? ' sel' : ''}`;
     const title = p.ref ? `<title>${esc(p.ref)}${spec.valueText ? ': ' + esc(spec.valueText(p)) : ''}</title>` : '';
-    out.push(`<g class="${cls}" data-id="${esc(p.id)}"${p.ref ? ` data-part="${esc(p.ref)}"` : ''}>${title}${g}</g>`);
+    const style = p.kind === 'PROBE' ? ` style="--probe:${probeColor(p.ref)}"` : '';
+    out.push(`<g class="${cls}" data-id="${esc(p.id)}"${p.ref ? ` data-part="${esc(p.ref)}"` : ''}${style}>${title}${g}</g>`);
   }
 
   // Junction dots: points where three or more conductors meet.
   const ptsAt = new Map<string, { at: Pt; n: number }>();
   const bump = (at: Pt, by: number) => { const k = key(at); const e = ptsAt.get(k) || { at, n: 0 }; e.n += by; ptsAt.set(k, e); };
   for (const p of sch.parts) {
-    if (p.kind === 'IN' || p.kind === 'OUT') continue;
+    if (p.kind === 'IN' || p.kind === 'OUT' || p.kind === 'PROBE') continue;
     for (const pin of PARTS[p.kind].pins) bump(toWorld(p, pin.at), 1);
   }
   for (const w of sch.wires) if (w.pts.length > 1) { bump(w.pts[0], 1); bump(w.pts[w.pts.length - 1], 1); }

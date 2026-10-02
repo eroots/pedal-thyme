@@ -1,19 +1,17 @@
-// Pedal Builder UI: palette, toolbar, properties, ERC list and a live response preview.
-import { Cx } from '../core/complex';
+// Pedal Builder UI: palette, toolbar, properties and ERC list; wires up the simulation panel and front panel.
 import { stepSeries } from '../core/eseries';
 import { TAPERS } from '../core/pots';
-import { TAU, db, fmtEng, parseEng } from '../core/units';
-import { Circuit } from '../engine/mna';
+import { fmtEng, parseEng } from '../core/units';
 import { DIODE_MODELS, OPAMP_MODELS } from '../engine/models';
 import { extract, type Extraction } from '../schematic/extract';
 import { PARTS } from '../schematic/library';
 import { renderSchematic } from '../schematic/render';
 import type { PartKind, SchPart, Schematic } from '../schematic/types';
-import { freqGrid } from '../playground/analysis';
-import { S, fRange } from '../playground/state';
-import { cssVar, drawPlot, magRange, PLOT_MARGIN } from '../ui/plot';
+import { S } from '../playground/state';
 import { emptyDoc, updatePart } from './doc';
 import { Editor, PART_KEYS, type DragMode, type Mode } from './editor';
+import { initFrontPanel } from './frontpanel';
+import { initSimPanel } from './simpanel';
 
 const LS_KEY = 'pedal-filter-lab.builder.v1';
 const $ = <T extends HTMLElement = HTMLInputElement>(sel: string): T => document.querySelector(sel) as T;
@@ -26,6 +24,7 @@ const PALETTE: { group: string; kinds: PartKind[] }[] = [
   { group: 'Semiconductors', kinds: ['D', 'LED'] },
   { group: 'Active', kinds: ['OA', 'BUF'] },
   { group: 'Connections', kinds: ['IN', 'OUT', 'GND', 'SUPPLY', 'LABEL'] },
+  { group: 'Measure', kinds: ['PROBE'] },
 ];
 
 export interface BuilderApi {
@@ -38,12 +37,13 @@ export interface BuilderApi {
 export function initBuilder(): BuilderApi {
   const saved = loadSaved();
   let ex: Extraction = extract(saved.doc);
-  let hoverF: number | null = null;
-  let lockedRange: [number, number] | null = null;
-  let plot: { freqs: number[]; mag: number[]; ph: number[] } | null = null;
 
   const editor = new Editor(document.querySelector<SVGSVGElement>('#bCanvas')!, $('#bCanvasWrap'), saved.doc, {
-    change: (doc, committed) => { ex = extract(doc); renderErc(); scheduleSim(); if (committed) { save(); renderProps(); } updateToolbar(); },
+    change: (doc, committed) => {
+      ex = extract(doc); renderErc(); sim.update(doc, ex, committed); panel.sync(doc);
+      if (committed) { save(); renderProps(); }
+      updateToolbar();
+    },
     select: () => renderProps(),
     mode: (mode, kind) => renderModes(mode, kind),
     dragMode: m => renderDragMode(m),
@@ -54,6 +54,8 @@ export function initBuilder(): BuilderApi {
     },
   });
   if (saved.view) editor.setView(saved.view);
+  const sim = initSimPanel();
+  const panel = initFrontPanel($('#bKnobs'), editor);
 
   function save(): void {
     try { localStorage.setItem(LS_KEY, JSON.stringify({ doc: editor.doc, view: editor.getView() })); } catch { /* ignore */ }
@@ -221,54 +223,6 @@ export function initBuilder(): BuilderApi {
     if (issue?.parts?.length) editor.selectIds(issue.parts);
   });
 
-  /* ---------- Response preview ---------- */
-  let simTimer = 0;
-  function scheduleSim(): void {
-    cancelAnimationFrame(simTimer);
-    simTimer = requestAnimationFrame(runSim);
-  }
-  function runSim(): void {
-    const errs = ex.issues.filter(i => i.severity === 'error');
-    const msg = $('#bSimMsg');
-    if (errs.length) {
-      plot = null;
-      msg.textContent = 'Fix the errors listed under Checks to see the response.';
-      drawSim();
-      return;
-    }
-    const c = new Circuit(ex.netlist), freqs = freqGrid(...fRange(), 300);
-    const mag: number[] = [], ph: number[] = [];
-    for (const f of freqs) { const h = c.transfer(new Cx(0, TAU * f)); mag.push(db(h.abs())); ph.push(h.arg() * 180 / Math.PI); }
-    plot = { freqs, mag, ph };
-    const at = (f: number) => db(c.transfer(new Cx(0, TAU * f)).abs());
-    msg.textContent = `Output level: ${fmt(at(100))} @ 100 Hz · ${fmt(at(1000))} @ 1 kHz · ${fmt(at(5000))} @ 5 kHz (small-signal, ideal source and load).`;
-    drawSim();
-  }
-  const fmt = (x: number) => (isFinite(x) ? `${x >= 0 ? '+' : ''}${x.toFixed(1)} dB` : '—');
-  function drawSim(): void {
-    const cv = $<HTMLCanvasElement>('#bSimCanvas');
-    if (!plot) { const g = cv.getContext('2d'); g?.clearRect(0, 0, cv.width, cv.height); return; }
-    const [y0, y1] = lockedRange ?? magRange([plot.mag]);
-    drawPlot(cv, {
-      freqs: plot.freqs, fr: fRange(), y0, y1, step: (y1 - y0) > 48 ? 12 : 6, unit: '', hoverF,
-      series: [{ vals: plot.mag, color: cssVar('--accent'), width: 2.2, label: 'Output' }],
-    });
-  }
-  const cv = $<HTMLCanvasElement>('#bSimCanvas');
-  cv.addEventListener('pointermove', e => {
-    const r = cv.getBoundingClientRect(), u = (e.clientX - r.left - PLOT_MARGIN.l) / (r.width - PLOT_MARGIN.l - PLOT_MARGIN.r);
-    const [a, b] = fRange();
-    hoverF = u >= 0 && u <= 1 ? a * Math.pow(b / a, u) : null;
-    drawSim();
-  });
-  cv.addEventListener('pointerleave', () => { hoverF = null; drawSim(); });
-  new ResizeObserver(() => drawSim()).observe(cv);
-  $('#bLockScale').addEventListener('change', e => {
-    const on = (e.target as HTMLInputElement).checked;
-    lockedRange = on && plot ? magRange([plot.mag]) : on ? [-48, 12] : null;
-    drawSim();
-  });
-
   let initialDrag: DragMode = 'stretch';
   try { if (localStorage.getItem(LS_KEY + '.drag') === 'move') initialDrag = 'move'; } catch { /* ignore */ }
   editor.setDragMode(initialDrag);
@@ -276,11 +230,12 @@ export function initBuilder(): BuilderApi {
   renderProps();
   renderErc();
   updateToolbar();
-  scheduleSim();
+  sim.update(editor.doc, ex, true);
+  panel.sync(editor.doc);
 
   return {
     load: doc => { editor.load(JSON.parse(JSON.stringify(doc))); editor.selectIds([]); },
-    shown: () => { editor.render(); if (!saved.view) editor.fit(); drawSim(); },
+    shown: () => { editor.render(); if (!saved.view) editor.fit(); sim.redraw(); },
   };
 }
 

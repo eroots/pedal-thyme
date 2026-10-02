@@ -162,6 +162,12 @@ export const PARTS: Record<PartKind, PartSpec> = {
     draw: () => '<circle class="term" cx="0" cy="0" r="3.5"/>',
     elements: () => [],
   },
+  PROBE: {
+    // A voltage probe: a short lead and a coloured tip. Not an electrical part.
+    label: 'Probe', box: [-2, -24, 24, 2], pins: [{ name: 'p', at: [0, 0] }],
+    draw: () => line(0, 0, 10, -10, 'probe-lead') + '<circle class="probe-tip" cx="15" cy="-15" r="6"/>',
+    elements: () => [],
+  },
   OUT: {
     label: 'Output jack', box: [-4, -4, 4, 4], pins: [{ name: 'io', at: [0, 0] }],
     draw: () => '<circle class="term" cx="0" cy="0" r="3.5"/>',
@@ -170,3 +176,10 @@ export const PARTS: Record<PartKind, PartSpec> = {
 };
 
 export const OPAMP_KEYS = Object.keys(OPAMP_MODELS);
+
+/** Probe colours, assigned by probe number (P1, P2, …). */
+export const PROBE_COLORS = ['#1c7ed6', '#2f9e44', '#ae3ec9', '#0c8599', '#e64980', '#e67700', '#5c940d', '#7048e8'];
+export const probeColor = (ref?: string): string => {
+  const n = parseInt((ref || '').replace(/\D/g, ''), 10);
+  return PROBE_COLORS[((n > 0 ? n : 1) - 1) % PROBE_COLORS.length];
+};

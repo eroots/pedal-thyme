@@ -28,6 +28,7 @@ export const PART_DEFAULTS: Record<PartKind, PartDefault> = {
   LABEL: { props: { name: 'VREF' } },
   IN: {},
   OUT: {},
+  PROBE: { prefix: 'P' },
 };
 
 export const emptyDoc = (): Schematic => ({

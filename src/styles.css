@@ -158,7 +158,7 @@ tr:last-child td { border-bottom: none; }
 canvas { width: 100%; display: block; touch-action: none; }
 #magCanvas { height: 320px; }
 #phaseCanvas { height: 170px; margin-top: 4px; }
-#legend { display: flex; flex-wrap: wrap; gap: 6px 16px; margin-top: 8px; font-size: 13px; color: var(--muted); }
+#legend, .legend { display: flex; flex-wrap: wrap; gap: 6px 16px; margin-top: 8px; font-size: 13px; color: var(--muted); }
 .sw { display: inline-block; width: 12px; height: 3px; border-radius: 2px; vertical-align: middle; margin-right: 6px; }
 
 /* ---------- Design ---------- */
@@ -238,8 +238,6 @@ nav.sections { display: flex; gap: 3px; background: var(--panel-2); border: 1px 
 nav.sections button { border: none; background: none; padding: 5px 12px; border-radius: 6px; font-weight: 600; color: var(--muted); }
 nav.sections button:hover { color: var(--ink); }
 nav.sections button.active { background: var(--accent); color: var(--accent-ink); }
-body[data-section="builder"] .settings label:has(#rTol),
-body[data-section="builder"] .settings label:has(#cTol) { display: none; }
 
 /* ---------- Pedal Builder ---------- */
 .builder { display: grid; grid-template-columns: 188px minmax(0, 1fr) 290px; gap: 16px; padding: 16px 20px 40px; max-width: 1800px; margin: 0 auto; }
@@ -322,3 +320,25 @@ ul.erc li:hover { outline: 1px solid var(--line); }
 #bCanvas .del-seg { stroke: var(--bad); stroke-width: 3.5; stroke-linecap: round; opacity: .85; }
 #bCanvas .rubber.del { fill: rgba(224, 49, 49, .12); stroke: var(--bad); }
 #bCanvas .comp.hl .pn { fill: var(--bad); }
+.schem .probe-lead { stroke: var(--probe); stroke-width: 2; }
+.schem .probe-tip { fill: var(--probe); stroke: var(--probe); fill-opacity: .35; stroke-width: 1.6; }
+.schem text.probe-ref { fill: var(--probe); }
+#bSimPhase { height: 150px; margin-top: 4px; }
+.b-term { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line); }
+.b-term-row { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; font-size: 13px; color: var(--muted); }
+.b-term-row > label { display: flex; gap: 6px; align-items: center; min-width: 0; max-width: 100%; }
+.b-term-row select { min-width: 0; flex: 1; max-width: 320px; }
+.b-term .tfields input { width: 70px; }
+#bSimMsg { margin: 8px 0 0; }
+.knobs { display: grid; grid-template-columns: repeat(auto-fill, minmax(78px, 1fr)); gap: 10px 6px; }
+.knob { display: flex; flex-direction: column; align-items: center; gap: 2px; text-align: center; }
+.knob .dial { width: 58px; height: 58px; cursor: ns-resize; touch-action: none; outline: none; border-radius: 50%; }
+.knob .dial:focus-visible { box-shadow: 0 0 0 2px var(--accent-soft); }
+.dial-track { fill: none; stroke: var(--grid-strong); stroke-width: 3; stroke-linecap: round; }
+.dial-value { fill: none; stroke: var(--accent); stroke-width: 3; stroke-linecap: round; }
+.dial-body { fill: var(--panel-2); stroke: var(--line); stroke-width: 1.2; }
+.dial-ptr { stroke: var(--ink); stroke-width: 2.2; stroke-linecap: round; }
+.knob .kname { font-weight: 700; font-size: 12px; }
+.knob .kval { font: 11px var(--mono); color: var(--muted); }
+.knob .toggle { width: 54px; height: 30px; margin: 14px 0 14px; border-radius: 15px; font-weight: 600; font-size: 12px; color: var(--muted); }
+.knob .toggle.on { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }

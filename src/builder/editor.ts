@@ -274,13 +274,15 @@ export class Editor {
     if (e.button === 1 || (e.button === 0 && this.spaceDown)) {
       e.preventDefault();
       this.drag = { kind: 'pan', sx: e.clientX, sy: e.clientY, vx: this.view.x, vy: this.view.y };
-      this.svg.setPointerCapture(e.pointerId);
+      try { this.svg.setPointerCapture(e.pointerId); } catch { /* pointer already gone */ }
       return;
     }
     if (e.button !== 0) return;
 
     if (this.mode === 'place' && this.placing) {
-      const part = makePart(this.doc, this.placing.kind, p[0], p[1], this.placing.rot, this.placing.mirror);
+      // Probes stick to the nearest pin or wire, so they land on a net.
+      const at = this.placing.kind === 'PROBE' ? this.wireTarget(p) : p;
+      const part = makePart(this.doc, this.placing.kind, at[0], at[1], this.placing.rot, this.placing.mirror);
       // Only one input and one output jack.
       if ((part.kind === 'IN' || part.kind === 'OUT') && this.doc.parts.some(q => q.kind === part.kind)) {
         const existing = this.doc.parts.find(q => q.kind === part.kind)!;
@@ -322,7 +324,7 @@ export class Editor {
       if (!e.shiftKey) { this.sel.clear(); this.on.select(this.sel); }
       this.drag = { kind: 'box', start: p, now: p, add: e.shiftKey };
     }
-    this.svg.setPointerCapture(e.pointerId);
+    try { this.svg.setPointerCapture(e.pointerId); } catch { /* pointer already gone */ }
     this.render();
   }
 
@@ -433,7 +435,8 @@ export class Editor {
       for (const part of this.doc.parts) for (const r of pinsOf(part)) over.push(`<circle class="pin-mark" cx="${r.at[0]}" cy="${r.at[1]}" r="3"/>`);
     }
     if (this.placing) {
-      const ghost = makePart(this.doc, this.placing.kind, this.cursor[0], this.cursor[1], this.placing.rot, this.placing.mirror);
+      const at = this.placing.kind === 'PROBE' ? this.wireTarget(this.cursor) : this.cursor;
+      const ghost = makePart(this.doc, this.placing.kind, at[0], at[1], this.placing.rot, this.placing.mirror);
       over.push(`<g class="schem ghost">${renderSchematicBody({ version: 1, parts: [ghost], wires: [] }).body}</g>`);
     }
     if (this.mode === 'wire') {

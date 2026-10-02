@@ -159,14 +159,40 @@
     <p class="hint b-hint" id="bHint"></p>
     <section class="card b-sim">
       <div class="plothead">
-        <h2>Response at the output jack</h2>
+        <h2>Response</h2>
+        <label title="Spread from component tolerances (set R and C tolerance in the header)"><input type="checkbox" id="bShowTol"> Tolerance</label>
+        <label><input type="checkbox" id="bShowPhase"> Phase</label>
         <label title="Keep the current dB range, so value changes don't rescale the plot"><input type="checkbox" id="bLockScale"> Fix scale</label>
       </div>
+      <div class="sweepbar">
+        <label>Sweep <select id="bSweep"></select></label>
+        <label>Steps <select id="bSweepSteps"><option>3</option><option selected>5</option><option>7</option><option>9</option></select></label>
+      </div>
       <canvas id="bSimCanvas"></canvas>
+      <canvas id="bSimPhase"></canvas>
+      <div class="legend" id="bLegend"></div>
+      <div class="b-term">
+        <div class="b-term-row">
+          <label>Source <select id="bSrc"></select></label>
+          <span class="tfields" id="bSrcFields">
+            <label>R <input type="text" id="bSrcR" spellcheck="false"><span class="unit">Ω</span></label>
+            <label>L <input type="text" id="bSrcL" spellcheck="false"><span class="unit">H</span></label>
+            <label>Cable C <input type="text" id="bSrcC" spellcheck="false"><span class="unit">F</span></label>
+          </span>
+        </div>
+        <div class="b-term-row">
+          <label>Load <select id="bLoad"></select></label>
+          <span class="tfields" id="bLoadFields">
+            <label>R <input type="text" id="bLoadR" spellcheck="false"><span class="unit">Ω</span></label>
+            <label>C <input type="text" id="bLoadC" spellcheck="false"><span class="unit">F</span></label>
+          </span>
+        </div>
+      </div>
       <p class="hint" id="bSimMsg"></p>
     </section>
   </div>
   <aside class="b-side">
+    <section class="card b-panel"><h2>Front panel</h2><div id="bKnobs"></div></section>
     <section class="card" id="bProps"></section>
     <section class="card"><h2>Checks</h2><div id="bErc"></div></section>
   </aside>

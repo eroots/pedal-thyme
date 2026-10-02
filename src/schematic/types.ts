@@ -4,7 +4,7 @@ import type { TaperKey } from '../core/pots';
 
 export type PartKind =
   | 'R' | 'C' | 'L' | 'POT' | 'RHEO' | 'D' | 'LED' | 'SW' | 'SPDT' | 'OA' | 'BUF'
-  | 'GND' | 'SUPPLY' | 'LABEL' | 'IN' | 'OUT';
+  | 'GND' | 'SUPPLY' | 'LABEL' | 'IN' | 'OUT' | 'PROBE';
 
 /** Rotation in degrees, clockwise on screen. */
 export type Rot = 0 | 90 | 180 | 270;

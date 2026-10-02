@@ -26,10 +26,19 @@ export type Element =
   | { type: 'SW'; name: string; a: Node; b: Node; closed: boolean }
   /** SPDT switch: `com` connects to `a` or `b`. */
   | { type: 'SPDT'; name: string; com: Node; a: Node; b: Node; pos: 'a' | 'b' }
-  /** Diode (anode a, cathode k). Treated as off (open) in small-signal AC analysis. */
-  | { type: 'D'; name: string; a: Node; k: Node; model: string };
+  /** Diode (anode a, cathode k). Nonlinear: linearised at its DC operating point for AC. */
+  | { type: 'D'; name: string; a: Node; k: Node; model: string }
+  /** Bipolar transistor (collector, base, emitter); polarity comes from the model. */
+  | { type: 'Q'; name: string; c: Node; b: Node; e: Node; model: string }
+  /** JFET (drain, gate, source); polarity comes from the model. */
+  | { type: 'J'; name: string; d: Node; g: Node; s: Node; model: string }
+  /** Voltage-controlled current source: gm·(V(cp) − V(cn)) flows from p through the element to n. */
+  | { type: 'G'; name: string; p: Node; n: Node; cp: Node; cn: Node; gm: number };
 
 export type ElementType = Element['type'];
+
+/** Elements whose behaviour depends on a DC operating point. */
+export const isNonlinear = (e: Element): boolean => e.type === 'D' || e.type === 'Q' || e.type === 'J';
 
 export interface Netlist {
   title?: string;
@@ -62,5 +71,8 @@ export function elementNodes(e: Element): Node[] {
     case 'POT': return [e.a, e.w, e.b];
     case 'SPDT': return [e.com, e.a, e.b];
     case 'D': return [e.a, e.k];
+    case 'Q': return [e.c, e.b, e.e];
+    case 'J': return [e.d, e.g, e.s];
+    case 'G': return [e.p, e.n, e.cp, e.cn];
   }
 }

@@ -30,6 +30,30 @@ describe('templates', () => {
     const { out } = simulate(extract(TEMPLATES.find(t => t.id === 'rat')!.build()), [], [1000]);
     expect(out.mag[0]).toBeGreaterThan(20);
   });
+  it('the LPB-1 booster biases near mid-supply and gains ~25 dB at the collector', () => {
+    const ex = extract(TEMPLATES.find(t => t.id === 'lpb1')!.build());
+    const { out, op } = simulate(ex, [], [100, 1000, 10000]);
+    expect(op!.ok).toBe(true);
+    const q = [...op!.devices.values()][0];
+    expect(q.type === 'Q' && q.region).toBe('active');
+    const vc = [...op!.devices.keys()][0];
+    if (vc.type !== 'Q') throw new Error('expected Q1');
+    expect(op!.v(vc.c)).toBeGreaterThan(3.5);
+    expect(op!.v(vc.c)).toBeLessThan(5.5);
+    const atC = simulate(ex, [{ ref: 'C', color: '', net: vc.c }], [1000]).probes[0].mag[0];
+    expect(atC).toBeGreaterThan(22);
+    expect(atC).toBeLessThan(29);
+    expect(out.mag[1]).toBeLessThan(atC); // the volume pot at 7/10 (A taper) takes some away
+  });
+  it('the Fuzz Face-style pedal converges with both transistors conducting and has big gain', () => {
+    const ex = extract(TEMPLATES.find(t => t.id === 'fuzz')!.build());
+    const { out, op } = simulate(ex, [], [1000]);
+    expect(op!.ok).toBe(true);
+    const qs = [...op!.devices.values()];
+    expect(qs).toHaveLength(2);
+    for (const q of qs) if (q.type === 'Q') expect(q.ic).toBeGreaterThan(50e-6);
+    expect(out.mag[0]).toBeGreaterThan(20);
+  });
 });
 
 describe('projects', () => {

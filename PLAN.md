@@ -14,7 +14,7 @@ pins and wires**, extracted into a netlist and solved by a single MNA (modified 
 | Topic | Decision |
 |---|---|
 | Tooling | Node + TypeScript + Vite. Dev server for work; the build outputs a single double-clickable HTML file. |
-| Transistors (BJT/JFET) | Later (Phase 4). Builder v1 covers passives, op-amps and diodes. |
+| Transistors (BJT/JFET) | Phase 4 (done): DC bias + small-signal linearisation. |
 | Playground → Builder | Parts only: "Open in Builder" pastes the circuit as editable parts (no collapsible blocks). |
 | Builder v1 extras | SPICE/LTspice `.cir` export, parts list (BOM) CSV export, real op-amp models (finite GBW). |
 | Time-domain / audio | Deferred to the end (Phase 5). The engine must not preclude it. |
@@ -71,7 +71,14 @@ Build in this order, so each step is usable on its own:
 7. Starter templates (op-amp and diode based): TS-style overdrive, RAT-style distortion, op-amp EQ pedal,
    Klon-style buffer/EQ sections.
 
-## Phase 4 — Transistors and DC bias
+## Phase 4 — Transistors and DC bias ✅ (2026-10-02)
+Done: `src/engine/semis.ts` (models + device equations), `dc.ts` (Newton–Raphson operating point with junction
+limiting, then gmin stepping, then source stepping), `linearize.ts` (diodes → r_d, BJTs → four VCCSs + Cje/Cjc,
+JFETs → g_m, r_ds, Cgs/Cgd; new `G` element in the MNA). The Builder biases and linearises automatically, so
+diodes now show their dynamic resistance instead of being open. NPN/PNP/N-JFET/P-JFET parts (Q, J hotkeys) with
+model selection and an operating-point readout; a "DC bias" overlay (B) tags every net with its voltage.
+SPICE export writes Q/J lines and `.model` cards. Templates: LPB-1-style booster, Fuzz Face-style fuzz.
+Not done: a Big Muff template; temperature effects; charge-storage (diffusion) capacitance.
 - Newton–Raphson DC operating point with diode (Shockley), BJT (Ebers–Moll) and JFET (square-law) models.
 - Small-signal AC around the bias point, with node voltages shown on the schematic.
 - Templates: Fuzz Face, Big Muff, LPB-1-style booster.

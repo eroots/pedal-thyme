@@ -2,19 +2,24 @@
 import { stepSeries } from '../core/eseries';
 import { TAPERS } from '../core/pots';
 import { fmtEng, parseEng } from '../core/units';
+import { dcOp, type DeviceOp, type OpPoint } from '../engine/dc';
 import { DIODE_MODELS, OPAMP_MODELS } from '../engine/models';
+import { BJT_MODELS, JFET_MODELS } from '../engine/semis';
 import { extract, type Extraction } from '../schematic/extract';
 import { PARTS } from '../schematic/library';
-import { renderSchematic } from '../schematic/render';
+import { onSegment, samePt, type Pt } from '../schematic/geometry';
+import { renderSchematic, renderSchematicBody } from '../schematic/render';
 import type { PartKind, SchPart, Schematic } from '../schematic/types';
 import { S } from '../playground/state';
-import { emptyDoc, updatePart } from './doc';
+import { emptyDoc, partBox, updatePart } from './doc';
 import { Editor, PART_KEYS, type DragMode, type Mode } from './editor';
 import { initFileBar } from './filebar';
 import { initFrontPanel } from './frontpanel';
 import { initSimPanel } from './simpanel';
-import { SWEEPABLE_KINDS } from './sim';
+import { SWEEPABLE_KINDS, biasOf } from './sim';
 
+/** Signed volts with two decimals (one above 10 V). */
+const fmtVolts = (x: number): string => `${Math.abs(x) < 0.005 ? "0.00" : Math.abs(x) < 10 ? x.toFixed(2) : x.toFixed(1)} V`;
 const LS_KEY = 'pedal-filter-lab.builder.v1';
 const $ = <T extends HTMLElement = HTMLInputElement>(sel: string): T => document.querySelector(sel) as T;
 const esc = (s: unknown): string =>
@@ -23,7 +28,8 @@ const esc = (s: unknown): string =>
 const PALETTE: { group: string; kinds: PartKind[] }[] = [
   { group: 'Passive', kinds: ['R', 'C', 'L'] },
   { group: 'Controls', kinds: ['POT', 'RHEO', 'SW', 'SPDT'] },
-  { group: 'Semiconductors', kinds: ['D', 'LED'] },
+  { group: 'Diodes', kinds: ['D', 'LED'] },
+  { group: 'Transistors', kinds: ['NPN', 'PNP', 'NJF', 'PJF'] },
   { group: 'Active', kinds: ['OA', 'BUF'] },
   { group: 'Connections', kinds: ['IN', 'OUT', 'GND', 'SUPPLY', 'LABEL'] },
   { group: 'Measure', kinds: ['PROBE'] },
@@ -42,13 +48,14 @@ export function initBuilder(): BuilderApi {
 
   const editor = new Editor(document.querySelector<SVGSVGElement>('#bCanvas')!, $('#bCanvasWrap'), saved.doc, {
     change: (doc, committed) => {
-      ex = extract(doc); renderErc(); sim.update(doc, ex, committed); panel.sync(doc);
+      ex = extract(doc); renderErc(); sim.update(doc, ex, committed); panel.sync(doc); renderBias();
       if (committed) { save(); renderProps(); }
       updateToolbar();
     },
     select: () => renderProps(),
     mode: (mode, kind) => renderModes(mode, kind),
     dragMode: m => renderDragMode(m),
+    bias: () => toggleBias(),
     edit: () => {
       renderProps();
       const inp = document.querySelector<HTMLInputElement>(`#bProps [data-field="value"]`) || document.querySelector<HTMLInputElement>(`#bProps [data-field="ref"]`);
@@ -99,6 +106,7 @@ export function initBuilder(): BuilderApi {
     bUndo: () => editor.undo(),
     bRedo: () => editor.redo(),
     bFit: () => editor.fit(),
+    bBias: () => toggleBias(),
   };
   for (const [id, fn] of Object.entries(actions)) $('#' + id).addEventListener('click', fn);
   function renderDragMode(m: DragMode): void {
@@ -120,6 +128,8 @@ export function initBuilder(): BuilderApi {
       el.innerHTML = `<h2>Properties</h2><p class="hint">Select a part to edit it, or pick one from the palette to place it.</p>
         <table class="keys"><tr><td>R C L D</td><td>Resistor, capacitor, inductor, diode</td></tr>
         <tr><td>G P O</td><td>Ground, pot, op-amp</td></tr>
+        <tr><td>Q J</td><td>NPN transistor, N-channel JFET</td></tr>
+        <tr><td>B</td><td>Show / hide DC bias voltages</td></tr>
         <tr><td>W</td><td>Wire tool</td></tr><tr><td>V / Esc</td><td>Select tool</td></tr>
         <tr><td>S / M</td><td>Drag stretches / moves (Alt flips)</td></tr>
         <tr><td>Ctrl+R / Ctrl+E</td><td>Rotate / mirror</td></tr><tr><td>Del</td><td>Delete selection, or delete mode</td></tr>
@@ -149,16 +159,117 @@ export function initBuilder(): BuilderApi {
       h += row('Sweepable', `<span class="chk"><input type="checkbox" data-field="sweep" ${p.props?.sweep ? 'checked' : ''}> <span class="hint">offer ${p.kind === 'POT' || p.kind === 'RHEO' ? 'its rotation and value' : 'its value'} in the Sweep menu</span></span>`);
     }
     if (p.kind === 'OA') h += row('Model', `<select data-field="model">${Object.entries(OPAMP_MODELS).map(([k, m]) => `<option value="${k}" ${p.props?.model === k ? 'selected' : ''}>${esc(m.label)}</option>`).join('')}</select>`);
-    if (p.kind === 'D' || p.kind === 'LED') h += row('Model', `<select data-field="model">${Object.entries(DIODE_MODELS).map(([k, m]) => `<option value="${k}" ${p.props?.model === k ? 'selected' : ''}>${esc(m.label)}</option>`).join('')}</select>`);
+    const modelSelect = (models: Record<string, { label: string; approx?: boolean }>, filter: (m: any) => boolean = () => true) =>
+      row('Model', `<select data-field="model">${Object.entries(models).filter(([, m]) => filter(m)).map(([k, m]) => `<option value="${k}" ${p.props?.model === k ? 'selected' : ''}>${esc(m.label)}${m.approx ? ' ≈' : ''}</option>`).join('')}</select>`);
+    if (p.kind === 'D' || p.kind === 'LED') h += modelSelect(DIODE_MODELS);
+    if (p.kind === 'NPN' || p.kind === 'PNP') h += modelSelect(BJT_MODELS, m => m.pol === p.kind.toLowerCase());
+    if (p.kind === 'NJF' || p.kind === 'PJF') h += modelSelect(JFET_MODELS, m => m.pol === (p.kind === 'NJF' ? 'n' : 'p'));
+    if (['D', 'LED', 'NPN', 'PNP', 'NJF', 'PJF'].includes(p.kind)) h += '<div data-bias></div>';
     if (p.kind === 'SW') h += row('State', `<select data-field="closed"><option value="1" ${p.props?.closed ? 'selected' : ''}>Closed</option><option value="0" ${!p.props?.closed ? 'selected' : ''}>Open</option></select>`);
     if (p.kind === 'SPDT') h += row('Position', `<select data-field="pos"><option value="a" ${p.props?.pos !== 'b' ? 'selected' : ''}>To A (upper)</option><option value="b" ${p.props?.pos === 'b' ? 'selected' : ''}>To B (lower)</option></select>`);
     if (p.kind === 'LABEL' || p.kind === 'SUPPLY') h += row('Net name', `<input type="text" data-field="name" value="${esc(p.props?.name || '')}" spellcheck="false">`);
     if (p.kind === 'SUPPLY') h += row('Voltage', `<span class="valrow"><input type="text" data-field="value" value="${esc(p.value ?? 9)}"><span class="unit">V</span></span>`);
-    if (p.kind === 'D' || p.kind === 'LED') h += '<p class="hint">Diodes count as off (open) in this small-signal analysis; their clipping isn\'t simulated yet.</p>';
+    if (['D', 'LED', 'NPN', 'PNP', 'NJF', 'PJF'].includes(p.kind)) h += '<p class="hint">Linearised at its DC operating point for the frequency response (small-signal: no clipping yet). ≈ marks approximate models.</p>';
     if (p.kind === 'SUPPLY') h += '<p class="hint">Supplies are AC ground in the frequency response.</p>';
     h += `<div class="btnrow"><button data-act="rotate" title="Ctrl+R">Rotate</button><button data-act="mirror" title="Ctrl+E">Mirror</button><button data-act="delete">Delete</button></div>`;
     el.innerHTML = h;
     el.dataset.id = p.id;
+    fillDeviceOp();
+  }
+
+  /* ---------- DC bias ---------- */
+  let showBias = (() => { try { return localStorage.getItem(LS_KEY + '.bias') === '1'; } catch { return false; } })();
+  function toggleBias(): void {
+    showBias = !showBias;
+    try { localStorage.setItem(LS_KEY + '.bias', showBias ? '1' : '0'); } catch { /* ignore */ }
+    renderBias();
+  }
+  const opOf = (): OpPoint | null => (ex.issues.some(i => i.severity === 'error') ? null : biasOf(ex));
+  /** Node voltages on the canvas: one tag per net, on a wire where it clears the labels and symbols. */
+  function renderBias(): void {
+    $('#bBias').classList.toggle('active', showBias);
+    fillDeviceOp();
+    if (!showBias || ex.issues.some(i => i.severity === 'error')) { editor.setAnnotations(''); return; }
+    // Linear circuits have no op from biasOf; solve them too so the overlay always works.
+    const pt = biasOf(ex) ?? dcOp(ex.netlist);
+    const rank = (k: PartKind) => (['NPN', 'PNP', 'NJF', 'PJF'].includes(k) ? 0 : k === 'D' || k === 'LED' ? 1 : k === 'OA' ? 2 : ['IN', 'OUT', 'GND', 'SUPPLY', 'LABEL', 'PROBE'].includes(k) ? 9 : 3);
+    type Box = [number, number, number, number];
+    const taken: Box[] = [...renderSchematicBody(editor.doc).textBoxes, ...editor.doc.parts.map(partBox)];
+    /** Area of overlap with labels, symbols and earlier tags. */
+    const overlap = (b: Box) => taken.reduce((sum, o) => sum + Math.max(0, Math.min(b[2], o[2]) - Math.max(b[0], o[0])) * Math.max(0, Math.min(b[3], o[3]) - Math.max(b[1], o[1])), 0);
+    const wireNet = wireNets();
+    const tags: string[] = [];
+    for (const [net, members] of ex.nets) {
+      // The input is tied to 0 V for the bias calculation, so its tag would say nothing.
+      if (net === '0' || net === ex.netlist.input || members.length < 2 || !pt.nodes.has(net)) continue;
+      const txt = fmtVolts(pt.v(net)), w = txt.length * 5.9 + 6, h = 12;
+      // Candidate spots along the net's wire segments, longest (and horizontal) first.
+      const segs: { a: Pt; b: Pt; sc: number }[] = [];
+      for (const wire of editor.doc.wires) {
+        if (wireNet.get(wire.id) !== net) continue;
+        for (let i = 1; i < wire.pts.length; i++) {
+          const a = wire.pts[i - 1], b = wire.pts[i], len = Math.hypot(b[0] - a[0], b[1] - a[1]);
+          if (len >= 20) segs.push({ a, b, sc: len * (a[1] === b[1] ? 1 : 0.6) });
+        }
+      }
+      segs.sort((p, q) => q.sc - p.sc);
+      const spots: Pt[] = [];
+      for (const { a, b } of segs) {
+        for (const t of [0.5, 0.25, 0.75]) {
+          const x = a[0] + (b[0] - a[0]) * t, y = a[1] + (b[1] - a[1]) * t;
+          if (a[1] === b[1]) spots.push([x - w / 2, y - h - 3], [x - w / 2, y + 3]);
+          else spots.push([x + 4, y - h / 2], [x - w - 4, y - h / 2]);
+        }
+      }
+      const m = [...members].sort((p, q) => rank(p.part.kind) - rank(q.part.kind))[0];
+      for (const [dx, dy] of [[3, -h - 3], [3, 3], [-w - 3, -h - 3], [-w - 3, 3]]) spots.push([m.at[0] + dx, m.at[1] + dy]);
+      let at = spots[0], least = Infinity;
+      for (const sp of spots) {
+        const o = overlap([sp[0], sp[1], sp[0] + w, sp[1] + h]);
+        if (o < least) { least = o; at = sp; }
+        if (o === 0) break;
+      }
+      taken.push([at[0], at[1], at[0] + w, at[1] + h]);
+      tags.push(`<g class="vbias${pt.ok ? '' : ' bad'}" transform="translate(${at[0].toFixed(1)} ${at[1].toFixed(1)})"><rect x="0" y="0" width="${w.toFixed(1)}" height="${h}" rx="3"/><text x="3" y="9">${txt}</text></g>`);
+    }
+    editor.setAnnotations(tags.join(''));
+  }
+  /** Net of each wire: from a pin it touches, or from a touching wire whose net is known. */
+  function wireNets(): Map<string, string> {
+    const out = new Map<string, string>();
+    const touches = (pts: Pt[], q: Pt) => pts.some((p, i) => samePt(p, q) || (i > 0 && onSegment(q, pts[i - 1], p)));
+    for (const [net, members] of ex.nets) for (const m of members)
+      for (const wire of editor.doc.wires) if (!out.has(wire.id) && touches(wire.pts, m.at)) out.set(wire.id, net);
+    for (let changed = true; changed;) {
+      changed = false;
+      for (const wire of editor.doc.wires) {
+        if (out.has(wire.id)) continue;
+        const ends = [wire.pts[0], wire.pts[wire.pts.length - 1]];
+        const other = editor.doc.wires.find(o => out.has(o.id) && (ends.some(e => touches(o.pts, e)) || touches(wire.pts, o.pts[0]) || touches(wire.pts, o.pts[o.pts.length - 1])));
+        if (other) { out.set(wire.id, out.get(other.id)!); changed = true; }
+      }
+    }
+    return out;
+  }
+  function fillDeviceOp(): void {
+    const box = document.querySelector<HTMLElement>('#bProps [data-bias]');
+    const p = current();
+    if (!box || !p) return;
+    const op = opOf();
+    const name = p.ref || p.id;
+    const entry = op && [...op.devices].find(([e]) => e.name === name);
+    if (!op || !entry) { box.innerHTML = '<p class="hint">No operating point (fix errors under Checks).</p>'; return; }
+    box.innerHTML = (op.ok ? '' : '<p class="warnc">DC bias did not converge: these values are unreliable.</p>') + opTable(entry[1]);
+  }
+  function opTable(d: DeviceOp): string {
+    const r = (k: string, v: string) => `<tr><td>${k}</td><td>${v}</td></tr>`;
+    const A = (x: number) => fmtEng(x, 'A'), Vv = fmtVolts;
+    let rows = '';
+    if (d.type === 'D') rows = r('V<sub>D</sub>', Vv(d.vd)) + r('I<sub>D</sub>', A(d.id)) + r('r<sub>d</sub>', d.gd > 1e-12 ? fmtEng(1 / d.gd, 'Ω') : 'open');
+    if (d.type === 'Q') rows = r('Region', d.region) + r('I<sub>C</sub>', A(d.ic)) + r('V<sub>CE</sub>', Vv(d.vce)) + r('V<sub>BE</sub>', Vv(d.vbe))
+      + r('β (I<sub>C</sub>/I<sub>B</sub>)', d.beta > 0 ? d.beta.toFixed(0) : '–') + r('g<sub>m</sub>', fmtEng(d.gm, 'S'));
+    if (d.type === 'J') rows = r('Region', d.region) + r('I<sub>D</sub>', A(d.id)) + r('V<sub>GS</sub>', Vv(d.vgs)) + r('V<sub>DS</sub>', Vv(d.vds)) + r('g<sub>m</sub>', fmtEng(d.gm, 'S'));
+    return `<table class="opdata">${rows}</table>`;
   }
 
   const propEl = $('#bProps');
@@ -237,6 +348,7 @@ export function initBuilder(): BuilderApi {
   renderErc();
   updateToolbar();
   sim.update(editor.doc, ex, true);
+  renderBias();
   panel.sync(editor.doc);
 
   return {

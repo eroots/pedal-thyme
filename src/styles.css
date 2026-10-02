@@ -111,6 +111,7 @@ main { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
 .schem .tiny { fill: var(--muted); font-size: 9px; }
 .schem .head { fill: var(--schem); stroke: var(--schem); stroke-width: 1; }
 .schem .contact { fill: var(--panel); stroke: var(--schem); stroke-width: 1.4; }
+.schem .qbody { fill: none; stroke: var(--schem); stroke-width: 1.2; opacity: .7; }
 .schem path { stroke: var(--schem); stroke-width: 1.6; fill: none; }
 .schem .comp.hl line, .schem .comp.hl polyline, .schem .comp.hl polygon, .schem .comp.hl path { stroke: var(--bad); }
 .schem .comp { cursor: pointer; }
@@ -269,6 +270,14 @@ nav.sections button.active { background: var(--accent); color: var(--accent-ink)
 #bCanvas .comp.sel .pn { fill: var(--accent); }
 #bCanvas .schem .wire.sel { stroke: var(--accent); stroke-width: 2.6; }
 #bCanvas .overlay { pointer-events: none; }
+#bCanvas .vbias rect { fill: var(--panel); stroke: var(--accent); stroke-width: .8; opacity: .92; }
+#bCanvas .vbias text { fill: var(--accent); font: 600 9.5px var(--mono); }
+#bCanvas .vbias.bad rect { stroke: var(--bad); }
+#bCanvas .vbias.bad text { fill: var(--bad); }
+.opdata { width: 100%; border-collapse: collapse; font-size: 12.5px; margin: 4px 0 8px; }
+.opdata td { padding: 2px 4px; border-bottom: 1px solid var(--line); }
+.opdata td:first-child { color: var(--muted); }
+.opdata td:last-child { font-family: var(--mono); text-align: right; }
 #bCanvas .ghost { opacity: .5; }
 #bCanvas .draft { stroke: var(--accent); stroke-width: 1.8; stroke-dasharray: 5 4; fill: none; }
 #bCanvas .cursor-mark { fill: none; stroke: var(--muted); stroke-width: 1.2; }

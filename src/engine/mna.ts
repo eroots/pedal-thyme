@@ -96,7 +96,13 @@ export class Circuit {
           }
           break;
         }
-        default: break; // V, E, SW, SPDT are voltage rows below; D is open in AC
+        case 'G': {
+          // gm·(V(cp) − V(cn)) leaves node p and enters node n.
+          const p = ix(e.p), n = ix(e.n), cp = ix(e.cp), cn = ix(e.cn);
+          put(this.G, p, cp, e.gm); put(this.G, p, cn, -e.gm); put(this.G, n, cp, -e.gm); put(this.G, n, cn, e.gm);
+          break;
+        }
+        default: break; // V, E, SW, SPDT are voltage rows below; D, Q, J are open unless linearised first
       }
     }
     // Signal source row: by default it drives the input node directly (solve() moves it behind zs).

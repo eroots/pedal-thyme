@@ -1,4 +1,5 @@
 // Builder simulation panel: output and probe curves, sweeps, tolerance band, phase, source/load.
+import type { OpPoint } from '../engine/dc';
 import { termActive, type Term } from '../core/termination';
 import { fmtEng, parseEng } from '../core/units';
 import type { Extraction } from '../schematic/extract';
@@ -143,8 +144,14 @@ export function initSimPanel(): SimPanel {
     msg.innerHTML = `Output: ${fmtDb(at(100))} @ 100 Hz · ${fmtDb(at(1000))} @ 1 kHz · ${fmtDb(at(5000))} @ 5 kHz.` +
       ` At 1 kHz: Zin ${zf(z.zin)}, Zout ${zf(z.zout)}.` +
       (t ? ' Includes the source and load (ideal shown dashed).' : ' Ideal source and no load.') +
-      (doc.parts.some(p => p.kind === 'D' || p.kind === 'LED') ? ' Diodes are treated as off (small-signal).' : '');
+      biasNote(res.op);
     draw();
+  }
+  /** Bias status: semiconductors are linearised at the DC operating point. */
+  function biasNote(op: OpPoint | null): string {
+    if (!op) return '';
+    if (!op.ok) return ' <b class="warnc">DC bias did not converge</b>: semiconductor results are unreliable (check the supply and bias network).';
+    return ' Semiconductors are linearised at their DC bias (small-signal: no clipping).';
   }
   const nearest = (f: number) => { let k = 0; for (let i = 1; i < freqs.length; i++) if (Math.abs(Math.log(freqs[i] / f)) < Math.abs(Math.log(freqs[k] / f))) k = i; return k; };
 

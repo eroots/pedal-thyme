@@ -158,6 +158,9 @@ export function extract(sch: Schematic): Extraction {
       case 'V': case 'E': link(e.p, e.n); link(e.p, GND); break;
       case 'OA': link(e.out, GND); break; // the output is driven
       case 'D': link(e.a, e.k); break;
+      case 'Q': link(e.b, e.e); link(e.b, e.c); break; // both junctions conduct (or leak)
+      case 'J': link(e.d, e.s); break; // the gate is a reverse-biased junction: it needs its own path
+      case 'G': link(e.p, e.n); break;
       default: break;
     }
   }

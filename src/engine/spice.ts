@@ -3,6 +3,7 @@ import { taper } from '../core/pots';
 import type { Term } from '../core/termination';
 import { clamp } from '../core/units';
 import { DIODE_MODELS, OPAMP_MODELS, opAmpModel } from './models';
+import { BJT_MODELS, JFET_MODELS } from './semis';
 import { GND, elementNodes, type Netlist, type Node } from './netlist';
 
 export interface SpiceOptions {
@@ -29,7 +30,7 @@ const ename = (letter: string, name: string) => (safe(name).toUpperCase().starts
 export function toSpice(nl: Netlist, opt: SpiceOptions = {}): string {
   const nodeName = (n: Node) => (n === GND ? '0' : safe(n));
   const lines: string[] = [];
-  const models = new Set<string>(), opamps = new Set<string>();
+  const models = new Set<string>(), opamps = new Set<string>(), qmodels = new Set<string>(), jmodels = new Set<string>();
   lines.push(`* ${opt.title || nl.title || 'Pedal Filter Lab circuit'}`);
   lines.push('* Exported from Pedal Filter Lab. Input node: ' + nodeName(nl.input) + ', output node: ' + nodeName(nl.output));
   for (const n of opt.notes || []) lines.push('* ' + n);
@@ -88,10 +89,19 @@ export function toSpice(nl: Netlist, opt: SpiceOptions = {}): string {
         models.add(e.model);
         lines.push(`${ename('D', e.name)} ${nn[0]} ${nn[1]} ${safe(e.model)}`);
         break;
+      case 'Q':
+        qmodels.add(e.model);
+        lines.push(`${ename('Q', e.name)} ${nn[0]} ${nn[1]} ${nn[2]} ${safe(e.model)}`);
+        break;
+      case 'J':
+        jmodels.add(e.model);
+        lines.push(`${ename('J', e.name)} ${nn[0]} ${nn[1]} ${nn[2]} ${safe(e.model)}`);
+        break;
+      case 'G': lines.push(`${ename('G', e.name)} ${nn[0]} ${nn[1]} ${nn[2]} ${nn[3]} ${spiceNum(e.gm)}`); break;
     }
   }
 
-  if (opamps.size || models.size) lines.push('');
+  if (opamps.size || models.size || qmodels.size || jmodels.size) lines.push('');
   for (const key of opamps) {
     const m = opAmpModel(key);
     lines.push(`* ${m.label}: single-pole macromodel (A0, GBW, Rin, Rout); no slew or swing limits`);
@@ -113,6 +123,14 @@ export function toSpice(nl: Netlist, opt: SpiceOptions = {}): string {
     const m = DIODE_MODELS[key];
     if (m) lines.push(`.model ${safe(key)} ${m.spice}${m.approx ? ' ; approximate' : ''}`);
     else lines.push(`* unknown diode model ${key}`);
+  }
+  for (const key of qmodels) {
+    const m = BJT_MODELS[key];
+    lines.push(m ? `.model ${safe(key)} ${m.spice}${m.approx ? ' ; approximate' : ''}` : `* unknown transistor model ${key}`);
+  }
+  for (const key of jmodels) {
+    const m = JFET_MODELS[key];
+    lines.push(m ? `.model ${safe(key)} ${m.spice}${m.approx ? ' ; approximate' : ''}` : `* unknown JFET model ${key}`);
   }
 
   lines.push('');

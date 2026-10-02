@@ -19,7 +19,7 @@ export type Mode = 'select' | 'wire' | 'place' | 'delete';
 export type DragMode = 'stretch' | 'move';
 
 /** Single-key shortcuts that start placing a part (as in LTspice). */
-export const PART_KEYS: Record<string, PartKind> = { r: 'R', c: 'C', l: 'L', d: 'D', g: 'GND', p: 'POT', o: 'OA' };
+export const PART_KEYS: Record<string, PartKind> = { r: 'R', c: 'C', l: 'L', d: 'D', g: 'GND', p: 'POT', o: 'OA', q: 'NPN', j: 'NJF' };
 
 export interface EditorEvents {
   /** The document changed (committed or live during a drag). */
@@ -30,6 +30,8 @@ export interface EditorEvents {
   dragMode(mode: DragMode): void;
   /** Double-click on a part: e.g. focus its value field. */
   edit(id: string): void;
+  /** B key: toggle the DC bias overlay. */
+  bias?(): void;
 }
 
 const HISTORY_MAX = 200;
@@ -408,6 +410,7 @@ export class Editor {
       case 's': case 'S': this.setDragMode('stretch'); break;
       case 'm': case 'M': this.setDragMode('move'); break;
       case 'f': case 'F': this.fit(); break;
+      case 'b': case 'B': this.on.bias?.(); break;
       case '+': case '=': this.zoomBy(1.2); break;
       case '-': this.zoomBy(1 / 1.2); break;
       case 'ArrowLeft': case 'ArrowRight': case 'ArrowUp': case 'ArrowDown': {
@@ -422,6 +425,14 @@ export class Editor {
   }
 
   /* ---------- Rendering ---------- */
+  /** Extra SVG drawn above the schematic (e.g. DC node voltages). */
+  private annotations = '';
+  setAnnotations(svg: string): void {
+    if (svg === this.annotations) return;
+    this.annotations = svg;
+    this.render();
+  }
+
   render(): void {
     const W = this.wrap.clientWidth || 800, H = this.wrap.clientHeight || 500;
     const { x, y, zoom } = this.view;
@@ -461,7 +472,7 @@ export class Editor {
       `<pattern id="bGridMajor" width="50" height="50" patternUnits="userSpaceOnUse"><circle cx="0" cy="0" r="1.4" class="griddot major"/></pattern></defs>` +
       `<rect x="${-big}" y="${-big}" width="${2 * big}" height="${2 * big}" fill="url(#bGrid)"/>` +
       `<rect x="${-big}" y="${-big}" width="${2 * big}" height="${2 * big}" fill="url(#bGridMajor)"/>` +
-      `<g class="schem">${body}</g><g class="overlay">${over.join('')}</g>`;
+      `<g class="schem">${body}</g><g class="overlay">${this.annotations}${over.join('')}</g>`;
   }
 }
 

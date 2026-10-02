@@ -1,5 +1,5 @@
 // Starter pedals for the Builder. Op-amp stages are biased from a 9 V → VREF divider like the real
-// circuits; clipping diodes are included (they're open in the small-signal analysis).
+// circuits. Diodes and transistors are biased at their DC operating point and linearised there.
 import { sch, type SchBuilder } from '../schematic/build';
 import type { Schematic } from '../schematic/types';
 import { emptyDoc } from './doc';
@@ -41,7 +41,7 @@ function tubeScreamer(): Schematic {
     .POT('VR3', 680, 70, 270, 100e3, 0.7, 'A', { mirror: true, ...sweepable }).GND(680, 100)
     .wire([710, 70], [760, 70]).OUT(760, 70);
   biasSupply(b, 40, 140, ['R6', 'R7', 'C6']);
-  b.note(300, 275, 'VR1 drive · VR2 tone · VR3 volume. D1/D2 clip large signals (off in this small-signal view).', 'start');
+  b.note(300, 275, 'VR1 drive · VR2 tone · VR3 volume. D1/D2 clip large signals (not modelled in this small-signal view).', 'start');
   return b.build();
 }
 
@@ -67,7 +67,49 @@ function rat(): Schematic {
     .POT('VR3', 740, 50, 270, 100e3, 0.7, 'A', { mirror: true, ...sweepable }).GND(740, 80)
     .wire([770, 50], [820, 50]).OUT(820, 50);
   biasSupply(b, 40, 260, ['R6', 'R7', 'C7']);
-  b.note(300, 300, 'VR1 distortion · VR2 filter · VR3 volume. D1/D2 clip to ground (off in this small-signal view).', 'start');
+  b.note(300, 300, 'VR1 distortion · VR2 filter · VR3 volume. D1/D2 clip to ground (not modelled in this small-signal view).', 'start');
+  return b.build();
+}
+
+const Q = (b: SchBuilder, kind: 'NPN' | 'PNP', ref: string, x: number, y: number, model: string, o: { label?: 'l' | 'r' | 't' | 'b'; mirror?: boolean } = {}) =>
+  b.part(kind, ref, x, y, 0, undefined, { ...o, props: { model } });
+
+/** LPB-1-style single-transistor booster: common emitter, divider bias, unbypassed emitter resistor. */
+function lpb1(): Schematic {
+  const b = sch();
+  b.IN(0, 0).wire([0, 0], [10, 0]).C('C1', 40, 0, 0, 100e-9).wire([70, 0], [120, 0]);
+  Q(b, 'NPN', 'Q1', 150, 0, '2N3904', { label: 'r' });
+  b.part('SUPPLY', undefined, 120, -90, 0, 9, { props: { name: '9V' } }).wire([120, -90], [160, -90])
+    .R('R1', 120, -60, 90, 430e3, { label: 'l' }).wire([120, -30], [120, 0])
+    .R('RC', 160, -60, 90, 10e3, { label: 'r' })
+    .R('R2', 120, 30, 90, 43e3, { label: 'l' }).GND(120, 60)
+    .R('RE', 160, 60, 90, 390, { label: 'r' }).GND(160, 90)
+    .wire([160, -30], [200, -30]).C('C2', 230, -30, 0, 100e-9).wire([260, -30], [300, -30])
+    .POT('VR1', 300, 0, 270, 100e3, 0.7, 'A', { mirror: true, props: { sweep: true } }).GND(300, 30)
+    .wire([330, 0], [370, 0]).OUT(370, 0);
+  b.note(40, 130, 'About 25 dB of clean boost. Turn on DC bias (B) to see the collector sit around 5 V.', 'start');
+  return b.build();
+}
+
+/** Fuzz Face-style two-transistor fuzz (silicon NPN), with the classic DC feedback from Q2's emitter. */
+function fuzzFace(): Schematic {
+  const b = sch();
+  b.IN(0, 0).wire([0, 0], [10, 0]).C('C1', 40, 0, 0, 2.2e-6).wire([70, 0], [120, 0]);
+  Q(b, 'NPN', 'Q1', 150, 0, '2N3904', { label: 'r' }).GND(160, 30);
+  Q(b, 'NPN', 'Q2', 230, -30, '2N3904', { label: 'r' });
+  b.part('SUPPLY', undefined, 160, -180, 0, 9, { props: { name: '9V' } }).wire([160, -180], [240, -180])
+    .R('R1', 160, -150, 90, 33e3, { label: 'l' }).wire([160, -120], [160, -30]).wire([160, -30], [200, -30])
+    .R('R3', 240, -150, 90, 8.2e3, { label: 'r' }).R('R2', 240, -90, 90, 470, { label: 'r' })
+    // Fuzz: 1k pot from Q2's emitter to ground, its wiper bypassed to ground.
+    .POT('VR1', 240, 30, 270, 1e3, 0.8, 'B', { mirror: true, props: { sweep: true } }).GND(240, 60)
+    .wire([270, 30], [290, 30]).C('C2', 290, 60, 90, 22e-6, { label: 'r' }).GND(290, 90)
+    // DC feedback: Q2 emitter to Q1 base.
+    .wire([120, 0], [120, 110]).R('R4', 150, 110, 0, 100e3).wire([180, 110], [220, 110], [220, 0], [240, 0])
+    // Output from the 470/8.2k junction through 10 nF to the volume pot.
+    .wire([240, -120], [280, -120]).C('C3', 310, -120, 0, 10e-9).wire([340, -120], [360, -120])
+    .POT('VR2', 360, -90, 270, 500e3, 0.7, 'A', { mirror: true, props: { sweep: true } }).GND(360, -60)
+    .wire([390, -90], [430, -90]).OUT(430, -90);
+  b.note(0, 160, 'VR1 fuzz · VR2 volume. Silicon NPN version; the bias sets the character, so watch Q2 with DC bias (B).', 'start');
   return b.build();
 }
 
@@ -75,4 +117,6 @@ export const TEMPLATES: Template[] = [
   { id: 'empty', name: 'Empty pedal', description: 'Just the input and output jacks.', build: emptyDoc },
   { id: 'ts', name: 'Tube Screamer-style overdrive', description: 'Buffer, op-amp clipping stage with drive pot, tone and volume.', build: tubeScreamer },
   { id: 'rat', name: 'RAT-style distortion', description: 'LM308 gain stage, hard clipping to ground, filter and volume.', build: rat },
+  { id: 'lpb1', name: 'LPB-1-style booster', description: 'One NPN common-emitter stage with divider bias: clean boost.', build: lpb1 },
+  { id: 'fuzz', name: 'Fuzz Face-style fuzz', description: 'Two silicon NPN transistors with DC feedback, fuzz and volume pots.', build: fuzzFace },
 ];

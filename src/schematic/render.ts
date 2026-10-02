@@ -47,20 +47,23 @@ export function renderSchematic(sch: Schematic, opt: RenderOptions = {}): string
   return `<svg viewBox="${vb.join(' ')}" class="schem" role="img" aria-label="${esc(opt.title || 'Schematic')}">${body}</svg>`;
 }
 
-/** The drawing's SVG content (without the outer <svg>) and its world-space bounds. */
-export function renderSchematicBody(sch: Schematic, opt: RenderOptions = {}): { body: string; bounds: Bounds } {
+/** The drawing's SVG content, its bounds and the (estimated) extent of every text label. */
+export function renderSchematicBody(sch: Schematic, opt: RenderOptions = {}): { body: string; bounds: Bounds; textBoxes: [number, number, number, number][] } {
   const out: string[] = [];
   const bounds = { x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity };
   const grow = ([x, y]: Pt, padX = 0, padY = 0) => {
     bounds.x0 = Math.min(bounds.x0, x - padX); bounds.x1 = Math.max(bounds.x1, x + padX);
     bounds.y0 = Math.min(bounds.y0, y - padY); bounds.y1 = Math.max(bounds.y1, y + padY);
   };
+  const textBoxes: [number, number, number, number][] = [];
   const text = (x: number, y: number, s: string, cls: string, anchor = 'middle') => {
     if (opt.bare && cls !== 'sign') return '';
     // Rough text extent for the viewBox (≈ 6.5 units per character at 11px).
     const w = s.length * 6.5;
     grow([anchor === 'start' ? x + w : anchor === 'end' ? x - w : x + w / 2, y - 10]);
     grow([anchor === 'start' ? x : anchor === 'end' ? x : x - w / 2, y + 3]);
+    const tx0 = anchor === 'start' ? x : anchor === 'end' ? x - w : x - w / 2;
+    textBoxes.push([tx0, y - 10, tx0 + w, y + 3]);
     return `<text class="${cls}" x="${x}" y="${y}" text-anchor="${anchor}">${esc(s)}</text>`;
   };
   const hl = new Set(opt.highlight || []), sel = opt.selected || new Set<string>();
@@ -146,5 +149,5 @@ export function renderSchematicBody(sch: Schematic, opt: RenderOptions = {}): { 
   for (const n of sch.notes || []) out.push(text(n.x, n.y, n.text, 'tiny', n.anchor || 'middle'));
 
   if (!isFinite(bounds.x0)) { bounds.x0 = 0; bounds.y0 = 0; bounds.x1 = 100; bounds.y1 = 60; }
-  return { body: out.join(''), bounds };
+  return { body: out.join(''), bounds, textBoxes };
 }

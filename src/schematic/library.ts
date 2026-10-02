@@ -3,6 +3,7 @@
 import { taper, type TaperKey } from '../core/pots';
 import { clamp, fmtEng } from '../core/units';
 import { OPAMP_MODELS, DIODE_MODELS } from '../engine/models';
+import { BJT_MODELS, JFET_MODELS } from '../engine/semis';
 import { GND, type Element, type Node } from '../engine/netlist';
 import type { Pt } from './geometry';
 import type { PartKind, SchPart } from './types';
@@ -55,6 +56,25 @@ export const labelLen = (p: SchPart): number => Math.max(20, Math.ceil(((p.props
 export const boxOf = (p: SchPart): [number, number, number, number] => PARTS[p.kind].boxOf?.(p) ?? PARTS[p.kind].box;
 const wiperFrac = (p: SchPart) => clamp(taper(p.props?.turn ?? 0.5, p.props?.taper ?? 'B'), 1e-4, 1 - 1e-4);
 const two = (p: SchPart) => p.value ?? 0;
+
+/* Transistors: control pin at (−30, 0); collector/drain at (10, −30), emitter/source at (10, 30). */
+const Q_PINS: PinSpec[] = [{ name: 'c', at: [10, -30] }, { name: 'b', at: [-30, 0] }, { name: 'e', at: [10, 30] }];
+const J_PINS: PinSpec[] = [{ name: 'd', at: [10, -30] }, { name: 'g', at: [-30, 0] }, { name: 's', at: [10, 30] }];
+const body = '<circle class="qbody" cx="2" cy="0" r="19"/>';
+function bjtDraw(pnp: boolean): string {
+  return body + line(-30, 0, -8, 0) + line(-8, -12, -8, 12, 'plate')
+    + line(-8, -6, 10, -18) + line(10, -18, 10, -30)
+    + (pnp ? arrow(4, 14, -6, 7.5) + line(4, 14, 10, 18) : line(-8, 6, 0, 11.3) + arrow(0, 11.3, 10, 18))
+    + line(10, 18, 10, 30);
+}
+function jfetDraw(p: boolean): string {
+  return body + line(-8, -14, -8, 14, 'plate')
+    + line(-8, -10, 10, -10) + line(10, -10, 10, -30)
+    + line(-8, 10, 10, 10) + line(10, 10, 10, 30)
+    + (p ? arrow(-8, 0, -22, 0) + line(-22, 0, -30, 0) : arrow(-30, 0, -9, 0));
+}
+const modelName = (models: Record<string, { label: string }>, p: SchPart, dflt: string) =>
+  (models[p.props?.model ?? dflt] ? (p.props?.model ?? dflt) : (p.props?.model ?? ''));
 
 /* ---------- Library ---------- */
 export const PARTS: Record<PartKind, PartSpec> = {
@@ -109,6 +129,30 @@ export const PARTS: Record<PartKind, PartSpec> = {
       + arrow(0, -9, 8, -17) + arrow(5, -6, 13, -14),
     valueText: () => 'LED',
     elements: (p, n) => [{ type: 'D', name: p.ref || p.id, a: n('a'), k: n('k'), model: p.props?.model ?? 'LED_RED' }],
+  },
+  NPN: {
+    label: 'NPN transistor', pins: Q_PINS, box: [-30, -30, 21, 30], avoid: [1, 0],
+    draw: () => bjtDraw(false),
+    valueText: p => modelName(BJT_MODELS, p, '2N3904'),
+    elements: (p, n) => [{ type: 'Q', name: p.ref || p.id, c: n('c'), b: n('b'), e: n('e'), model: p.props?.model ?? '2N3904' }],
+  },
+  PNP: {
+    label: 'PNP transistor', pins: Q_PINS, box: [-30, -30, 21, 30], avoid: [1, 0],
+    draw: () => bjtDraw(true),
+    valueText: p => modelName(BJT_MODELS, p, '2N3906'),
+    elements: (p, n) => [{ type: 'Q', name: p.ref || p.id, c: n('c'), b: n('b'), e: n('e'), model: p.props?.model ?? '2N3906' }],
+  },
+  NJF: {
+    label: 'N-channel JFET', pins: J_PINS, box: [-30, -30, 21, 30], avoid: [1, 0],
+    draw: () => jfetDraw(false),
+    valueText: p => modelName(JFET_MODELS, p, 'J201'),
+    elements: (p, n) => [{ type: 'J', name: p.ref || p.id, d: n('d'), g: n('g'), s: n('s'), model: p.props?.model ?? 'J201' }],
+  },
+  PJF: {
+    label: 'P-channel JFET', pins: J_PINS, box: [-30, -30, 21, 30], avoid: [1, 0],
+    draw: () => jfetDraw(true),
+    valueText: p => modelName(JFET_MODELS, p, '2N5460'),
+    elements: (p, n) => [{ type: 'J', name: p.ref || p.id, d: n('d'), g: n('g'), s: n('s'), model: p.props?.model ?? '2N5460' }],
   },
   SW: {
     label: 'Switch (SPST)', pins: TWO, box: [-30, -12, 30, 3],

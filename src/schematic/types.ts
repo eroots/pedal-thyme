@@ -3,7 +3,7 @@
 import type { TaperKey } from '../core/pots';
 
 export type PartKind =
-  | 'R' | 'C' | 'L' | 'POT' | 'RHEO' | 'D' | 'LED' | 'SW' | 'SPDT' | 'OA' | 'BUF'
+  | 'R' | 'C' | 'L' | 'POT' | 'RHEO' | 'D' | 'LED' | 'NPN' | 'PNP' | 'NJF' | 'PJF' | 'SW' | 'SPDT' | 'OA' | 'BUF'
   | 'GND' | 'SUPPLY' | 'LABEL' | 'IN' | 'OUT' | 'PROBE';
 
 /** Rotation in degrees, clockwise on screen. */
@@ -15,7 +15,7 @@ export interface PartProps {
   taper?: TaperKey;
   /** Pot rotation 0..1 (wiper travels from pin 1 to pin 3). */
   turn?: number;
-  /** Op-amp or diode model key. */
+  /** Op-amp, diode or transistor model key. */
   model?: string;
   /** SPST state. */
   closed?: boolean;

@@ -4,15 +4,27 @@ import { Cx } from '../core/complex';
 import { taper } from '../core/pots';
 import { termAt, type Term } from '../core/termination';
 import { TAU, db, fmtEng } from '../core/units';
-import { Circuit } from '../engine/mna';
-import type { Node } from '../engine/netlist';
+import type { OpPoint } from '../engine/dc';
+import { acModel, type AcModel } from '../engine/linearize';
+import type { Netlist, Node } from '../engine/netlist';
 import { extract, type Extraction } from '../schematic/extract';
 import { probeColor } from '../schematic/library';
 import type { SchPart, Schematic } from '../schematic/types';
 
 export interface Curve { mag: number[]; ph: number[] }
 export interface ProbeCurve extends Curve { ref: string; color: string; net: Node }
-export interface SimResult { out: Curve; probes: ProbeCurve[] }
+export interface SimResult { out: Curve; probes: ProbeCurve[]; op: OpPoint | null }
+
+/** Biased, linearised circuit for an extraction (cached per netlist object). */
+const models = new WeakMap<Netlist, AcModel>();
+export function modelOf(ex: Extraction): AcModel {
+  let m = models.get(ex.netlist);
+  if (!m) { m = acModel(ex.netlist); models.set(ex.netlist, m); }
+  return m;
+}
+
+/** DC operating point (null if the circuit has no semiconductors). */
+export const biasOf = (ex: Extraction): OpPoint | null => modelOf(ex).op;
 
 /** Probes in the document and the nets they sit on (unconnected probes are skipped). */
 export function probesOf(doc: Schematic, ex: Extraction): { ref: string; color: string; net: Node }[] {
@@ -29,7 +41,7 @@ export function probesOf(doc: Schematic, ex: Extraction): { ref: string; color: 
  * the termination's impedance (and cable capacitance); the load hangs on the output jack.
  */
 export function simulate(ex: Extraction, probes: { ref: string; color: string; net: Node }[], freqs: number[], term?: Term | null): SimResult {
-  const c = new Circuit(ex.netlist);
+  const { circuit: c, op } = modelOf(ex);
   const out: Curve = { mag: [], ph: [] };
   const pc: ProbeCurve[] = probes.map(p => ({ ...p, mag: [], ph: [] }));
   const push = (curve: Curve, h: Cx) => { curve.mag.push(db(h.abs())); curve.ph.push(h.arg() * 180 / Math.PI); };
@@ -39,12 +51,12 @@ export function simulate(ex: Extraction, probes: { ref: string; color: string; n
     push(out, sol.v(ex.netlist.output).mul(z.g));
     pc.forEach(p => push(p, sol.v(p.net).mul(z.g)));
   }
-  return { out, probes: pc };
+  return { out, probes: pc, op };
 }
 
 /** Input and output impedance at frequency f (Zin sees the load, Zout sees the source). */
 export function impedances(ex: Extraction, f: number, term?: Term | null): { zin: number; zout: number } {
-  const c = new Circuit(ex.netlist), s = new Cx(0, TAU * f), z = termAt(term, s);
+  const c = modelOf(ex).circuit, s = new Cx(0, TAU * f), z = termAt(term, s);
   return { zin: c.zin(s, z.zl).abs(), zout: c.zout(s, z.zs).abs() };
 }
 

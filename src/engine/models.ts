@@ -26,14 +26,15 @@ export const OPAMP_MODELS: Record<string, OpAmpModel> = {
   LM308: { label: 'LM308, 30 pF comp. (≈1 MHz)', a0: 300e3, gbw: 1e6, rin: 40e6, rout: 100, note: 'Approximate: GBW depends on the compensation cap.' },
 };
 
-export interface DiodeModel { label: string; spice: string; approx?: boolean }
+export interface DiodeModel { label: string; spice: string; is: number; n: number; approx?: boolean }
 
 /** SPICE .model parameters, used for netlist export (diodes are off in small-signal AC). */
 export const DIODE_MODELS: Record<string, DiodeModel> = {
-  '1N4148': { label: '1N4148 (silicon)', spice: 'D(Is=2.52n Rs=0.568 N=1.752 Cjo=4p M=0.4 tt=20n)' },
-  '1N914': { label: '1N914 (silicon)', spice: 'D(Is=2.52n Rs=0.568 N=1.752 Cjo=4p M=0.4 tt=20n)' },
-  '1N34A': { label: '1N34A (germanium)', spice: 'D(Is=2u Rs=7 N=1.3 Cjo=1p)', approx: true },
-  LED_RED: { label: 'Red LED', spice: 'D(Is=1e-19 N=1.6 Rs=4 Cjo=20p)', approx: true },
+  '1N4148': { label: '1N4148 (silicon)', is: 2.52e-9, n: 1.752, spice: 'D(Is=2.52n Rs=0.568 N=1.752 Cjo=4p M=0.4 tt=20n)' },
+  '1N914': { label: '1N914 (silicon)', is: 2.52e-9, n: 1.752, spice: 'D(Is=2.52n Rs=0.568 N=1.752 Cjo=4p M=0.4 tt=20n)' },
+  '1N34A': { label: '1N34A (germanium)', is: 2e-6, n: 1.3, spice: 'D(Is=2u Rs=7 N=1.3 Cjo=1p)', approx: true },
+  LED_RED: { label: 'Red LED', is: 1e-19, n: 1.6, spice: 'D(Is=1e-19 N=1.6 Rs=4 Cjo=20p)', approx: true },
 };
 
+export const diodeModel = (key: string): DiodeModel => DIODE_MODELS[key] || DIODE_MODELS['1N4148'];
 export const opAmpModel = (key: string): OpAmpModel => OPAMP_MODELS[key] || OPAMP_MODELS.ideal;

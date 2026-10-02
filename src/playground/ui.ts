@@ -12,7 +12,7 @@ import type { Topology } from '../topologies/types';
 import { cssVar, drawPlot, magRange, PLOT_MARGIN, type PlotMarker } from '../ui/plot';
 import { freqGrid, response, toleranceCorners, valuesValid } from './analysis';
 import { searchDesigns, snapAllValues, type DesignRow } from './design';
-import { buildSchematic } from './schematic';
+import { renderSchematic } from '../schematic/render';
 import {
   S, COMPARE_COLORS, SRC_PRESETS, LOAD_PRESETS, SWEEP_TAPERS, cloneTerm, cur, fRange, persist, seriesFor,
   sweepColor, sweepSteps, sweepTargets, topo, type CompareItem, type SavedDesign, type Settings, type SweepTaper,
@@ -237,7 +237,7 @@ function update(mode?: 'fast'): void {
   const v = p.values, o = p.opts, ok = valuesValid(t, v);
   const term = termActive(S.term) ? S.term : null;
 
-  $('#schematic').innerHTML = buildSchematic(t, v, o);
+  $('#schematic').innerHTML = renderSchematic(t.schematic(v, o), { title: `Schematic of ${t.name}` });
 
   const freqs = freqGrid(...fRange());
   const accent = cssVar('--accent');

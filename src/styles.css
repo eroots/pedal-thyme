@@ -110,6 +110,9 @@ main { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
 .schem .sign { font-size: 13px; font-weight: 600; }
 .schem .tiny { fill: var(--muted); font-size: 9px; }
 .schem .head { fill: var(--schem); stroke: var(--schem); stroke-width: 1; }
+.schem .contact { fill: var(--panel); stroke: var(--schem); stroke-width: 1.4; }
+.schem path { stroke: var(--schem); stroke-width: 1.6; fill: none; }
+.schem .comp.hl line, .schem .comp.hl polyline, .schem .comp.hl polygon, .schem .comp.hl path { stroke: var(--bad); }
 .schem .comp { cursor: pointer; }
 .schem .comp:hover line, .schem .comp:hover polyline { stroke: var(--accent); }
 .schem .comp:hover .pn { fill: var(--accent); }

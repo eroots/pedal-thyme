@@ -42,7 +42,10 @@ the engine but not yet used by any Playground topology. Still to do: an LTspice 
   tests (they must match to ~1e-6 dB).
 - SPICE `.cir` export from the Playground.
 
-## Phase 2 — Shared schematic format and renderer
+## Phase 2 — Shared schematic format and renderer ✅ (2026-10-02)
+Done: `src/schematic/` (format, part library, renderer, extraction + ERC, builder DSL). All 17 Playground
+topologies are re-drawn on a 10-unit grid; their netlists are extracted from the drawings (verified against the
+legacy oracles) and every drawing passes ERC.
 - JSON schematic: parts (type, value, position, rotation, mirror), wires (polylines), junctions,
   net labels (`9V`, `VREF`, `GND`, custom).
 - SVG renderer with proper symbols, used by both sections. Playground schematics are re-authored in this format.

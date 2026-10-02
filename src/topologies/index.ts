@@ -1,18 +1,16 @@
-// The Playground's circuit catalogue. Each topology defines its parts, its circuit as a netlist,
-// measurements, design-from-targets solver and schematic. H(s) comes from the shared MNA engine.
+// The Playground's circuit catalogue. Each topology defines its parts, its schematic (the single
+// source of truth for the circuit), measurements and design-from-targets solver. The netlist is
+// extracted from the schematic and H(s) comes from the shared MNA engine.
 import { snap, snapUp } from '../core/eseries';
 import { bell, edges } from '../core/measure';
-import { taper } from '../core/pots';
 import type { Opts, Values } from '../core/types';
 import { TAU, db, undb } from '../core/units';
 import { compiledFactory } from '../engine/mna';
 import { OPAMP_MODELS } from '../engine/models';
-import { BUF, C, GND, OA, POT, R, RHEO, type Element, type Netlist } from '../engine/netlist';
+import { sch } from '../schematic/build';
+import { extract } from '../schematic/extract';
 import { M, P, T, num, toneStackMetrics } from './helpers';
 import type { OptionDef, Topology, TopologyDef } from './types';
-
-const nl = (...elements: (Element | false | null | undefined)[]): Netlist =>
-  ({ elements: elements.filter((e): e is Element => !!e), input: 'in', output: 'out' });
 
 /** Op-amp model choice offered by every active topology. */
 const OPAMP_OPT: OptionDef = {
@@ -26,42 +24,34 @@ const DEFS: TopologyDef[] = [
     id: 'rc-lp', group: 'Passive · 1st order', name: 'RC low-pass',
     blurb: 'Series resistor into a cap to ground: the basic treble roll-off (−6 dB/oct above fc). Tone caps, post-clipping fizz filters and input RF suppression are all this circuit.',
     parts: [P('R', 'R', 10e3), P('C', 'C', 10e-9)],
-    netlist: v => nl(R('R', 'in', 'out', v.R), C('C', 'out', GND, v.C)),
+    schematic: v => sch().IN(0, 0).wire([0, 0], [10, 0]).R('R', 40, 0, 0, v.R).wire([70, 0], [160, 0])
+      .C('C', 100, 30, 90, v.C).GND(100, 60).OUT(160, 0).build(),
     analyze: v => [M('fc', 'Cutoff (−3 dB)', 1 / (TAU * v.R * v.C), 'Hz')],
     targets: [T('fc', 'Cutoff frequency', 'freq', 3000)],
     anchor: 'C',
     design: (t, a) => ({ C: a, R: 1 / (TAU * t.fc * a) }),
-    vb: '0 0 310 140',
-    sch: d => {
-      d.R('R', 22, 50, 150, 50); d.w([150, 50], [270, 50]); d.dot(150, 50);
-      d.C('C', 150, 50, 150, 105); d.gnd(150, 105);
-      d.term(22, 50, 'IN'); d.term(270, 50, 'OUT', 'r');
-    },
   },
   {
     id: 'rc-hp', group: 'Passive · 1st order', name: 'RC high-pass',
     blurb: 'Series cap into a resistor to ground (+6 dB/oct below fc). Every coupling cap plus the next stage’s input resistance forms one; a small coupling cap before a gain stage is the classic way to tighten bass.',
     parts: [P('C', 'C', 47e-9), P('R', 'R', 100e3)],
-    netlist: v => nl(C('C', 'in', 'out', v.C), R('R', 'out', GND, v.R)),
+    schematic: v => sch().IN(0, 0).wire([0, 0], [10, 0]).C('C', 40, 0, 0, v.C).wire([70, 0], [160, 0])
+      .R('R', 100, 30, 90, v.R).GND(100, 60).OUT(160, 0).build(),
     analyze: v => [M('fc', 'Cutoff (−3 dB)', 1 / (TAU * v.R * v.C), 'Hz')],
     targets: [T('fc', 'Cutoff frequency', 'freq', 100)],
     anchor: 'C',
     design: (t, a) => ({ C: a, R: 1 / (TAU * t.fc * a) }),
-    vb: '0 0 310 140',
-    sch: d => {
-      d.C('C', 22, 50, 150, 50); d.w([150, 50], [270, 50]); d.dot(150, 50);
-      d.R('R', 150, 50, 150, 105); d.gnd(150, 105);
-      d.term(22, 50, 'IN'); d.term(270, 50, 'OUT', 'r');
-    },
   },
   {
     id: 'rc2-lp', group: 'Passive · cascaded', name: '2-stage RC low-pass',
     blurb: 'Two RC low-passes in series for −12 dB/oct. Unbuffered, stage 2 loads stage 1 and softens the knee; scaling stage 2’s impedance up by the ratio k reduces that interaction. Toggle the buffer to compare.',
     parts: [P('R1', 'R', 10e3), P('C1', 'C', 6.8e-9), P('R2', 'R', 100e3), P('C2', 'C', 680e-12)],
     options: [{ key: 'buf', label: 'Buffer between stages', def: false }],
-    netlist: (v, o) => nl(
-      R('R1', 'in', 'a', v.R1), C('C1', 'a', GND, v.C1), !!o.buf && BUF('B1', 'a', 'b'),
-      R('R2', o.buf ? 'b' : 'a', 'out', v.R2), C('C2', 'out', GND, v.C2)),
+    schematic: (v, o) => {
+      const b = sch().IN(0, 0).wire([0, 0], [10, 0]).R('R1', 40, 0, 0, v.R1).C('C1', 100, 30, 90, v.C1).GND(100, 60);
+      if (o.buf) b.wire([70, 0], [130, 0]).part('BUF', undefined, 150, 0); else b.wire([70, 0], [170, 0]);
+      return b.R('R2', 200, 0, 0, v.R2).wire([230, 0], [320, 0]).C('C2', 260, 30, 90, v.C2).GND(260, 60).OUT(320, 0).build();
+    },
     analyze: (v, o, t) => [
       M('fc', 'Cutoff (−3 dB)', edges(t, v, o).fHi, 'Hz'),
       M('f1', 'Stage 1 corner (R1·C1)', 1 / (TAU * v.R1 * v.C1), 'Hz', { noMark: true }),
@@ -79,24 +69,17 @@ const DEFS: TopologyDef[] = [
       }
       return v;
     },
-    vb: '0 0 410 140',
-    sch: (d, o) => {
-      d.R('R1', 22, 50, 140, 50); d.dot(140, 50); d.C('C1', 140, 50, 140, 105); d.gnd(140, 105);
-      let x0 = 140;
-      if (num(o, 'buf')) { d.w([140, 50], [168, 50]); d.buf(168, 50); x0 = 190; }
-      d.R('R2', x0, 50, 290, 50); d.dot(290, 50); d.C('C2', 290, 50, 290, 105); d.gnd(290, 105);
-      d.w([290, 50], [370, 50]);
-      d.term(22, 50, 'IN'); d.term(370, 50, 'OUT', 'r');
-    },
   },
   {
     id: 'rc2-hp', group: 'Passive · cascaded', name: '2-stage RC high-pass',
     blurb: 'Two CR high-passes in series for +12 dB/oct below the cutoff: a steeper bass cut than a single coupling cap. Same loading caveat as the 2-stage low-pass.',
     parts: [P('C1', 'C', 100e-9), P('R1', 'R', 10e3), P('C2', 'C', 10e-9), P('R2', 'R', 100e3)],
     options: [{ key: 'buf', label: 'Buffer between stages', def: false }],
-    netlist: (v, o) => nl(
-      C('C1', 'in', 'a', v.C1), R('R1', 'a', GND, v.R1), !!o.buf && BUF('B1', 'a', 'b'),
-      C('C2', o.buf ? 'b' : 'a', 'out', v.C2), R('R2', 'out', GND, v.R2)),
+    schematic: (v, o) => {
+      const b = sch().IN(0, 0).wire([0, 0], [10, 0]).C('C1', 40, 0, 0, v.C1).R('R1', 100, 30, 90, v.R1).GND(100, 60);
+      if (o.buf) b.wire([70, 0], [130, 0]).part('BUF', undefined, 150, 0); else b.wire([70, 0], [170, 0]);
+      return b.C('C2', 200, 0, 0, v.C2).wire([230, 0], [320, 0]).R('R2', 260, 30, 90, v.R2).GND(260, 60).OUT(320, 0).build();
+    },
     analyze: (v, o, t) => [
       M('fc', 'Cutoff (−3 dB)', edges(t, v, o).fLo, 'Hz'),
       M('f1', 'Stage 1 corner (R1·C1)', 1 / (TAU * v.R1 * v.C1), 'Hz', { noMark: true }),
@@ -114,24 +97,17 @@ const DEFS: TopologyDef[] = [
       }
       return v;
     },
-    vb: '0 0 410 140',
-    sch: (d, o) => {
-      d.C('C1', 22, 50, 140, 50); d.dot(140, 50); d.R('R1', 140, 50, 140, 105); d.gnd(140, 105);
-      let x0 = 140;
-      if (num(o, 'buf')) { d.w([140, 50], [168, 50]); d.buf(168, 50); x0 = 190; }
-      d.C('C2', x0, 50, 290, 50); d.dot(290, 50); d.R('R2', 290, 50, 290, 105); d.gnd(290, 105);
-      d.w([290, 50], [370, 50]);
-      d.term(22, 50, 'IN'); d.term(370, 50, 'OUT', 'r');
-    },
   },
   {
     id: 'bp', group: 'Passive · cascaded', name: 'RC band-pass (HP → LP)',
     blurb: 'A high-pass followed by a low-pass: the simplest way to band-limit a signal, e.g. to voice what hits a clipping stage. Close corners interact and lose level when unbuffered; the design search compensates for loading.',
     parts: [P('C1', 'C', 100e-9), P('R1', 'R', 10e3), P('R2', 'R', 100e3), P('C2', 'C', 470e-12)],
     options: [{ key: 'buf', label: 'Buffer between stages', def: false }],
-    netlist: (v, o) => nl(
-      C('C1', 'in', 'a', v.C1), R('R1', 'a', GND, v.R1), !!o.buf && BUF('B1', 'a', 'b'),
-      R('R2', o.buf ? 'b' : 'a', 'out', v.R2), C('C2', 'out', GND, v.C2)),
+    schematic: (v, o) => {
+      const b = sch().IN(0, 0).wire([0, 0], [10, 0]).C('C1', 40, 0, 0, v.C1).R('R1', 100, 30, 90, v.R1).GND(100, 60);
+      if (o.buf) b.wire([70, 0], [130, 0]).part('BUF', undefined, 150, 0); else b.wire([70, 0], [170, 0]);
+      return b.R('R2', 200, 0, 0, v.R2).wire([230, 0], [320, 0]).C('C2', 260, 30, 90, v.C2).GND(260, 60).OUT(320, 0).build();
+    },
     analyze: (v, o, t) => {
       const e = edges(t, v, o);
       return [
@@ -154,21 +130,13 @@ const DEFS: TopologyDef[] = [
       }
       return v;
     },
-    vb: '0 0 410 140',
-    sch: (d, o) => {
-      d.C('C1', 22, 50, 140, 50); d.dot(140, 50); d.R('R1', 140, 50, 140, 105); d.gnd(140, 105);
-      let x0 = 140;
-      if (num(o, 'buf')) { d.w([140, 50], [168, 50]); d.buf(168, 50); x0 = 190; }
-      d.R('R2', x0, 50, 290, 50); d.dot(290, 50); d.C('C2', 290, 50, 290, 105); d.gnd(290, 105);
-      d.w([290, 50], [370, 50]);
-      d.term(22, 50, 'IN'); d.term(370, 50, 'OUT', 'r');
-    },
   },
   {
     id: 'shelf-tc', group: 'Shelving', name: 'Passive treble-cut shelf',
     blurb: 'Highs are attenuated by a fixed amount instead of rolling off forever: R2 in series with the cap sets the shelf floor. Used for de-emphasis and gentle “darken” switches.',
     parts: [P('R1', 'R', 10e3), P('R2', 'R', 3.3e3), P('C', 'C', 22e-9)],
-    netlist: v => nl(R('R1', 'in', 'out', v.R1), R('R2', 'out', 'm', v.R2), C('C', 'm', GND, v.C)),
+    schematic: v => sch().IN(0, 0).wire([0, 0], [10, 0]).R('R1', 40, 0, 0, v.R1).wire([70, 0], [160, 0])
+      .R('R2', 100, 30, 90, v.R2).C('C', 100, 90, 90, v.C).GND(100, 120).OUT(160, 0).build(),
     analyze: v => {
       const fp = 1 / (TAU * (v.R1 + v.R2) * v.C), fz = 1 / (TAU * v.R2 * v.C);
       return [
@@ -185,18 +153,14 @@ const DEFS: TopologyDef[] = [
       const g = undb(t.depth), R2 = g * a / (1 - g), fp = t.fmid * Math.sqrt(g);
       return { R1: a, R2, C: 1 / (TAU * (a + R2) * fp) };
     },
-    vb: '0 0 310 190',
-    sch: d => {
-      d.R('R1', 22, 50, 150, 50); d.dot(150, 50); d.w([150, 50], [270, 50]);
-      d.R('R2', 150, 50, 150, 108); d.C('C', 150, 108, 150, 160); d.gnd(150, 160);
-      d.term(22, 50, 'IN'); d.term(270, 50, 'OUT', 'r');
-    },
   },
   {
     id: 'shelf-bc', group: 'Shelving', name: 'Passive bass-cut shelf',
     blurb: 'A cap bypasses the series resistor at high frequencies, so lows are reduced by a fixed amount rather than removed. A common “bright” switch or pre-gain bass trim network.',
     parts: [P('R1', 'R', 22e3), P('C', 'C', 10e-9), P('R2', 'R', 10e3)],
-    netlist: v => nl(R('R1', 'in', 'out', v.R1), C('C', 'in', 'out', v.C), R('R2', 'out', GND, v.R2)),
+    schematic: v => sch().IN(0, 40).wire([0, 40], [20, 40]).R('R1', 50, 40, 0, v.R1, { label: 'b' }).C('C', 50, 0, 0, v.C)
+      .wire([20, 0], [20, 40]).wire([80, 0], [80, 40]).wire([80, 40], [180, 40])
+      .R('R2', 130, 70, 90, v.R2).GND(130, 100).OUT(180, 40).build(),
     analyze: v => {
       const fz = 1 / (TAU * v.R1 * v.C), fp = 1 / (TAU * (v.R1 * v.R2 / (v.R1 + v.R2)) * v.C);
       return [
@@ -213,14 +177,6 @@ const DEFS: TopologyDef[] = [
       const g = undb(t.depth), R1 = a * (1 - g) / g, fz = t.fmid * Math.sqrt(g);
       return { R1, R2: a, C: 1 / (TAU * R1 * fz) };
     },
-    vb: '0 0 310 170',
-    sch: d => {
-      d.w([22, 85], [60, 85]); d.dot(60, 85); d.R('R1', 60, 85, 170, 85);
-      d.w([60, 85], [60, 40]); d.C('C', 60, 40, 170, 40); d.w([170, 40], [170, 85]);
-      d.dot(170, 85); d.w([170, 85], [270, 85]); d.dot(215, 85);
-      d.R('R2', 215, 85, 215, 140); d.gnd(215, 140);
-      d.term(22, 85, 'IN'); d.term(270, 85, 'OUT', 'r');
-    },
   },
   {
     id: 'opamp-shelf', group: 'Shelving', name: 'Op-amp gain shelf (TS-style)',
@@ -231,9 +187,11 @@ const DEFS: TopologyDef[] = [
       { name: 'TS808 — drive at maximum (Rf = 51k + 500k)', values: { Rg: 4.7e3, Cg: 47e-9, Rf: 551e3, Cf: 51e-12 } },
     ],
     options: [OPAMP_OPT],
-    netlist: (v, o) => nl(
-      OA('U1', 'in', 'n', 'out', opamp(o)), R('Rf', 'n', 'out', v.Rf), v.Cf > 0 && C('Cf', 'n', 'out', v.Cf),
-      R('Rg', 'n', 'g', v.Rg), C('Cg', 'g', GND, v.Cg)),
+    schematic: (v, o) => sch().IN(0, -20).wire([0, -20], [80, -20]).OA('U1', 120, 0, opamp(o), { mirror: true })
+      .wire([80, 20], [60, 20], [60, 70], [80, 70]).R('Rf', 110, 70, 0, v.Rf).wire([140, 70], [180, 70], [180, 0])
+      .wire([160, 0], [220, 0]).wire([60, 70], [60, 110], [80, 110]).C('Cf', 110, 110, 0, v.Cf, { label: 'b' })
+      .wire([140, 110], [180, 110], [180, 70]).R('Rg', 30, 70, 0, v.Rg).C('Cg', 0, 100, 90, v.Cg, { label: 'l' })
+      .GND(0, 130).OUT(220, 0).build(),
     analyze: (v, o, t) => [
       M('gain', 'Mid-band gain (1 + Rf/Rg)', db(1 + v.Rf / v.Rg), 'dB'),
       M('peak', 'Actual peak gain', edges(t, v, o).peakDb, 'dB'),
@@ -247,15 +205,6 @@ const DEFS: TopologyDef[] = [
       const G = undb(t.gain), Rf = a * (G - 1);
       return { Rg: a, Rf, Cg: 1 / (TAU * a * t.fL), Cf: 1 / (TAU * Rf * t.fH) };
     },
-    vb: '0 0 400 262',
-    sch: d => {
-      d.w([22, 104], [170, 104]); d.amp(170, 120, true);
-      d.w([170, 136], [145, 136], [145, 175]); d.dot(145, 175);
-      d.R('Rf', 145, 175, 265, 175); d.w([145, 175], [145, 212]); d.C('Cf', 145, 212, 265, 212, 'b');
-      d.w([265, 212], [265, 120]); d.dot(265, 175); d.dot(265, 120); d.w([234, 120], [360, 120]);
-      d.R('Rg', 145, 175, 65, 175); d.C('Cg', 65, 175, 65, 222, 'l'); d.gnd(65, 222);
-      d.term(22, 104, 'IN'); d.term(360, 120, 'OUT', 'r');
-    },
   },
   {
     id: 'scoop-bm', group: 'Scoop (band-reject)', name: 'LP + HP blend scoop (Big Muff-style)',
@@ -265,9 +214,12 @@ const DEFS: TopologyDef[] = [
       { name: 'Typical Big Muff tone (22k/10n LP, 3.9n/22k HP, 100k)', values: { R1: 22e3, C1: 10e-9, C2: 3.9e-9, R2: 22e3, VR: 100e3 } },
     ],
     options: [{ key: 'blend', label: 'Tone (bass ← → treble)', type: 'range', min: 0, max: 100, step: 1, def: 50, fmt: x => `${x}%` }],
-    netlist: (v, o) => nl(
-      R('R1', 'in', 'a', v.R1), C('C1', 'a', GND, v.C1), C('C2', 'in', 'b', v.C2), R('R2', 'b', GND, v.R2),
-      POT('VR', 'a', 'out', 'b', v.VR, num(o, 'blend') / 100, 'B')),
+    schematic: (v, o) => sch().IN(0, 0).wire([0, 0], [20, 0]).R('R1', 50, 0, 0, v.R1).wire([80, 0], [160, 0], [160, 20])
+      .C('C1', 100, 30, 90, v.C1, { label: 'l' }).GND(100, 60)
+      .wire([20, 0], [20, 100]).C('C2', 50, 100, 0, v.C2).wire([80, 100], [160, 100], [160, 80])
+      .R('R2', 100, 130, 90, v.R2).GND(100, 160)
+      .POT('VR', 160, 50, 90, v.VR, num(o, 'blend') / 100, 'B').wire([190, 50], [240, 50]).OUT(240, 50)
+      .note(168, 16, 'bass', 'start').note(168, 92, 'treble', 'start').build(),
     analyze: (v, o, t) => {
       const b = bell(t, v, o), dip = b.isDip && b.f0;
       return [
@@ -294,24 +246,14 @@ const DEFS: TopologyDef[] = [
       if (b.f0) { const k = b.f0 / t.fc; v.C1 *= k; v.C2 *= k; } // caps scale the whole response in frequency
       return v;
     },
-    vb: '0 0 400 225',
-    sch: (d, o) => {
-      d.w([22, 60], [60, 60]); d.dot(60, 60);
-      d.R('R1', 60, 60, 170, 60); d.dot(170, 60); d.C('C1', 170, 60, 170, 115, 'r'); d.gnd(170, 115);
-      d.w([60, 60], [60, 150]); d.C('C2', 60, 150, 170, 150); d.dot(170, 150); d.R('R2', 170, 150, 170, 200, 'r'); d.gnd(170, 200);
-      d.w([170, 60], [270, 60]); d.w([170, 150], [270, 150]);
-      d.R('VR', 270, 60, 270, 150, 'l');
-      const y = 89 + 32 * num(o, 'blend') / 100;
-      d.arrow(320, y, 279, y); d.w([320, y], [360, y]);
-      d.note(282, 80, 'bass', 'start'); d.note(282, 140, 'treble', 'start');
-      d.term(22, 60, 'IN'); d.term(360, y, 'OUT', 'r');
-    },
   },
   {
     id: 'scoop-bt', group: 'Scoop (band-reject)', name: 'Bridged-T scoop',
     blurb: 'A classic passive mid scoop with no pot loading issues: two caps in series with R1 to ground, bridged by R2. The R2/R1 ratio sets the depth, and the width follows from it (deeper = narrower). Both ends sit at 0 dB, so it removes mids without changing overall level.',
     parts: [P('C1', 'C', 10e-9), P('C2', 'C', 10e-9), P('R1', 'R', 4.7e3), P('R2', 'R', 47e3)],
-    netlist: v => nl(C('C1', 'in', 'm', v.C1), C('C2', 'm', 'out', v.C2), R('R1', 'm', GND, v.R1), R('R2', 'in', 'out', v.R2)),
+    schematic: v => sch().IN(0, 50).wire([0, 50], [20, 50]).C('C1', 50, 50, 0, v.C1).C('C2', 110, 50, 0, v.C2)
+      .wire([140, 50], [180, 50]).R('R1', 80, 80, 90, v.R1).GND(80, 110)
+      .wire([20, 50], [20, 0], [50, 0]).R('R2', 80, 0, 0, v.R2).wire([110, 0], [140, 0], [140, 50]).OUT(180, 50).build(),
     analyze: (v, o, t) => {
       const b = bell(t, v, o), dip = b.isDip && b.f0;
       return [
@@ -328,27 +270,28 @@ const DEFS: TopologyDef[] = [
       const R1 = Math.sqrt(g / (2 * (1 - g))) / (w * a);
       return { C1: a, C2: a, R1, R2: 2 * R1 * (1 - g) / g };
     },
-    vb: '0 0 330 175',
-    sch: d => {
-      d.w([22, 90], [60, 90]); d.dot(60, 90);
-      d.C('C1', 60, 90, 150, 90); d.dot(150, 90); d.C('C2', 150, 90, 240, 90); d.dot(240, 90); d.w([240, 90], [290, 90]);
-      d.R('R1', 150, 90, 150, 145, 'r'); d.gnd(150, 145);
-      d.w([60, 90], [60, 40]); d.R('R2', 60, 40, 240, 40); d.w([240, 40], [240, 90]);
-      d.term(22, 90, 'IN'); d.term(290, 90, 'OUT', 'r');
-    },
   },
   {
     id: 'gyrator', group: 'Gyrator EQ', name: 'Gyrator boost/cut band',
     blurb: 'Single EQ band as used in graphic-EQ pedals. The gyrator (op-amp follower + C2, R3, R4) simulates an inductor L = R3·R4·C2, which resonates with C1 at f0. The slider moves the pot wiper: toward the − input it boosts, toward the + input it cuts, and centred it is flat. R4 sets Q and the boost range (1 + R2/R4). Targets refer to full boost; cut mirrors it when R1 = R2.',
     parts: [P('R1', 'R', 4.7e3), P('R2', 'R', 4.7e3), P('VR', 'R', 22e3, { pot: 'B' }), P('C1', 'C', 47e-9), P('C2', 'C', 5.6e-9), P('R3', 'R', 100e3), P('R4', 'R', 1.5e3)],
     options: [OPAMP_OPT, { key: 'pos', label: 'Cut ← → Boost', type: 'range', min: -100, max: 100, step: 1, def: 100, fmt: x => (x > 0 ? `+${x}% boost` : x < 0 ? `${-x}% cut` : 'flat') }],
-    netlist: (v, o) => nl(
+    schematic: (v, o) => sch()
       // Main stage: input to (+), feedback to (−); the pot spans (+) → (−) with the wiper on the branch.
-      R('R1', 'in', 'p', v.R1), OA('U1', 'p', 'n', 'out', opamp(o)), R('R2', 'n', 'out', v.R2),
-      POT('VR', 'p', 'w', 'n', v.VR, (num(o, 'pos') + 100) / 200, 'B'),
+      .IN(0, -20).wire([0, -20], [20, -20]).R('R1', 50, -20, 0, v.R1).wire([80, -20], [160, -20])
+      .OA('U1', 200, 0, opamp(o), { mirror: true })
+      .wire([90, -20], [90, 10]).POT('VR', 90, 40, 90, v.VR, (num(o, 'pos') + 100) / 200, 'B', { mirror: true })
+      .wire([160, 20], [150, 20], [150, 100]).wire([90, 70], [90, 100], [160, 100])
+      .R('R2', 190, 100, 0, v.R2).wire([220, 100], [260, 100], [260, 0]).wire([240, 0], [300, 0]).OUT(300, 0)
+      .note(100, 14, 'cut', 'start').note(100, 82, 'boost', 'start')
       // Series-resonant branch: C1 + gyrator (simulated inductor L = R3·R4·C2).
-      C('C1', 'w', 'x', v.C1), C('C2', 'x', 'g', v.C2), R('R3', 'g', GND, v.R3),
-      OA('U2', 'g', 'f', 'f', opamp(o)), R('R4', 'f', 'x', v.R4)),
+      .wire([60, 40], [40, 40], [40, 90]).C('C1', 40, 120, 90, v.C1, { label: 'l' })
+      .C('C2', 70, 150, 0, v.C2).wire([100, 150], [140, 150]).R('R3', 100, 180, 90, v.R3, { label: 'l' }).GND(100, 210)
+      .OA('U2', 180, 170, opamp(o), { mirror: true })
+      .wire([140, 190], [130, 190], [130, 230], [240, 230], [240, 170])
+      .wire([220, 170], [260, 170], [260, 260], [170, 260]).R('R4', 140, 260, 0, v.R4, { label: 'b' })
+      .wire([110, 260], [40, 260], [40, 150])
+      .note(280, 215, 'gyrator: L = R3·R4·C2', 'start').build(),
     analyze: (v, o, t) => {
       const full = bell(t, v, { ...o, pos: 100 }), cut = bell(t, v, { ...o, pos: -100 });
       const now = num(o, 'pos') === 100 ? full : num(o, 'pos') === -100 ? cut : bell(t, v, o);
@@ -382,27 +325,6 @@ const DEFS: TopologyDef[] = [
       }
       return build();
     },
-    vb: '0 0 440 385',
-    sch: (d, o) => {
-      // Main stage
-      d.R('R1', 22, 94, 150, 94); d.dot(150, 94); d.w([150, 94], [240, 94]);
-      d.amp(240, 110, true);
-      d.w([240, 126], [215, 126], [215, 200], [150, 200]); d.dot(215, 160);
-      d.R('VR', 150, 94, 150, 200, 'r');
-      d.R('R2', 215, 160, 340, 160, 'b'); d.w([340, 160], [340, 110]); d.dot(340, 110); d.w([304, 110], [400, 110]);
-      const y = 131 + 32 * (num(o, 'pos') + 100) / 200;
-      d.arrow(100, y, 141, y); d.w([100, y], [80, y], [80, 175]);
-      d.note(160, 120, 'cut', 'start'); d.note(160, 188, 'boost', 'start');
-      // Series-resonant branch: C1 + gyrator
-      d.C('C1', 80, 175, 80, 240, 'l'); d.dot(80, 240);
-      d.C('C2', 80, 240, 170, 240); d.dot(170, 240); d.w([170, 240], [200, 240]);
-      d.R('R3', 170, 240, 170, 298, 'l'); d.gnd(170, 298);
-      d.amp(200, 256, true);
-      d.w([200, 272], [190, 272], [190, 300], [290, 300], [290, 256]); d.w([264, 256], [320, 256], [320, 330]); d.dot(290, 256);
-      d.R('R4', 320, 330, 80, 330, 'b'); d.w([80, 330], [80, 240]);
-      d.note(270, 228, 'gyrator  L = R3·R4·C2', 'start');
-      d.term(22, 94, 'IN'); d.term(400, 110, 'OUT', 'r');
-    },
   },
   {
     id: 'ts-fmv', group: 'Tone stacks', name: 'FMV (Fender / Marshall / Vox)',
@@ -419,26 +341,15 @@ const DEFS: TopologyDef[] = [
       { name: 'Marshall (JCM800-style)', values: { R1: 33e3, C1: 470e-12, C2: 22e-9, C3: 22e-9, RT: 220e3, RB: 1e6, RM: 25e3 } },
       { name: 'Fender Bassman 5F6-A-style', values: { R1: 56e3, C1: 250e-12, C2: 20e-9, C3: 20e-9, RT: 250e3, RB: 1e6, RM: 25e3 } },
     ],
-    netlist: (v, o) => nl(
-      C('C1', 'in', 't', v.C1), POT('RT', 'y', 'out', 't', v.RT, num(o, 'treble') / 10, 'A'),
-      R('R1', 'in', 'x', v.R1), C('C2', 'x', 'y', v.C2), C('C3', 'x', 'z', v.C3),
-      RHEO('RB', 'y', 'z', v.RB, num(o, 'bass') / 10, 'A'), RHEO('RM', 'z', GND, v.RM, num(o, 'mid') / 10, 'B')),
+    schematic: (v, o) => sch().IN(0, 0).wire([0, 0], [40, 0]).C('C1', 70, 0, 0, v.C1).wire([100, 0], [160, 0])
+      .POT('RT', 160, 30, 270, v.RT, num(o, 'treble') / 10, 'A', { mirror: true }).wire([190, 30], [240, 30]).OUT(240, 30)
+      .wire([40, 0], [40, 30]).R('R1', 40, 60, 90, v.R1, { label: 'l' })
+      .wire([40, 90], [70, 90]).C('C2', 100, 90, 0, v.C2).wire([130, 90], [160, 90], [160, 60])
+      .wire([40, 90], [40, 150], [70, 150]).C('C3', 100, 150, 0, v.C3, { label: 'b' }).wire([130, 150], [160, 150])
+      .RHEO('RB', 160, 120, 90, v.RB, num(o, 'bass') / 10, 'A').RHEO('RM', 160, 180, 90, v.RM, num(o, 'mid') / 10, 'B')
+      .GND(160, 210).build(),
     analyze: (v, o, t) => toneStackMetrics(t, v, o),
     targets: [],
-    vb: '0 0 340 300',
-    sch: (d, o) => {
-      d.w([22, 60], [60, 60]); d.dot(60, 60);
-      d.C('C1', 60, 60, 180, 60);
-      d.R('RT', 180, 60, 180, 150, 'l');
-      const y = 121 - 32 * taper(num(o, 'treble') / 10, 'A');
-      d.arrow(230, y, 189, y); d.w([230, y], [300, y]);
-      d.R('R1', 60, 60, 60, 150, 'l'); d.dot(60, 150);
-      d.C('C2', 60, 150, 180, 150, 'b'); d.dot(180, 150);
-      d.w([60, 150], [60, 220]); d.C('C3', 60, 220, 180, 220, 'b'); d.dot(180, 220);
-      d.Rv('RB', 180, 150, 180, 220, 'r');
-      d.Rv('RM', 180, 220, 180, 278, 'r'); d.gnd(180, 278);
-      d.term(22, 60, 'IN'); d.term(300, y, 'OUT', 'r');
-    },
   },
   {
     id: 'ts-james', group: 'Tone stacks', name: 'James (passive Baxandall)',
@@ -453,38 +364,29 @@ const DEFS: TopologyDef[] = [
       { name: 'Balanced 10:1 (100k pots)', values: { C1: 2.2e-9, RT: 100e3, C2: 22e-9, R1: 10e3, RB: 100e3, C3: 22e-9, C4: 220e-9, R2: 1e3, R3: 10e3 } },
       { name: 'Darker treble, deeper bass', values: { C1: 1e-9, RT: 100e3, C2: 10e-9, R1: 10e3, RB: 100e3, C3: 47e-9, C4: 470e-9, R2: 1e3, R3: 10e3 } },
     ],
-    netlist: (v, o) => nl(
-      C('C1', 'in', 't', v.C1), POT('RT', 'tb', 'out', 't', v.RT, num(o, 'treble') / 10, 'A'), C('C2', 'tb', GND, v.C2),
-      R('R1', 'in', 'bt', v.R1), POT('RB', 'bb', 'bw', 'bt', v.RB, num(o, 'bass') / 10, 'A'),
-      C('C3', 'bt', 'bw', v.C3), C('C4', 'bw', 'bb', v.C4), R('R2', 'bb', GND, v.R2), R('R3', 'bw', 'out', v.R3)),
+    schematic: (v, o) => sch().IN(0, 0).wire([0, 0], [40, 0]).C('C1', 70, 0, 0, v.C1).wire([100, 0], [180, 0])
+      // Treble: C1 → RT (wiper = output) → C2 to ground.
+      .POT('RT', 180, 30, 270, v.RT, num(o, 'treble') / 10, 'A', { mirror: true }).C('C2', 180, 90, 90, v.C2, { label: 'l' }).GND(180, 120)
+      .wire([210, 30], [280, 30]).OUT(280, 30)
+      // Bass: R1 → RB (bypassed by C3/C4) → R2 to ground; R3 isolates the bass wiper from the output.
+      .wire([40, 0], [40, 30]).R('R1', 40, 60, 90, v.R1, { label: 'l' }).wire([40, 90], [140, 90]).wire([80, 90], [80, 120])
+      .POT('RB', 80, 150, 270, v.RB, num(o, 'bass') / 10, 'A', { mirror: true })
+      .C('C3', 140, 120, 90, v.C3, { label: 'l' }).C('C4', 140, 180, 90, v.C4, { label: 'l' })
+      .wire([110, 150], [230, 150]).wire([80, 180], [80, 240]).wire([140, 210], [140, 240], [80, 240])
+      .R('R2', 80, 270, 90, v.R2, { label: 'l' }).GND(80, 300)
+      .R('R3', 230, 120, 90, v.R3).wire([230, 90], [230, 30]).build(),
     analyze: (v, o, t) => toneStackMetrics(t, v, o),
     targets: [],
-    vb: '0 0 400 365',
-    sch: (d, o) => {
-      d.w([22, 40], [60, 40]); d.dot(60, 40);
-      d.C('C1', 60, 40, 200, 40);
-      d.R('RT', 200, 40, 200, 130, 'l'); d.C('C2', 200, 130, 200, 168, 'l'); d.gnd(200, 168);
-      const yt = 101 - 32 * taper(num(o, 'treble') / 10, 'A');
-      d.arrow(260, yt, 209, yt); d.w([260, yt], [260, 85]); d.w([260, 85], [360, 85]); d.dot(300, 85);
-      d.R('R1', 60, 40, 60, 200, 'l'); d.w([60, 200], [230, 200]); d.dot(140, 200);
-      d.R('RB', 140, 200, 140, 300, 'l');
-      const yb = 266 - 32 * taper(num(o, 'bass') / 10, 'A');
-      d.arrow(190, yb, 149, yb); d.w([190, yb], [190, 250], [230, 250]);
-      d.C('C3', 230, 200, 230, 250, 'r'); d.dot(230, 250); d.C('C4', 230, 250, 230, 300, 'r');
-      d.w([140, 300], [230, 300]); d.dot(140, 300);
-      d.R('R2', 140, 300, 140, 340, 'l'); d.gnd(140, 340);
-      d.w([230, 250], [300, 250]); d.R('R3', 300, 250, 300, 85, 'r');
-      d.term(22, 40, 'IN'); d.term(360, 85, 'OUT', 'r');
-    },
   },
   {
     id: 'sk-lp', group: 'Active · 2nd order', name: 'Sallen-Key low-pass',
     blurb: 'Unity-gain Sallen-Key low-pass (−12 dB/oct). Q sets resonance at f0: 0.707 is Butterworth (maximally flat), higher values peak. Useful for cab-sim style top-end roll-offs.',
     parts: [P('R1', 'R', 10e3), P('R2', 'R', 10e3), P('C1', 'C', 22e-9), P('C2', 'C', 10e-9)],
     options: [OPAMP_OPT],
-    netlist: (v, o) => nl(
-      R('R1', 'in', 'a', v.R1), R('R2', 'a', 'p', v.R2), C('C1', 'a', 'out', v.C1), C('C2', 'p', GND, v.C2),
-      OA('U1', 'p', 'out', 'out', opamp(o))),
+    schematic: (v, o) => sch().IN(0, 20).wire([0, 20], [20, 20]).R('R1', 50, 20, 0, v.R1, { label: 'b' }).R('R2', 110, 20, 0, v.R2)
+      .C('C1', 80, -10, 90, v.C1, { label: 'l' }).wire([140, 20], [180, 20]).C('C2', 140, 50, 90, v.C2, { label: 'l' }).GND(140, 80)
+      .OA('U1', 220, 40, opamp(o), { mirror: true }).wire([80, -40], [280, -40], [280, 40]).wire([260, 40], [320, 40]).OUT(320, 40)
+      .wire([180, 60], [170, 60], [170, 100], [280, 100], [280, 40]).build(),
     analyze: (v, o, t) => {
       const r = Math.sqrt(v.R1 * v.R2 * v.C1 * v.C2);
       return [
@@ -502,24 +404,16 @@ const DEFS: TopologyDef[] = [
       const r = Math.sqrt(Math.max(0, p * p - 4 * b / (C1 * a)));
       return { C2: a, C1, R1: (p + r) / 2, R2: (p - r) / 2 };
     },
-    vb: '0 0 400 200',
-    sch: d => {
-      d.R('R1', 22, 94, 112, 94, 'b'); d.dot(112, 94); d.R('R2', 112, 94, 200, 94); d.dot(200, 94); d.w([200, 94], [230, 94]);
-      d.C('C2', 200, 94, 200, 150, 'l'); d.gnd(200, 150);
-      d.C('C1', 112, 94, 112, 34, 'l'); d.w([112, 34], [320, 34], [320, 110]);
-      d.amp(230, 110, true); d.w([294, 110], [360, 110]); d.dot(320, 110);
-      d.w([230, 126], [220, 126], [220, 178], [320, 178], [320, 110]);
-      d.term(22, 94, 'IN'); d.term(360, 110, 'OUT', 'r');
-    },
   },
   {
     id: 'sk-hp', group: 'Active · 2nd order', name: 'Sallen-Key high-pass',
     blurb: 'Unity-gain Sallen-Key high-pass (+12 dB/oct below f0). A steep, clean bass cut: good for tightening a high-gain circuit without thinning the mids.',
     parts: [P('C1', 'C', 47e-9), P('C2', 'C', 47e-9), P('R1', 'R', 24e3), P('R2', 'R', 47e3)],
     options: [OPAMP_OPT],
-    netlist: (v, o) => nl(
-      C('C1', 'in', 'a', v.C1), C('C2', 'a', 'p', v.C2), R('R1', 'a', 'out', v.R1), R('R2', 'p', GND, v.R2),
-      OA('U1', 'p', 'out', 'out', opamp(o))),
+    schematic: (v, o) => sch().IN(0, 20).wire([0, 20], [20, 20]).C('C1', 50, 20, 0, v.C1, { label: 'b' }).C('C2', 110, 20, 0, v.C2)
+      .R('R1', 80, -10, 90, v.R1, { label: 'l' }).wire([140, 20], [180, 20]).R('R2', 140, 50, 90, v.R2, { label: 'l' }).GND(140, 80)
+      .OA('U1', 220, 40, opamp(o), { mirror: true }).wire([80, -40], [280, -40], [280, 40]).wire([260, 40], [320, 40]).OUT(320, 40)
+      .wire([180, 60], [170, 60], [170, 100], [280, 100], [280, 40]).build(),
     analyze: (v, o, t) => {
       const r = Math.sqrt(v.R1 * v.R2 * v.C1 * v.C2);
       return [
@@ -535,24 +429,18 @@ const DEFS: TopologyDef[] = [
       const w = TAU * t.f0, R1 = 1 / (2 * t.Q * w * a);
       return { C1: a, C2: a, R1, R2: 1 / (w * w * R1 * a * a) };
     },
-    vb: '0 0 400 200',
-    sch: d => {
-      d.C('C1', 22, 94, 112, 94, 'b'); d.dot(112, 94); d.C('C2', 112, 94, 200, 94); d.dot(200, 94); d.w([200, 94], [230, 94]);
-      d.R('R2', 200, 94, 200, 150, 'l'); d.gnd(200, 150);
-      d.R('R1', 112, 94, 112, 34, 'l'); d.w([112, 34], [320, 34], [320, 110]);
-      d.amp(230, 110, true); d.w([294, 110], [360, 110]); d.dot(320, 110);
-      d.w([230, 126], [220, 126], [220, 178], [320, 178], [320, 110]);
-      d.term(22, 94, 'IN'); d.term(360, 110, 'OUT', 'r');
-    },
   },
   {
     id: 'mfb-lp', group: 'Active · 2nd order', name: 'MFB low-pass',
     blurb: 'Multiple-feedback 2nd-order low-pass with gain set by R2/R1. Inverting (output is phase-flipped) and less sensitive to part tolerances than Sallen-Key.',
     parts: [P('R1', 'R', 10e3), P('R2', 'R', 10e3), P('R3', 'R', 10e3), P('C1', 'C', 22e-9), P('C2', 'C', 2.2e-9)],
     options: [OPAMP_OPT],
-    netlist: (v, o) => nl(
-      R('R1', 'in', 'a', v.R1), R('R2', 'a', 'out', v.R2), C('C1', 'a', GND, v.C1), R('R3', 'a', 'n', v.R3), C('C2', 'n', 'out', v.C2),
-      OA('U1', GND, 'n', 'out', opamp(o))),
+    schematic: (v, o) => sch().IN(0, 60).wire([0, 60], [20, 60]).R('R1', 50, 60, 0, v.R1).wire([80, 60], [100, 60]).R('R3', 130, 60, 0, v.R3)
+      .wire([160, 60], [200, 60]).OA('U1', 240, 80, opamp(o), { label: 'b' })
+      .wire([180, 60], [180, 20], [220, 20]).C('C2', 250, 20, 0, v.C2).wire([280, 20], [320, 20], [320, 80])
+      .wire([90, 60], [90, -20], [170, -20]).R('R2', 200, -20, 0, v.R2).wire([230, -20], [320, -20], [320, 20])
+      .C('C1', 90, 90, 90, v.C1).GND(90, 120).wire([200, 100], [190, 100], [190, 120]).GND(190, 120)
+      .wire([280, 80], [360, 80]).OUT(360, 80).build(),
     analyze: v => {
       const r = Math.sqrt(v.C1 * v.C2 * v.R2 * v.R3);
       return [
@@ -572,25 +460,18 @@ const DEFS: TopologyDef[] = [
       const R2 = (p + r) / 2, R3 = b / (C1 * a * R2);
       return { C2: a, C1, R2, R3, R1: R2 / K };
     },
-    vb: '0 0 410 215',
-    sch: d => {
-      d.R('R1', 22, 124, 110, 124); d.dot(110, 124); d.R('R3', 110, 124, 205, 124); d.dot(205, 124); d.w([205, 124], [250, 124]);
-      d.w([205, 124], [205, 84]); d.C('C2', 205, 84, 340, 84); d.w([340, 84], [340, 140]);
-      d.w([110, 124], [110, 34]); d.R('R2', 110, 34, 340, 34); d.w([340, 34], [340, 84]); d.dot(340, 84);
-      d.C('C1', 110, 124, 110, 180, 'r'); d.gnd(110, 180);
-      d.amp(250, 140, false); d.w([250, 156], [236, 156], [236, 180]); d.gnd(236, 180);
-      d.w([314, 140], [380, 140]); d.dot(340, 140);
-      d.term(22, 124, 'IN'); d.term(380, 140, 'OUT', 'r');
-    },
   },
   {
     id: 'mfb-bp', group: 'Active · 2nd order', name: 'MFB band-pass',
     blurb: 'Multiple-feedback band-pass: a resonant peak at f0 with bandwidth f0/Q. Think fixed-wah or mid-hump voicing. Inverting; peak gain must stay below 2Q².',
     parts: [P('R1', 'R', 15e3), P('R2', 'R', 68e3), P('R3', 'R', 2.2e3), P('C1', 'C', 10e-9), P('C2', 'C', 10e-9)],
     options: [OPAMP_OPT],
-    netlist: (v, o) => nl(
-      R('R1', 'in', 'a', v.R1), R('R3', 'a', GND, v.R3), C('C1', 'a', 'n', v.C1), C('C2', 'a', 'out', v.C2), R('R2', 'n', 'out', v.R2),
-      OA('U1', GND, 'n', 'out', opamp(o))),
+    schematic: (v, o) => sch().IN(0, 60).wire([0, 60], [20, 60]).R('R1', 50, 60, 0, v.R1).wire([80, 60], [100, 60]).C('C1', 130, 60, 0, v.C1)
+      .wire([160, 60], [200, 60]).OA('U1', 240, 80, opamp(o), { label: 'b' })
+      .wire([180, 60], [180, 20], [220, 20]).R('R2', 250, 20, 0, v.R2).wire([280, 20], [320, 20], [320, 80])
+      .wire([90, 60], [90, -20], [170, -20]).C('C2', 200, -20, 0, v.C2).wire([230, -20], [320, -20], [320, 20])
+      .R('R3', 90, 90, 90, v.R3).GND(90, 120).wire([200, 100], [190, 100], [190, 120]).GND(190, 120)
+      .wire([280, 80], [360, 80]).OUT(360, 80).build(),
     analyze: v => {
       const w0 = Math.sqrt((1 / v.R1 + 1 / v.R3) / (v.C1 * v.C2 * v.R2)), Q = w0 * v.C1 * v.C2 * v.R2 / (v.C1 + v.C2);
       return [
@@ -608,23 +489,17 @@ const DEFS: TopologyDef[] = [
       if (A >= 2 * Q * Q) throw new Error(`Peak gain must be below 2Q² (${db(2 * Q * Q).toFixed(1)} dB for Q = ${Q}).`);
       return { C1: a, C2: a, R2: 2 * Q / (w * a), R1: Q / (w * a * A), R3: Q / (w * a * (2 * Q * Q - A)) };
     },
-    vb: '0 0 410 215',
-    sch: d => {
-      d.R('R1', 22, 124, 110, 124); d.dot(110, 124); d.C('C1', 110, 124, 205, 124); d.dot(205, 124); d.w([205, 124], [250, 124]);
-      d.w([205, 124], [205, 84]); d.R('R2', 205, 84, 340, 84); d.w([340, 84], [340, 140]);
-      d.w([110, 124], [110, 34]); d.C('C2', 110, 34, 340, 34); d.w([340, 34], [340, 84]); d.dot(340, 84);
-      d.R('R3', 110, 124, 110, 180, 'r'); d.gnd(110, 180);
-      d.amp(250, 140, false); d.w([250, 156], [236, 156], [236, 180]); d.gnd(236, 180);
-      d.w([314, 140], [380, 140]); d.dot(340, 140);
-      d.term(22, 124, 'IN'); d.term(380, 140, 'OUT', 'r');
-    },
   },
 ];
 
-/** Attach H(s): each topology's netlist, compiled (and cached) and solved by the MNA engine. */
+/**
+ * Attach the netlist (extracted from the schematic) and H(s) (that netlist, compiled, cached and
+ * solved by the MNA engine).
+ */
 function withMna(def: TopologyDef): Topology {
-  const compile = compiledFactory(def.netlist);
-  return { ...def, circuit: compile, H: (v, s, o, z) => compile(v, o).transfer(s, z?.zs, z?.zl) };
+  const netlist: Topology['netlist'] = (v, o) => extract(def.schematic(v, o)).netlist;
+  const compile = compiledFactory(netlist);
+  return { ...def, netlist, circuit: compile, H: (v, s, o, z) => compile(v, o).transfer(s, z?.zs, z?.zl) };
 }
 
 export const TOPOS: Topology[] = DEFS.map(withMna);

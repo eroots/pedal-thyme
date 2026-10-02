@@ -32,13 +32,15 @@ export type Element =
   | { type: 'Q'; name: string; c: Node; b: Node; e: Node; model: string }
   /** JFET (drain, gate, source); polarity comes from the model. */
   | { type: 'J'; name: string; d: Node; g: Node; s: Node; model: string }
+  /** Enhancement MOSFET (drain, gate, source; body tied to source); polarity comes from the model. */
+  | { type: 'M'; name: string; d: Node; g: Node; s: Node; model: string }
   /** Voltage-controlled current source: gm·(V(cp) − V(cn)) flows from p through the element to n. */
   | { type: 'G'; name: string; p: Node; n: Node; cp: Node; cn: Node; gm: number };
 
 export type ElementType = Element['type'];
 
 /** Elements whose behaviour depends on a DC operating point. */
-export const isNonlinear = (e: Element): boolean => e.type === 'D' || e.type === 'Q' || e.type === 'J';
+export const isNonlinear = (e: Element): boolean => e.type === 'D' || e.type === 'Q' || e.type === 'J' || e.type === 'M';
 
 export interface Netlist {
   title?: string;
@@ -72,7 +74,7 @@ export function elementNodes(e: Element): Node[] {
     case 'SPDT': return [e.com, e.a, e.b];
     case 'D': return [e.a, e.k];
     case 'Q': return [e.c, e.b, e.e];
-    case 'J': return [e.d, e.g, e.s];
+    case 'J': case 'M': return [e.d, e.g, e.s];
     case 'G': return [e.p, e.n, e.cp, e.cn];
   }
 }

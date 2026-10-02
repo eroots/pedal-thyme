@@ -1,10 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import { bomCsv, bomRows, makeProject, parseProject, projectSpice, schematicSvg } from '../src/builder/files';
-import { simulate } from '../src/builder/sim';
+import { biasOf, simulate } from '../src/builder/sim';
 import { TEMPLATES } from '../src/builder/templates';
 import { extract } from '../src/schematic/extract';
 import { TOPOS } from '../src/topologies';
 
+const biasOrThrow = (ex: ReturnType<typeof extract>) => {
+  const op = biasOf(ex);
+  if (!op?.ok) throw new Error('DC bias did not converge');
+  return op;
+};
 const ts = () => TEMPLATES.find(t => t.id === 'ts')!.build();
 
 describe('templates', () => {
@@ -44,6 +49,30 @@ describe('templates', () => {
     expect(atC).toBeGreaterThan(22);
     expect(atC).toBeLessThan(29);
     expect(out.mag[1]).toBeLessThan(atC); // the volume pot at 7/10 (A taper) takes some away
+  });
+  it('the MOSFET booster holds its drain near mid-supply with ~19 dB at the drain', () => {
+    const ex = extract(TEMPLATES.find(t => t.id === 'mosboost')!.build());
+    const [el, q] = [...biasOrThrow(ex).devices][0];
+    if (el.type !== 'M' || q.type !== 'M') throw new Error('expected a MOSFET');
+    expect(q.region).toBe('saturation');
+    const vd = biasOrThrow(ex).v(el.d);
+    expect(vd).toBeGreaterThan(4);
+    expect(vd).toBeLessThan(6);
+    const atD = simulate(ex, [{ ref: 'D', color: '', net: el.d }], [1000]).probes[0].mag[0];
+    expect(atD).toBeGreaterThan(16);
+    expect(atD).toBeLessThan(22);
+  });
+  it('the Zendrive-style pedal biases its MOSFET clippers off and has plenty of gain', () => {
+    const ex = extract(TEMPLATES.find(t => t.id === 'zendrive')!.build());
+    const op = biasOrThrow(ex);
+    const ms = [...op.devices.values()].filter(d => d.type === 'M');
+    expect(ms).toHaveLength(2);
+    for (const m of ms) if (m.type === 'M') { expect(m.region).toBe('cutoff'); expect(Math.abs(m.id)).toBeLessThan(1e-9); }
+    const u2 = ex.netlist.elements.find(e => e.name === 'U2');
+    if (u2?.type !== 'OA') throw new Error('expected U2');
+    const r = simulate(ex, [{ ref: 'U2', color: '', net: u2.out }], [1000]);
+    expect(r.probes[0].mag[0]).toBeGreaterThan(25); // gain stage, gain pot at half
+    expect(r.out.mag[0]).toBeGreaterThan(8); // after tone and volume
   });
   it('the Fuzz Face-style pedal converges with both transistors conducting and has big gain', () => {
     const ex = extract(TEMPLATES.find(t => t.id === 'fuzz')!.build());

@@ -49,7 +49,34 @@ export const JFET_MODELS: Record<string, JfetModel> = {
     spice: 'PJF(Vto=-1.8 Beta=1m Lambda=10m Cgs=5p Cgd=2p)', approx: true },
 };
 
+/**
+ * Enhancement MOSFET, SPICE level 1 (square law) with the source tied to the body, plus the
+ * body diode (source → drain for N-channel). Discrete parts' thresholds vary widely between
+ * samples (2N7000: roughly 0.8–3 V), so every preset is approximate.
+ */
+export interface MosModel {
+  label: string;
+  pol: 'n' | 'p';
+  vth: number;    // threshold magnitude (V)
+  kp: number;     // transconductance parameter KP·W/L (A/V²): Id = kp/2 · (Vgs − Vth)² in saturation
+  lambda: number; // channel-length modulation (1/V)
+  cgs: number; cgd: number;
+  bodyIs: number; bodyN: number; // body diode
+  spice: string;
+  approx?: boolean;
+}
+
+export const MOS_MODELS: Record<string, MosModel> = {
+  '2N7000': { label: '2N7000 (N-MOSFET)', pol: 'n', vth: 2.0, kp: 0.1, lambda: 0.01, cgs: 20e-12, cgd: 5e-12, bodyIs: 1e-13, bodyN: 1.2,
+    spice: 'NMOS(Level=1 Vto=2 Kp=0.1 Lambda=10m)', approx: true },
+  BS170: { label: 'BS170 (N-MOSFET)', pol: 'n', vth: 2.1, kp: 0.12, lambda: 0.01, cgs: 24e-12, cgd: 5e-12, bodyIs: 1e-13, bodyN: 1.2,
+    spice: 'NMOS(Level=1 Vto=2.1 Kp=0.12 Lambda=10m)', approx: true },
+  BS250: { label: 'BS250 (P-MOSFET)', pol: 'p', vth: 2.4, kp: 0.06, lambda: 0.01, cgs: 25e-12, cgd: 6e-12, bodyIs: 1e-13, bodyN: 1.2,
+    spice: 'PMOS(Level=1 Vto=-2.4 Kp=0.06 Lambda=10m)', approx: true },
+};
+
 export const bjtModel = (k: string): BjtModel => BJT_MODELS[k] || BJT_MODELS['2N3904'];
+export const mosModel = (k: string): MosModel => MOS_MODELS[k] || MOS_MODELS['2N7000'];
 export const jfetModel = (k: string): JfetModel => JFET_MODELS[k] || JFET_MODELS.J201;
 
 /* ---------- Large-signal equations ---------- */
@@ -101,11 +128,15 @@ export function bjtIV(vbe: number, vbc: number, m: BjtModel) {
   };
 }
 
+/** N-channel enhancement MOSFET channel current: the JFET square law with a positive threshold. */
+export const mosIV = (vgs: number, vds: number, m: MosModel) =>
+  jfetIV(vgs, vds, { vto: m.vth, beta: m.kp / 2, lambda: m.lambda });
+
 /**
  * N-channel Shichman–Hodges JFET (for P-channel, pass negated voltages and negate the current).
  * Handles vds < 0 by swapping drain and source. Returns drain current and its derivatives.
  */
-export function jfetIV(vgs: number, vds: number, m: JfetModel): { id: number; gm: number; gds: number; region: 'cutoff' | 'linear' | 'saturation' } {
+export function jfetIV(vgs: number, vds: number, m: Pick<JfetModel, 'vto' | 'beta' | 'lambda'>): { id: number; gm: number; gds: number; region: 'cutoff' | 'linear' | 'saturation' } {
   if (vds < 0) {
     // Swap: the "source" is now the higher-potential terminal.
     const r = jfetIV(vgs - vds, -vds, m);

@@ -3,7 +3,7 @@
 import type { TaperKey } from '../core/pots';
 
 export type PartKind =
-  | 'R' | 'C' | 'L' | 'POT' | 'RHEO' | 'D' | 'LED' | 'NPN' | 'PNP' | 'NJF' | 'PJF' | 'SW' | 'SPDT' | 'OA' | 'BUF'
+  | 'R' | 'C' | 'L' | 'POT' | 'RHEO' | 'D' | 'LED' | 'NPN' | 'PNP' | 'NJF' | 'PJF' | 'NMOS' | 'PMOS' | 'SW' | 'SPDT' | 'OA' | 'BUF'
   | 'GND' | 'SUPPLY' | 'LABEL' | 'IN' | 'OUT' | 'PROBE';
 
 /** Rotation in degrees, clockwise on screen. */

@@ -5,7 +5,7 @@ import { dcOp } from '../src/engine/dc';
 import { acModel, linearize } from '../src/engine/linearize';
 import { DIODE_MODELS } from '../src/engine/models';
 import { C, GND, OA, R, type Element, type Netlist } from '../src/engine/netlist';
-import { BJT_MODELS, JFET_MODELS, VT, bjtIV, jfetIV } from '../src/engine/semis';
+import { BJT_MODELS, JFET_MODELS, MOS_MODELS, VT, bjtIV, jfetIV } from '../src/engine/semis';
 import { toSpice } from '../src/engine/spice';
 
 const s = (f: number) => new Cx(0, TAU * f);
@@ -167,5 +167,58 @@ describe('SPICE export of transistors', () => {
     expect(deck).toMatch(/^J1 c x 0 J201$/m);
     expect(deck).toMatch(/^\.model 2N3904 NPN\(/m);
     expect(deck).toMatch(/^\.model J201 NJF\(.*approximate$/m);
+  });
+});
+
+describe('MOSFETs', () => {
+  const M = (name: string, d: string, g: string, s: string, model = '2N7000'): Element => ({ type: 'M', name, d, g, s, model });
+
+  it('a diode-connected 2N7000 satisfies the square law (and draws no gate current)', () => {
+    const op = dcOp(nl([V('V1', 'a', 9), R('R1', 'a', 'd', 10e3), M('Q1', 'd', 'd', GND)]));
+    expect(op.ok).toBe(true);
+    const m = MOS_MODELS['2N7000'], v = op.v('d');
+    expect(v).toBeGreaterThan(m.vth);
+    expect(Math.abs((9 - v) / 10e3 - m.kp / 2 * (v - m.vth) ** 2 * (1 + m.lambda * v))).toBeLessThan(1e-8);
+  });
+
+  it('reverse-biased, only the body diode conducts', () => {
+    const op = dcOp(nl([V('V1', 'a', -9), R('R1', 'a', 'd', 10e3), M('Q1', 'd', 'd', GND)]));
+    expect(op.ok).toBe(true);
+    expect(op.v('d')).toBeLessThan(-0.5);
+    expect(op.v('d')).toBeGreaterThan(-0.9);
+    const d = [...op.devices.values()][0];
+    if (d.type !== 'M') throw new Error('expected a MOSFET');
+    expect(d.region).toBe('cutoff');
+    expect(d.ibody).toBeGreaterThan(0.7e-3);
+  });
+
+  it('PMOS mirrors NMOS on a negative supply', () => {
+    const op = dcOp(nl([V('V1', 'a', -9), R('R1', 'a', 'd', 10e3), M('Q1', 'd', 'd', GND, 'BS250')]));
+    expect(op.ok).toBe(true);
+    expect(op.v('d')).toBeLessThan(-MOS_MODELS.BS250.vth);
+  });
+
+  it('common-source gain matches gm·RD / (1 + gm·RS)', () => {
+    const net = nl([
+      V('V1', 'vcc', 9), C('C1', 'in', 'g', 1e-6), R('RG1', 'vcc', 'g', 1e6), R('RG2', 'g', GND, 330e3),
+      M('Q1', 'd', 'g', 's'), R('RD', 'vcc', 'd', 10e3), R('RS', 's', GND, 1e3),
+      C('C2', 'd', 'out', 1e-6), R('RV', 'out', GND, 10e6),
+    ]);
+    const { circuit, op } = acModel(net);
+    expect(op!.ok).toBe(true);
+    const q = [...op!.devices.values()][0];
+    if (q.type !== 'M') throw new Error('expected a MOSFET');
+    expect(q.region).toBe('saturation');
+    const rd = 1 / (1 / 10e3 + 1 / 10e6);
+    const expected = q.gm * rd / (1 + q.gm * 1e3); // rds ≫ RD, ignored
+    expect(circuit.transfer(s(1000)).abs()).toBeCloseTo(expected, 1);
+  });
+
+  it('exports M lines with the body diode and model cards', () => {
+    const deck = toSpice(nl([V('V1', 'a', 9), R('R1', 'a', 'd', 10e3), M('Q1', 'd', 'd', GND), R('R2', 'in', 'out', 1)]));
+    expect(deck).toMatch(/^MQ1 d d 0 0 2N7000$/m);
+    expect(deck).toMatch(/^DQ1_body 0 d DBODY_2N7000$/m);
+    expect(deck).toMatch(/^\.model 2N7000 NMOS\(Level=1/m);
+    expect(deck).toMatch(/^\.model DBODY_2N7000 D\(/m);
   });
 });

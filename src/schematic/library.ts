@@ -3,7 +3,7 @@
 import { taper, type TaperKey } from '../core/pots';
 import { clamp, fmtEng } from '../core/units';
 import { OPAMP_MODELS, DIODE_MODELS } from '../engine/models';
-import { BJT_MODELS, JFET_MODELS } from '../engine/semis';
+import { BJT_MODELS, JFET_MODELS, MOS_MODELS } from '../engine/semis';
 import { GND, type Element, type Node } from '../engine/netlist';
 import type { Pt } from './geometry';
 import type { PartKind, SchPart } from './types';
@@ -72,6 +72,14 @@ function jfetDraw(p: boolean): string {
     + line(-8, -10, 10, -10) + line(10, -10, 10, -30)
     + line(-8, 10, 10, 10) + line(10, 10, 10, 30)
     + (p ? arrow(-8, 0, -22, 0) + line(-22, 0, -30, 0) : arrow(-30, 0, -9, 0));
+}
+/** Enhancement MOSFET: insulated gate plate, broken channel, body arrow tied to the source. */
+function mosDraw(p: boolean): string {
+  return body + line(-30, 0, -12, 0) + line(-12, -12, -12, 12)
+    + line(-6, -14, -6, -7, 'plate') + line(-6, -3, -6, 3, 'plate') + line(-6, 7, -6, 14, 'plate')
+    + line(-6, -10, 10, -10) + line(10, -10, 10, -30)
+    + line(-6, 10, 10, 10) + line(10, 10, 10, 30)
+    + (p ? arrow(-6, 0, 9, 0) : arrow(10, 0, -5, 0)) + line(10, 0, 10, 10);
 }
 const modelName = (models: Record<string, { label: string }>, p: SchPart, dflt: string) =>
   (models[p.props?.model ?? dflt] ? (p.props?.model ?? dflt) : (p.props?.model ?? ''));
@@ -153,6 +161,18 @@ export const PARTS: Record<PartKind, PartSpec> = {
     draw: () => jfetDraw(true),
     valueText: p => modelName(JFET_MODELS, p, '2N5460'),
     elements: (p, n) => [{ type: 'J', name: p.ref || p.id, d: n('d'), g: n('g'), s: n('s'), model: p.props?.model ?? '2N5460' }],
+  },
+  NMOS: {
+    label: 'N-channel MOSFET', pins: J_PINS, box: [-30, -30, 21, 30], avoid: [1, 0],
+    draw: () => mosDraw(false),
+    valueText: p => modelName(MOS_MODELS, p, '2N7000'),
+    elements: (p, n) => [{ type: 'M', name: p.ref || p.id, d: n('d'), g: n('g'), s: n('s'), model: p.props?.model ?? '2N7000' }],
+  },
+  PMOS: {
+    label: 'P-channel MOSFET', pins: J_PINS, box: [-30, -30, 21, 30], avoid: [1, 0],
+    draw: () => mosDraw(true),
+    valueText: p => modelName(MOS_MODELS, p, 'BS250'),
+    elements: (p, n) => [{ type: 'M', name: p.ref || p.id, d: n('d'), g: n('g'), s: n('s'), model: p.props?.model ?? 'BS250' }],
   },
   SW: {
     label: 'Switch (SPST)', pins: TWO, box: [-30, -12, 30, 3],

@@ -2,7 +2,7 @@
 import type { Term } from '../core/termination';
 import { fmtEng } from '../core/units';
 import { DIODE_MODELS, OPAMP_MODELS } from '../engine/models';
-import { BJT_MODELS, JFET_MODELS } from '../engine/semis';
+import { BJT_MODELS, JFET_MODELS, MOS_MODELS } from '../engine/semis';
 import { toSpice } from '../engine/spice';
 import { extract } from '../schematic/extract';
 import { PARTS } from '../schematic/library';
@@ -70,7 +70,7 @@ export function projectSpice(name: string, doc: Schematic, term: Term | null, fm
     const net = ex.pinNet.get(`${p.id}:p`);
     if (net) notes.push(`Probe ${p.ref || p.id}: V(${net.replace(/[^A-Za-z0-9_]/g, '_')})`);
   }
-  if (doc.parts.some(p => ['D', 'LED', 'NPN', 'PNP', 'NJF', 'PJF'].includes(p.kind))) notes.push('Semiconductors are included with SPICE models; the app linearises them at their DC operating point.');
+  if (doc.parts.some(p => ['D', 'LED', 'NPN', 'PNP', 'NJF', 'PJF', 'NMOS', 'PMOS'].includes(p.kind))) notes.push('Semiconductors are included with SPICE models; the app linearises them at their DC operating point.');
   const errors = ex.issues.filter(i => i.severity === 'error');
   if (errors.length) notes.push('WARNING: the design has errors: ' + errors.map(e => e.message).join(' '));
   return toSpice(ex.netlist, { title: name, term, fmin, fmax, notes });
@@ -79,7 +79,7 @@ export function projectSpice(name: string, doc: Schematic, term: Term | null, fm
 /* ---------- Parts list ---------- */
 export interface BomRow { qty: number; refs: string[]; part: string; value: string; notes: string }
 
-const COMPONENT_KINDS = new Set(['R', 'C', 'L', 'POT', 'RHEO', 'D', 'LED', 'NPN', 'PNP', 'NJF', 'PJF', 'SW', 'SPDT', 'OA']);
+const COMPONENT_KINDS = new Set(['R', 'C', 'L', 'POT', 'RHEO', 'D', 'LED', 'NPN', 'PNP', 'NJF', 'PJF', 'NMOS', 'PMOS', 'SW', 'SPDT', 'OA']);
 
 function describe(p: SchPart): { part: string; value: string; notes: string } {
   switch (p.kind) {
@@ -93,6 +93,10 @@ function describe(p: SchPart): { part: string; value: string; notes: string } {
     case 'NPN': case 'PNP': {
       const m = p.props?.model ?? (p.kind === 'NPN' ? '2N3904' : '2N3906');
       return { part: 'Transistor (BJT)', value: m, notes: BJT_MODELS[m]?.label ?? '' };
+    }
+    case 'NMOS': case 'PMOS': {
+      const m = p.props?.model ?? (p.kind === 'NMOS' ? '2N7000' : 'BS250');
+      return { part: 'Transistor (MOSFET)', value: m, notes: MOS_MODELS[m]?.label ?? '' };
     }
     case 'NJF': case 'PJF': {
       const m = p.props?.model ?? (p.kind === 'NJF' ? 'J201' : '2N5460');
@@ -120,7 +124,7 @@ export function bomRows(doc: Schematic): BomRow[] {
     row.qty++; row.refs.push(p.ref || p.id);
     groups.set(k, row);
   }
-  const order = ['Resistor', 'Capacitor', 'Inductor', 'Potentiometer', 'Potentiometer (as variable resistor)', 'Diode', 'LED', 'Transistor (BJT)', 'Transistor (JFET)', 'Op-amp', 'Switch'];
+  const order = ['Resistor', 'Capacitor', 'Inductor', 'Potentiometer', 'Potentiometer (as variable resistor)', 'Diode', 'LED', 'Transistor (BJT)', 'Transistor (JFET)', 'Transistor (MOSFET)', 'Op-amp', 'Switch'];
   return [...groups.values()]
     .map(r => ({ ...r, refs: r.refs.sort(natural) }))
     .sort((a, b) => order.indexOf(a.part) - order.indexOf(b.part) || natural(a.refs[0], b.refs[0]));

@@ -8,7 +8,7 @@ import { taper } from '../core/pots';
 import { clamp } from '../core/units';
 import { diodeModel, opAmpModel } from './models';
 import { GND, elementNodes, isNonlinear, type Element, type Netlist, type Node } from './netlist';
-import { VT, bjtIV, bjtModel, diodeIV, jfetIV, jfetModel, pnjlim, vcrit } from './semis';
+import { VT, bjtIV, bjtModel, diodeIV, jfetIV, jfetModel, mosIV, mosModel, pnjlim, vcrit } from './semis';
 
 const GMIN = 1e-12;
 const POT_END = 1e-4;
@@ -22,7 +22,9 @@ export type DeviceOp =
   | { type: 'D'; vd: number; id: number; gd: number }
   | { type: 'Q'; pol: 'npn' | 'pnp'; vbe: number; vbc: number; vce: number; ic: number; ib: number; beta: number; gm: number;
       region: BjtRegion; dic_dvbe: number; dic_dvbc: number; dib_dvbe: number; dib_dvbc: number }
-  | { type: 'J'; pol: 'n' | 'p'; vgs: number; vds: number; id: number; gm: number; gds: number; region: 'cutoff' | 'linear' | 'saturation' };
+  | { type: 'J'; pol: 'n' | 'p'; vgs: number; vds: number; id: number; gm: number; gds: number; region: 'cutoff' | 'linear' | 'saturation' }
+  /** MOSFET; `id` is the channel current, `ibody` the body diode's (source → drain for N-channel). */
+  | { type: 'M'; pol: 'n' | 'p'; vgs: number; vds: number; id: number; gm: number; gds: number; region: 'cutoff' | 'linear' | 'saturation'; ibody: number; gbody: number };
 
 export interface OpPoint {
   /** False if no method converged (values are then the last iterate and unreliable). */
@@ -84,7 +86,7 @@ export function dcOp(nl: Netlist, opt: DcOptions = {}): OpPoint {
 }
 
 /** Junction state remembered between Newton iterations (for limiting). */
-interface DevState { el: Element; i: number; v1: number; v2: number }
+interface DevState { el: Element; i: number; v1: number; v2: number; v3: number }
 
 class DcSystem {
   readonly idx = new Map<Node, number>();
@@ -140,7 +142,7 @@ class DcSystem {
           break;
         }
         default:
-          if (isNonlinear(e)) this.nonlinear.push({ el: e, i, v1: 0, v2: 0 });
+          if (isNonlinear(e)) this.nonlinear.push({ el: e, i, v1: 0, v2: 0, v3: 0 });
           break; // C is open; voltage rows below
       }
     });
@@ -169,7 +171,7 @@ class DcSystem {
 
   ix(n: Node): number { return n === GND ? -1 : this.idx.get(n) ?? -1; }
 
-  resetJunctions(): void { for (const d of this.nonlinear) { d.v1 = 0; d.v2 = 0; } }
+  resetJunctions(): void { for (const d of this.nonlinear) { d.v1 = 0; d.v2 = 0; d.v3 = 0; } }
 
   /** Solves the linear part only (no nonlinear devices present). */
   solveLinear(scale: number, gshunt: number): Float64Array | null {
@@ -213,7 +215,10 @@ class DcSystem {
     const e = d.el, V = (n: Node) => this.nodeV(x, n);
     if (e.type === 'D') d.v1 = V(e.a) - V(e.k);
     else if (e.type === 'Q') { const s = bjtModel(e.model).pol === 'npn' ? 1 : -1; d.v1 = s * (V(e.b) - V(e.e)); d.v2 = s * (V(e.b) - V(e.c)); }
-    else if (e.type === 'J') { const s = jfetModel(e.model).pol === 'n' ? 1 : -1; d.v1 = s * (V(e.g) - V(e.s)); d.v2 = s * (V(e.d) - V(e.s)); }
+    else if (e.type === 'J' || e.type === 'M') {
+      const s = (e.type === 'J' ? jfetModel(e.model).pol : mosModel(e.model).pol) === 'n' ? 1 : -1;
+      d.v1 = s * (V(e.g) - V(e.s)); d.v2 = s * (V(e.d) - V(e.s)); d.v3 = -d.v2;
+    }
   }
 
   /** Stamps a device's Newton companion; returns true if its junction voltages were limited. */
@@ -249,20 +254,32 @@ class DcSystem {
       term(em, r.ic + r.ib, r.dic_dvbe + r.dib_dvbe, r.dic_dvbc + r.dib_dvbc, -1);
       return Math.abs(vbe - rbe) > 1e-9 || Math.abs(vbc - rbc) > 1e-9;
     }
-    if (e.type === 'J') {
-      const m = jfetModel(e.model), s = m.pol === 'n' ? 1 : -1;
+    if (e.type === 'J' || e.type === 'M') {
+      const jm = e.type === 'J' ? jfetModel(e.model) : null, mm = e.type === 'M' ? mosModel(e.model) : null;
+      const s = (jm ?? mm)!.pol === 'n' ? 1 : -1;
       const rgs = s * (V(e.g) - V(e.s)), rds = s * (V(e.d) - V(e.s));
       // Square law is gentle; just cap each step.
       const vgs = d.v1 + clamp(rgs - d.v1, -0.5, 0.5), vds = d.v2 + clamp(rds - d.v2, -2, 2);
       d.v1 = vgs; d.v2 = vds;
-      const r = jfetIV(vgs, vds, m);
+      const r = jm ? jfetIV(vgs, vds, jm) : mosIV(vgs, vds, mm!);
       const dd = this.ix(e.d), g = this.ix(e.g), ss = this.ix(e.s);
       put(dd, g, r.gm); put(dd, dd, r.gds); put(dd, ss, -r.gm - r.gds);
       put(ss, g, -r.gm); put(ss, dd, -r.gds); put(ss, ss, r.gm + r.gds);
       const ieq = s * (r.id - r.gm * vgs - r.gds * vds);
       rhs(dd, -ieq); rhs(ss, ieq);
-      // Gate junctions (gate–source, gate–drain), so a forward-biased gate conducts.
       let lim = Math.abs(vgs - rgs) > 1e-9 || Math.abs(vds - rds) > 1e-9;
+      if (mm) {
+        // Insulated gate: no gate current. Body diode from source (anode) to drain, for N-channel.
+        const nvt = mm.bodyN * VT, raw = -rds, vb = pnjlim(raw, d.v3, nvt, vcrit(mm.bodyIs, nvt));
+        d.v3 = vb;
+        if (Math.abs(vb - raw) > 1e-9) lim = true;
+        const { i, g: gb } = diodeIV(vb, mm.bodyIs, mm.bodyN);
+        put(ss, ss, gb); put(dd, dd, gb); put(ss, dd, -gb); put(dd, ss, -gb);
+        const ib = s * (i - gb * vb);
+        rhs(ss, -ib); rhs(dd, ib);
+        return lim;
+      }
+      // JFET gate junctions (gate–source, gate–drain), so a forward-biased gate conducts.
       for (const [other, vj] of [[ss, vgs], [dd, vgs - vds]] as const) {
         const raw = vj, vl = Math.min(raw, 0.9);
         if (vl !== raw) lim = true;
@@ -299,6 +316,11 @@ class DcSystem {
         const m = jfetModel(e.model), s = m.pol === 'n' ? 1 : -1;
         const vgs = s * (V(e.g) - V(e.s)), vds = s * (V(e.d) - V(e.s)), r = jfetIV(vgs, vds, m);
         devices.set(e, { type: 'J', pol: m.pol, vgs: s * vgs, vds: s * vds, id: s * r.id, gm: r.gm, gds: r.gds, region: r.region });
+      } else if (e.type === 'M') {
+        const m = mosModel(e.model), s = m.pol === 'n' ? 1 : -1;
+        const vgs = s * (V(e.g) - V(e.s)), vds = s * (V(e.d) - V(e.s)), r = mosIV(vgs, vds, m);
+        const body = diodeIV(-vds, m.bodyIs, m.bodyN);
+        devices.set(e, { type: 'M', pol: m.pol, vgs: s * vgs, vds: s * vds, id: s * r.id, gm: r.gm, gds: r.gds, region: r.region, ibody: s * body.i, gbody: body.g });
       }
     }
     return { ok, method, iterations, v: (n: Node) => (n === GND ? 0 : nodes.get(n) ?? 0), nodes, devices };

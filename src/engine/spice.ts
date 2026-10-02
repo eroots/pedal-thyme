@@ -3,7 +3,7 @@ import { taper } from '../core/pots';
 import type { Term } from '../core/termination';
 import { clamp } from '../core/units';
 import { DIODE_MODELS, OPAMP_MODELS, opAmpModel } from './models';
-import { BJT_MODELS, JFET_MODELS } from './semis';
+import { BJT_MODELS, JFET_MODELS, MOS_MODELS } from './semis';
 import { GND, elementNodes, type Netlist, type Node } from './netlist';
 
 export interface SpiceOptions {
@@ -30,7 +30,7 @@ const ename = (letter: string, name: string) => (safe(name).toUpperCase().starts
 export function toSpice(nl: Netlist, opt: SpiceOptions = {}): string {
   const nodeName = (n: Node) => (n === GND ? '0' : safe(n));
   const lines: string[] = [];
-  const models = new Set<string>(), opamps = new Set<string>(), qmodels = new Set<string>(), jmodels = new Set<string>();
+  const models = new Set<string>(), opamps = new Set<string>(), qmodels = new Set<string>(), jmodels = new Set<string>(), mmodels = new Set<string>();
   lines.push(`* ${opt.title || nl.title || 'Pedal Filter Lab circuit'}`);
   lines.push('* Exported from Pedal Filter Lab. Input node: ' + nodeName(nl.input) + ', output node: ' + nodeName(nl.output));
   for (const n of opt.notes || []) lines.push('* ' + n);
@@ -97,11 +97,23 @@ export function toSpice(nl: Netlist, opt: SpiceOptions = {}): string {
         jmodels.add(e.model);
         lines.push(`${ename('J', e.name)} ${nn[0]} ${nn[1]} ${nn[2]} ${safe(e.model)}`);
         break;
+      case 'M': {
+        // Discrete MOSFET: body tied to source, plus its body diode and the gate capacitances.
+        mmodels.add(e.model);
+        const m = MOS_MODELS[e.model], isP = m?.pol === 'p';
+        lines.push(`${ename('M', e.name)} ${nn[0]} ${nn[1]} ${nn[2]} ${nn[2]} ${safe(e.model)}`);
+        lines.push(`${ename('D', e.name + '_body')} ${isP ? nn[0] : nn[2]} ${isP ? nn[2] : nn[0]} DBODY_${safe(e.model)}`);
+        if (m) {
+          lines.push(`${ename('C', e.name + '_gs')} ${nn[1]} ${nn[2]} ${spiceNum(m.cgs)}`);
+          lines.push(`${ename('C', e.name + '_gd')} ${nn[1]} ${nn[0]} ${spiceNum(m.cgd)}`);
+        }
+        break;
+      }
       case 'G': lines.push(`${ename('G', e.name)} ${nn[0]} ${nn[1]} ${nn[2]} ${nn[3]} ${spiceNum(e.gm)}`); break;
     }
   }
 
-  if (opamps.size || models.size || qmodels.size || jmodels.size) lines.push('');
+  if (opamps.size || models.size || qmodels.size || jmodels.size || mmodels.size) lines.push('');
   for (const key of opamps) {
     const m = opAmpModel(key);
     lines.push(`* ${m.label}: single-pole macromodel (A0, GBW, Rin, Rout); no slew or swing limits`);
@@ -131,6 +143,12 @@ export function toSpice(nl: Netlist, opt: SpiceOptions = {}): string {
   for (const key of jmodels) {
     const m = JFET_MODELS[key];
     lines.push(m ? `.model ${safe(key)} ${m.spice}${m.approx ? ' ; approximate' : ''}` : `* unknown JFET model ${key}`);
+  }
+  for (const key of mmodels) {
+    const m = MOS_MODELS[key];
+    if (!m) { lines.push(`* unknown MOSFET model ${key}`); continue; }
+    lines.push(`.model ${safe(key)} ${m.spice} ; approximate: thresholds vary between samples`);
+    lines.push(`.model DBODY_${safe(key)} D(Is=${spiceNum(m.bodyIs)} N=${m.bodyN})`);
   }
 
   lines.push('');

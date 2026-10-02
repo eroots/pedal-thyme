@@ -23,6 +23,8 @@ export const PART_DEFAULTS: Record<PartKind, PartDefault> = {
   PNP: { prefix: 'Q', props: { model: '2N3906' } },
   NJF: { prefix: 'Q', props: { model: 'J201' } },
   PJF: { prefix: 'Q', props: { model: '2N5460' } },
+  NMOS: { prefix: 'Q', props: { model: '2N7000' } },
+  PMOS: { prefix: 'Q', props: { model: 'BS250' } },
   SW: { prefix: 'SW', props: { closed: true } },
   SPDT: { prefix: 'SW', props: { pos: 'a' } },
   OA: { prefix: 'U', props: { model: 'TL072' } },

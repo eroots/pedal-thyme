@@ -4,7 +4,7 @@ import { TAPERS } from '../core/pots';
 import { fmtEng, parseEng } from '../core/units';
 import { dcOp, type DeviceOp, type OpPoint } from '../engine/dc';
 import { DIODE_MODELS, OPAMP_MODELS } from '../engine/models';
-import { BJT_MODELS, JFET_MODELS } from '../engine/semis';
+import { BJT_MODELS, JFET_MODELS, MOS_MODELS } from '../engine/semis';
 import { extract, type Extraction } from '../schematic/extract';
 import { PARTS } from '../schematic/library';
 import { onSegment, samePt, type Pt } from '../schematic/geometry';
@@ -29,7 +29,7 @@ const PALETTE: { group: string; kinds: PartKind[] }[] = [
   { group: 'Passive', kinds: ['R', 'C', 'L'] },
   { group: 'Controls', kinds: ['POT', 'RHEO', 'SW', 'SPDT'] },
   { group: 'Diodes', kinds: ['D', 'LED'] },
-  { group: 'Transistors', kinds: ['NPN', 'PNP', 'NJF', 'PJF'] },
+  { group: 'Transistors', kinds: ['NPN', 'PNP', 'NJF', 'PJF', 'NMOS', 'PMOS'] },
   { group: 'Active', kinds: ['OA', 'BUF'] },
   { group: 'Connections', kinds: ['IN', 'OUT', 'GND', 'SUPPLY', 'LABEL'] },
   { group: 'Measure', kinds: ['PROBE'] },
@@ -164,12 +164,14 @@ export function initBuilder(): BuilderApi {
     if (p.kind === 'D' || p.kind === 'LED') h += modelSelect(DIODE_MODELS);
     if (p.kind === 'NPN' || p.kind === 'PNP') h += modelSelect(BJT_MODELS, m => m.pol === p.kind.toLowerCase());
     if (p.kind === 'NJF' || p.kind === 'PJF') h += modelSelect(JFET_MODELS, m => m.pol === (p.kind === 'NJF' ? 'n' : 'p'));
-    if (['D', 'LED', 'NPN', 'PNP', 'NJF', 'PJF'].includes(p.kind)) h += '<div data-bias></div>';
+    if (p.kind === 'NMOS' || p.kind === 'PMOS') h += modelSelect(MOS_MODELS, m => m.pol === (p.kind === 'NMOS' ? 'n' : 'p'));
+    if (['D', 'LED', 'NPN', 'PNP', 'NJF', 'PJF', 'NMOS', 'PMOS'].includes(p.kind)) h += '<div data-bias></div>';
     if (p.kind === 'SW') h += row('State', `<select data-field="closed"><option value="1" ${p.props?.closed ? 'selected' : ''}>Closed</option><option value="0" ${!p.props?.closed ? 'selected' : ''}>Open</option></select>`);
     if (p.kind === 'SPDT') h += row('Position', `<select data-field="pos"><option value="a" ${p.props?.pos !== 'b' ? 'selected' : ''}>To A (upper)</option><option value="b" ${p.props?.pos === 'b' ? 'selected' : ''}>To B (lower)</option></select>`);
     if (p.kind === 'LABEL' || p.kind === 'SUPPLY') h += row('Net name', `<input type="text" data-field="name" value="${esc(p.props?.name || '')}" spellcheck="false">`);
     if (p.kind === 'SUPPLY') h += row('Voltage', `<span class="valrow"><input type="text" data-field="value" value="${esc(p.value ?? 9)}"><span class="unit">V</span></span>`);
-    if (['D', 'LED', 'NPN', 'PNP', 'NJF', 'PJF'].includes(p.kind)) h += '<p class="hint">Linearised at its DC operating point for the frequency response (small-signal: no clipping yet). ≈ marks approximate models.</p>';
+    if (p.kind === 'NMOS' || p.kind === 'PMOS') h += '<p class="hint">Real thresholds vary a lot between samples (2N7000: about 0.8–3 V), so circuits use a trimmer or drain feedback. For a clipper, tie the gate to the drain: it then conducts above V<sub>th</sub>, and its body diode conducts the other way.</p>';
+    if (['D', 'LED', 'NPN', 'PNP', 'NJF', 'PJF', 'NMOS', 'PMOS'].includes(p.kind)) h += '<p class="hint">Linearised at its DC operating point for the frequency response (small-signal: no clipping yet). ≈ marks approximate models.</p>';
     if (p.kind === 'SUPPLY') h += '<p class="hint">Supplies are AC ground in the frequency response.</p>';
     h += `<div class="btnrow"><button data-act="rotate" title="Ctrl+R">Rotate</button><button data-act="mirror" title="Ctrl+E">Mirror</button><button data-act="delete">Delete</button></div>`;
     el.innerHTML = h;
@@ -192,7 +194,7 @@ export function initBuilder(): BuilderApi {
     if (!showBias || ex.issues.some(i => i.severity === 'error')) { editor.setAnnotations(''); return; }
     // Linear circuits have no op from biasOf; solve them too so the overlay always works.
     const pt = biasOf(ex) ?? dcOp(ex.netlist);
-    const rank = (k: PartKind) => (['NPN', 'PNP', 'NJF', 'PJF'].includes(k) ? 0 : k === 'D' || k === 'LED' ? 1 : k === 'OA' ? 2 : ['IN', 'OUT', 'GND', 'SUPPLY', 'LABEL', 'PROBE'].includes(k) ? 9 : 3);
+    const rank = (k: PartKind) => (['NPN', 'PNP', 'NJF', 'PJF', 'NMOS', 'PMOS'].includes(k) ? 0 : k === 'D' || k === 'LED' ? 1 : k === 'OA' ? 2 : ['IN', 'OUT', 'GND', 'SUPPLY', 'LABEL', 'PROBE'].includes(k) ? 9 : 3);
     type Box = [number, number, number, number];
     const taken: Box[] = [...renderSchematicBody(editor.doc).textBoxes, ...editor.doc.parts.map(partBox)];
     /** Area of overlap with labels, symbols and earlier tags. */
@@ -268,6 +270,8 @@ export function initBuilder(): BuilderApi {
     if (d.type === 'D') rows = r('V<sub>D</sub>', Vv(d.vd)) + r('I<sub>D</sub>', A(d.id)) + r('r<sub>d</sub>', d.gd > 1e-12 ? fmtEng(1 / d.gd, 'Ω') : 'open');
     if (d.type === 'Q') rows = r('Region', d.region) + r('I<sub>C</sub>', A(d.ic)) + r('V<sub>CE</sub>', Vv(d.vce)) + r('V<sub>BE</sub>', Vv(d.vbe))
       + r('β (I<sub>C</sub>/I<sub>B</sub>)', d.beta > 0 ? d.beta.toFixed(0) : '–') + r('g<sub>m</sub>', fmtEng(d.gm, 'S'));
+    if (d.type === 'M') rows = r('Region', d.region) + r('I<sub>D</sub>', A(d.id)) + r('V<sub>GS</sub>', Vv(d.vgs)) + r('V<sub>DS</sub>', Vv(d.vds)) + r('g<sub>m</sub>', fmtEng(d.gm, 'S'))
+      + (Math.abs(d.ibody) > 1e-9 ? r('Body diode', A(d.ibody)) : '');
     if (d.type === 'J') rows = r('Region', d.region) + r('I<sub>D</sub>', A(d.id)) + r('V<sub>GS</sub>', Vv(d.vgs)) + r('V<sub>DS</sub>', Vv(d.vds)) + r('g<sub>m</sub>', fmtEng(d.gm, 'S'));
     return `<table class="opdata">${rows}</table>`;
   }

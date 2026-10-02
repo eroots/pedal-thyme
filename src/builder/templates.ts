@@ -113,10 +113,68 @@ function fuzzFace(): Schematic {
   return b.build();
 }
 
+/**
+ * MOSFET booster: 2N7000 common source with drain-to-gate feedback bias (RF = RG puts the gate at half
+ * the drain voltage), which keeps the drain near mid-supply despite the 2N7000's threshold spread.
+ */
+function mosBooster(): Schematic {
+  const b = sch();
+  b.IN(0, 0).wire([0, 0], [10, 0]).C('C1', 40, 0, 0, 100e-9).wire([70, 0], [120, 0])
+    .part('NMOS', 'Q1', 150, 0, 0, undefined, { label: 'r', props: { model: '2N7000' } })
+    .part('SUPPLY', undefined, 160, -90, 0, 9, { props: { name: '9V' } })
+    .R('RD', 160, -60, 90, 10e3, { label: 'r' })
+    .R('RS', 160, 60, 90, 1e3, { label: 'r' }).GND(160, 90)
+    .R('RG', 120, 30, 90, 1e6, { label: 'l' }).GND(120, 60)
+    .R('RF', 120, -60, 90, 1e6, { label: 'l' }).wire([120, -30], [120, 0])
+    .wire([120, -90], [120, -120], [210, -120], [210, -30])
+    .wire([160, -30], [240, -30]).C('C2', 270, -30, 0, 100e-9).wire([300, -30], [330, -30])
+    .POT('VR1', 330, 0, 270, 100e3, 0.7, 'A', { mirror: true, props: { sweep: true } }).GND(330, 30)
+    .wire([360, 0], [400, 0]).OUT(400, 0);
+  b.note(0, 140, 'RF/RG feedback holds the drain near 5 V even though 2N7000 thresholds vary. About 19 dB at the drain.', 'start');
+  return b.build();
+}
+
+/**
+ * Zendrive-style overdrive (loosely after the Hermida Zendrive): op-amp gain stage whose feedback is
+ * clipped by two diode-connected 2N7000s in anti-parallel, a Voice control in the gain leg, then tone and
+ * volume. Values are representative, not a copy of the original.
+ */
+function zendrive(): Schematic {
+  const b = sch();
+  b.IN(0, 0).wire([0, 0], [10, 0]).C('C1', 40, 0, 0, 47e-9).wire([70, 0], [140, 0]).R('R1', 100, 30, 90, 1e6);
+  VREF(b, 100, 60, 180);
+  b.OA('U1', 180, 20, 'TL072', { mirror: true }).wire([140, 40], [130, 40], [130, 80], [230, 80], [230, 20]);
+  b.wire([220, 20], [240, 20]).C('C2', 270, 20, 0, 1e-6).wire([300, 20], [320, 20]).R('R2', 310, -10, 90, 1e6);
+  VREF(b, 310, -40, 0);
+  // Gain leg to VREF: Voice pot + cap (where the boost, and so the clipping, starts).
+  b.OA('U2', 360, 40, 'TL072', { mirror: true }).wire([320, 60], [300, 60], [300, 110]).wire([300, 110], [300, 290])
+    .RHEO('VR4', 270, 110, 0, 5e3, 0.5, 'B', { label: 't', props: { sweep: true } }).C('C3', 240, 140, 90, 100e-9);
+  VREF(b, 240, 170, 180);
+  // Feedback: gain pot, treble roll-off cap, and the MOSFET clippers (gate tied to drain).
+  b.wire([300, 110], [330, 110]).R('R4', 360, 110, 0, 4.7e3).wire([390, 110], [420, 110])
+    .RHEO('VR1', 450, 110, 0, 1e6, 0.5, 'A', { props: { sweep: true } }).wire([480, 110], [500, 110])
+    .wire([300, 150], [360, 150]).C('C4', 390, 150, 0, 100e-12).wire([420, 150], [500, 150])
+    .wire([300, 210], [360, 210]).part('NMOS', 'Q1', 390, 200, 90, undefined, { label: 'b', props: { model: '2N7000' } })
+    .wire([390, 170], [420, 170], [420, 210]).wire([420, 210], [500, 210])
+    .wire([300, 290], [360, 290]).part('NMOS', 'Q2', 390, 280, 90, undefined, { mirror: true, label: 'b', props: { model: '2N7000' } })
+    .wire([390, 250], [360, 250], [360, 290]).wire([420, 290], [500, 290])
+    .wire([500, 40], [500, 290]).wire([400, 40], [520, 40]);
+  // Tone (treble cut) and volume.
+  b.R('R5', 550, 40, 0, 10e3).wire([580, 40], [680, 40]).C('C5', 600, 70, 90, 22e-9)
+    .RHEO('VR2', 600, 130, 90, 20e3, 0.5, 'B', { props: { sweep: true } }).GND(600, 160)
+    .POT('VR3', 680, 70, 270, 100e3, 0.7, 'A', { mirror: true, props: { sweep: true } }).GND(680, 100)
+    .wire([710, 70], [760, 70]).OUT(760, 70);
+  biasSupply(b, 40, 140, ['R6', 'R7', 'C6']);
+  b.note(300, 375, 'VR1 gain · VR2 tone · VR3 volume · VR4 voice. Q1/Q2: diode-connected 2N7000 clippers (clipping not modelled in this small-signal view).', 'start');
+  return b.build();
+}
+
 export const TEMPLATES: Template[] = [
   { id: 'empty', name: 'Empty pedal', description: 'Just the input and output jacks.', build: emptyDoc },
   { id: 'ts', name: 'Tube Screamer-style overdrive', description: 'Buffer, op-amp clipping stage with drive pot, tone and volume.', build: tubeScreamer },
   { id: 'rat', name: 'RAT-style distortion', description: 'LM308 gain stage, hard clipping to ground, filter and volume.', build: rat },
   { id: 'lpb1', name: 'LPB-1-style booster', description: 'One NPN common-emitter stage with divider bias: clean boost.', build: lpb1 },
+  { id: 'mosboost', name: 'MOSFET booster (2N7000)', description: 'Common-source 2N7000 with drain-feedback bias: clean boost.', build: mosBooster },
+  { id: 'zendrive', name: 'Zendrive-style overdrive', description: 'Op-amp gain stage clipped by two diode-connected 2N7000s, voice, tone and volume.', build: zendrive },
   { id: 'fuzz', name: 'Fuzz Face-style fuzz', description: 'Two silicon NPN transistors with DC feedback, fuzz and volume pots.', build: fuzzFace },
 ];

@@ -78,6 +78,8 @@ JFETs → g_m, r_ds, Cgs/Cgd; new `G` element in the MNA). The Builder biases an
 diodes now show their dynamic resistance instead of being open. NPN/PNP/N-JFET/P-JFET parts (Q, J hotkeys) with
 model selection and an operating-point readout; a "DC bias" overlay (B) tags every net with its voltage.
 SPICE export writes Q/J lines and `.model` cards. Templates: LPB-1-style booster, Fuzz Face-style fuzz.
+MOSFETs (2026-10-02): enhancement N/P MOSFETs (2N7000, BS170, BS250; square law, body diode, insulated gate)
+with a MOSFET booster and a Zendrive-style template (diode-connected 2N7000 clippers in an op-amp feedback loop).
 Not done: a Big Muff template; temperature effects; charge-storage (diffusion) capacitance.
 - Newton–Raphson DC operating point with diode (Shockley), BJT (Ebers–Moll) and JFET (square-law) models.
 - Small-signal AC around the bias point, with node voltages shown on the schematic.

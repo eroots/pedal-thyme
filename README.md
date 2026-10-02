@@ -25,5 +25,6 @@ npm run build      # dist/index.html: one self-contained file, opens by double-c
 | `src/schematic/` | Schematic JSON format, part library and symbols, SVG renderer, netlist extraction + electrical rule check, builder DSL |
 | `src/topologies/` | The Playground catalogue: each topology's parts, schematic (netlist is extracted from it), metrics and design solver |
 | `src/playground/` | Playground state, analysis, design search and UI |
+| `src/builder/` | Pedal Builder: document operations, wire router, canvas editor and UI |
 | `src/ui/` | Shared UI pieces (Bode plot) |
 | `tests/` | Unit tests; `legacy.ts` keeps the original hand-written H(s) as oracles for the netlists |

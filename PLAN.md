@@ -53,7 +53,10 @@ legacy oracles) and every drawing passes ERC.
 - Electrical rule checks: floating nodes, unconnected pins, no DC path to ground, missing input/output, shorted supply.
   Plus a tiny gmin to ground as a numerical safety net.
 
-## Phase 3 — Pedal Builder (largest phase)
+## Phase 3 — Pedal Builder (largest phase) — in progress
+Checkpoint 1 (2026-10-02): steps 1–3 done (canvas, palette, wiring, properties, ERC panel), plus a basic
+output-jack response plot and "Open in Builder" from the Playground. Moving parts keeps wires attached
+(stretch routing with an A* fallback), tested by dragging every part of every Playground circuit.
 Build in this order, so each step is usable on its own:
 1. Canvas: grid snap, pan/zoom, select / box-select, move, rotate, mirror, delete, undo/redo, copy/paste.
 2. Parts palette (Phase 1 parts) and click-pin-to-pin orthogonal wiring with bend points, junction dots and net labels.

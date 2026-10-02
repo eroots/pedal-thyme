@@ -7,9 +7,17 @@ import type { LabelSide, SchPart, Schematic } from './types';
 export interface RenderOptions {
   /** Accessible name for the drawing. */
   title?: string;
-  /** Part ids to highlight (e.g. ERC findings, selection). */
+  /** Part ids to highlight (e.g. ERC findings). */
   highlight?: string[];
+  /** Editor mode: add wide transparent hit areas for parts and wires. */
+  editor?: boolean;
+  /** Selected part ids and wire ids (editor). */
+  selected?: Set<string>;
+  /** Symbols only: no refs, values or notes (palette icons). */
+  bare?: boolean;
 }
+
+export interface Bounds { x0: number; y0: number; x1: number; y1: number }
 
 const esc = (s: string) => s.replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]!));
 const LABEL_POS: Record<LabelSide, { dx: number; dy1: number; dy2: number; anchor: string }> = {
@@ -33,6 +41,14 @@ function labelSide(p: SchPart): LabelSide {
 }
 
 export function renderSchematic(sch: Schematic, opt: RenderOptions = {}): string {
+  const { body, bounds } = renderSchematicBody(sch, opt);
+  const pad = 12;
+  const vb = [bounds.x0 - pad, bounds.y0 - pad, bounds.x1 - bounds.x0 + 2 * pad, bounds.y1 - bounds.y0 + 2 * pad].map(n => Math.round(n));
+  return `<svg viewBox="${vb.join(' ')}" class="schem" role="img" aria-label="${esc(opt.title || 'Schematic')}">${body}</svg>`;
+}
+
+/** The drawing's SVG content (without the outer <svg>) and its world-space bounds. */
+export function renderSchematicBody(sch: Schematic, opt: RenderOptions = {}): { body: string; bounds: Bounds } {
   const out: string[] = [];
   const bounds = { x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity };
   const grow = ([x, y]: Pt, padX = 0, padY = 0) => {
@@ -40,17 +56,20 @@ export function renderSchematic(sch: Schematic, opt: RenderOptions = {}): string
     bounds.y0 = Math.min(bounds.y0, y - padY); bounds.y1 = Math.max(bounds.y1, y + padY);
   };
   const text = (x: number, y: number, s: string, cls: string, anchor = 'middle') => {
+    if (opt.bare && cls !== 'sign') return '';
     // Rough text extent for the viewBox (≈ 6.5 units per character at 11px).
     const w = s.length * 6.5;
     grow([anchor === 'start' ? x + w : anchor === 'end' ? x - w : x + w / 2, y - 10]);
     grow([anchor === 'start' ? x : anchor === 'end' ? x : x - w / 2, y + 3]);
     return `<text class="${cls}" x="${x}" y="${y}" text-anchor="${anchor}">${esc(s)}</text>`;
   };
-  const hl = new Set(opt.highlight || []);
+  const hl = new Set(opt.highlight || []), sel = opt.selected || new Set<string>();
 
   // Wires.
   for (const w of sch.wires) {
-    out.push(`<polyline class="wire" data-wire="${esc(w.id)}" points="${w.pts.map(p => p.join(',')).join(' ')}"/>`);
+    const pts = w.pts.map(p => p.join(',')).join(' ');
+    out.push(`<polyline class="wire${sel.has(w.id) ? ' sel' : ''}" data-wire="${esc(w.id)}" points="${pts}"/>`);
+    if (opt.editor) out.push(`<polyline class="wire-hit" data-wire="${esc(w.id)}" points="${pts}"/>`);
     w.pts.forEach(p => grow(p));
   }
 
@@ -59,7 +78,8 @@ export function renderSchematic(sch: Schematic, opt: RenderOptions = {}): string
     const spec = PARTS[p.kind];
     const [bx0, by0, bx1, by1] = spec.box;
     for (const c of [[bx0, by0], [bx1, by0], [bx0, by1], [bx1, by1]] as Pt[]) grow(toWorld(p, c));
-    let g = `<g transform="${svgTransform(p)}">${spec.draw(p)}</g>`;
+    const hit = opt.editor ? `<rect class="hit" x="${bx0 - 4}" y="${by0 - 4}" width="${bx1 - bx0 + 8}" height="${by1 - by0 + 8}"/>` : '';
+    let g = `<g transform="${svgTransform(p)}">${hit}${spec.draw(p)}</g>`;
     // Upright text.
     if (p.kind === 'OA') {
       for (const [sign, at] of [['−', [-31, -20]], ['+', [-31, 20]]] as [string, Pt][]) {
@@ -85,7 +105,7 @@ export function renderSchematic(sch: Schematic, opt: RenderOptions = {}): string
       if (p.ref) g += text(p.x + dx, p.y + L.dy1 + dy, p.ref, 'pn', L.anchor);
       if (val) g += text(p.x + dx, p.y + dy + (p.ref ? L.dy2 : L.dy1 + 7), val, 'pv', L.anchor);
     }
-    const cls = `comp${hl.has(p.id) ? ' hl' : ''}`;
+    const cls = `comp${hl.has(p.id) ? ' hl' : ''}${sel.has(p.id) ? ' sel' : ''}`;
     const title = p.ref ? `<title>${esc(p.ref)}${spec.valueText ? ': ' + esc(spec.valueText(p)) : ''}</title>` : '';
     out.push(`<g class="${cls}" data-id="${esc(p.id)}"${p.ref ? ` data-part="${esc(p.ref)}"` : ''}>${title}${g}</g>`);
   }
@@ -118,7 +138,5 @@ export function renderSchematic(sch: Schematic, opt: RenderOptions = {}): string
   for (const n of sch.notes || []) out.push(text(n.x, n.y, n.text, 'tiny', n.anchor || 'middle'));
 
   if (!isFinite(bounds.x0)) { bounds.x0 = 0; bounds.y0 = 0; bounds.x1 = 100; bounds.y1 = 60; }
-  const pad = 12;
-  const vb = [bounds.x0 - pad, bounds.y0 - pad, bounds.x1 - bounds.x0 + 2 * pad, bounds.y1 - bounds.y0 + 2 * pad].map(n => Math.round(n));
-  return `<svg viewBox="${vb.join(' ')}" class="schem" role="img" aria-label="${esc(opt.title || 'Schematic')}">${out.join('')}</svg>`;
+  return { body: out.join(''), bounds };
 }

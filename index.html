@@ -8,6 +8,10 @@
 <body>
 <header class="top">
   <div class="brand"><span class="logo">∿</span> Pedal Filter Lab</div>
+  <nav class="sections" aria-label="Sections">
+    <button data-section="playground">Playground</button>
+    <button data-section="builder">Pedal Builder</button>
+  </nav>
   <div class="settings">
     <label>Resistors <select id="rSeries"></select></label>
     <label>Caps <select id="cSeries"></select></label>
@@ -21,7 +25,7 @@
   </div>
 </header>
 
-<div class="layout">
+<div class="layout" id="playground">
   <nav id="topoList" aria-label="Filter topologies"></nav>
   <main>
     <section class="card intro">
@@ -43,6 +47,7 @@
         <div class="btnrow">
           <button id="snapAll" title="Round every part to the selected E-series">Snap to E-series</button>
           <button id="exportSpice" title="Download this circuit, with current values, knobs and source/load, as a SPICE netlist">Export SPICE (.cir)</button>
+          <button id="openInBuilder" title="Copy this circuit into the Pedal Builder as editable parts">Open in Builder</button>
           <span class="hint">‹ › or ↑ ↓ step standard values</span>
         </div>
       </section>
@@ -125,6 +130,41 @@
     </div>
   </main>
 </div>
+
+<div class="builder" id="builder" hidden>
+  <aside class="b-palette card" id="bPalette" aria-label="Parts"></aside>
+  <div class="b-main">
+    <div class="b-toolbar card">
+      <button id="bToolSelect" title="Select and move (V)">Select</button>
+      <button id="bToolWire" title="Draw wires (W)">Wire</button>
+      <span class="sep"></span>
+      <button id="bRotate" title="Rotate (R)">Rotate</button>
+      <button id="bMirror" title="Mirror (M)">Mirror</button>
+      <button id="bDelete" title="Delete (Del)">Delete</button>
+      <span class="sep"></span>
+      <button id="bUndo" title="Undo (Ctrl+Z)">Undo</button>
+      <button id="bRedo" title="Redo (Ctrl+Y)">Redo</button>
+      <button id="bFit" title="Fit to view (F)">Fit</button>
+      <span class="sep"></span>
+      <button id="bNew" title="Start a new pedal">New</button>
+      <span class="b-status" id="bErcStatus"></span>
+    </div>
+    <div class="b-canvas-wrap" id="bCanvasWrap" tabindex="0" aria-label="Schematic editor">
+      <svg id="bCanvas" xmlns="http://www.w3.org/2000/svg"></svg>
+    </div>
+    <p class="hint b-hint" id="bHint"></p>
+    <section class="card b-sim">
+      <h2>Response at the output jack</h2>
+      <canvas id="bSimCanvas"></canvas>
+      <p class="hint" id="bSimMsg"></p>
+    </section>
+  </div>
+  <aside class="b-side">
+    <section class="card" id="bProps"></section>
+    <section class="card"><h2>Checks</h2><div id="bErc"></div></section>
+  </aside>
+</div>
+
 <footer>
   Characteristics and target design assume an ideal source (0 Ω) and load (∞); turn on Source &amp; load to see the real-world response on the plot.
   Op-amps are ideal (no GBW or slew limits).

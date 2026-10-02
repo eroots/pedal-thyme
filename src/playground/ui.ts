@@ -13,6 +13,7 @@ import { cssVar, drawPlot, magRange, PLOT_MARGIN, type PlotMarker } from '../ui/
 import { freqGrid, response, toleranceCorners, valuesValid } from './analysis';
 import { searchDesigns, snapAllValues, type DesignRow } from './design';
 import { renderSchematic } from '../schematic/render';
+import type { Schematic } from '../schematic/types';
 import {
   S, COMPARE_COLORS, SRC_PRESETS, LOAD_PRESETS, SWEEP_TAPERS, cloneTerm, cur, fRange, persist, seriesFor,
   sweepColor, sweepSteps, sweepTargets, topo, type CompareItem, type SavedDesign, type Settings, type SweepTaper,
@@ -723,8 +724,17 @@ function wireEvents(): void {
   });
 }
 
-export function initPlayground(): void {
+export interface PlaygroundHooks {
+  /** Send the current circuit (as a schematic with its values and knob settings) to the Builder. */
+  openInBuilder(doc: Schematic): void;
+}
+
+export function initPlayground(hooks: PlaygroundHooks): void {
   wireEvents();
+  $('#openInBuilder').addEventListener('click', () => {
+    const t = topo(), p = cur(t);
+    if (valuesValid(t, p.values)) hooks.openInBuilder(t.schematic(p.values, p.opts));
+  });
   renderSettings();
   renderTermUI();
   renderNav();

@@ -174,6 +174,11 @@ export function extract(sch: Schematic): Extraction {
     });
   }
 
+  // Reference designators must be unique among real components.
+  const byRef = new Map<string, SchPart[]>();
+  for (const p of sch.parts) if (p.ref && PARTS[p.kind].elements(p, () => GND).length) byRef.set(p.ref, [...(byRef.get(p.ref) || []), p]);
+  for (const [ref, ps] of byRef) if (ps.length > 1) issues.push({ severity: 'error', message: `Reference ${ref} is used ${ps.length} times.`, parts: ps.map(p => p.id) });
+
   // Values.
   for (const p of sch.parts) {
     const spec = PARTS[p.kind];

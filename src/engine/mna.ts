@@ -7,7 +7,7 @@ import { Cx, cx, ONE } from '../core/complex';
 import { taper } from '../core/pots';
 import { clamp } from '../core/units';
 import { opAmpModel } from './models';
-import { GND, elementNodes, type Netlist, type Node } from './netlist';
+import { GND, elementNodes, type Element, type Netlist, type Node } from './netlist';
 
 /** Conductance from every node to ground: keeps floating nodes (e.g. behind an "off" diode) solvable. */
 const GMIN = 1e-15;
@@ -56,10 +56,11 @@ export class Circuit {
     const add = (n: Node) => { if (n !== GND && !this.idx.has(n)) this.idx.set(n, this.idx.size); };
     add(netlist.input); add(netlist.output);
     for (const e of netlist.elements) elementNodes(e).forEach(add);
-    const internal = new Map<string, number>(); // a real op-amp's gain-stage output (before Rout)
-    for (const e of netlist.elements) {
-      if (e.type === 'OA' && opAmpModel(e.model).a0 !== Infinity) { internal.set(e.name, this.idx.size); this.idx.set('#' + e.name, this.idx.size); }
-    }
+    // A real op-amp's gain-stage output (before Rout). Keyed by element, so duplicate names can't collide.
+    const internal = new Map<Element, number>();
+    netlist.elements.forEach((e, i) => {
+      if (e.type === 'OA' && opAmpModel(e.model).a0 !== Infinity) { internal.set(e, this.idx.size); this.idx.set(`#oa${i}`, this.idx.size); }
+    });
     add(SRC_NODE);
     const nNodes = this.idx.size;
     const voltageRows = netlist.elements.filter(e => e.type === 'V' || e.type === 'E' || e.type === 'OA' || e.type === 'SPDT' || (e.type === 'SW' && e.closed));
@@ -90,7 +91,7 @@ export class Circuit {
         case 'OA': {
           const m = opAmpModel(e.model);
           if (m.a0 !== Infinity) {
-            admit(this.G, internal.get(e.name)!, ix(e.out), 1 / Math.max(m.rout, 1e-6));
+            admit(this.G, internal.get(e)!, ix(e.out), 1 / Math.max(m.rout, 1e-6));
             if (isFinite(m.rin)) admit(this.G, ix(e.inP), ix(e.inN), 1 / m.rin);
           }
           break;
@@ -114,7 +115,7 @@ export class Circuit {
             put(this.G, ix(e.out), j, 1);
             put(this.G, j, p, 1); put(this.G, j, n, -1);
           } else {
-            const x = internal.get(e.name)!;
+            const x = internal.get(e)!;
             put(this.G, x, j, 1); put(this.G, j, x, 1);
             this.gainRows.push({ row: j, p, n, a0: m.a0, wt: 2 * Math.PI * m.gbw });
           }

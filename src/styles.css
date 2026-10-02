@@ -127,6 +127,11 @@ main { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
 .opt.range .rhead { display: flex; justify-content: space-between; gap: 8px; }
 .opt.range output { font-family: var(--mono); color: var(--accent); }
 .opt.range input { width: 100%; accent-color: var(--accent); }
+.opt.select { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 8px; }
+.opt.select select { min-width: 0; }
+.opt-note { font-size: 12px; color: var(--muted); margin: 0 0 6px; }
+#zTable { margin-bottom: 10px; }
+#zTable caption { text-align: left; font-size: 12px; color: var(--muted); padding: 0 6px 4px; caption-side: top; }
 .btnrow { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; align-items: center; }
 .hint { color: var(--muted); font-size: 12px; }
 

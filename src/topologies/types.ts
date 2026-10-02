@@ -1,8 +1,9 @@
 import type { Cx } from '../core/complex';
-import type { Zterm } from '../core/circuit';
 import type { SeriesName } from '../core/eseries';
 import type { TaperKey } from '../core/pots';
-import type { Opts, Values } from '../core/types';
+import type { Opts, Values, Zterm } from '../core/types';
+import type { Circuit } from '../engine/mna';
+import type { Netlist } from '../engine/netlist';
 
 export type PartType = 'R' | 'C';
 
@@ -32,9 +33,11 @@ export interface TargetDef { key: string; label: string; kind: TargetKind; def: 
 export interface OptionDef {
   key: string;
   label: string;
-  def: number | boolean;
-  /** Omitted for a checkbox; 'range' for a knob/slider. */
-  type?: 'range';
+  def: number | boolean | string;
+  /** Omitted for a checkbox; 'range' for a knob/slider; 'select' for a model choice. */
+  type?: 'range' | 'select';
+  /** For 'select'. */
+  choices?: { value: string; label: string }[];
   min?: number;
   max?: number;
   step?: number;
@@ -71,7 +74,8 @@ export interface SchematicDrawer {
 }
 export type LabelSide = 't' | 'b' | 'l' | 'r';
 
-export interface Topology {
+/** A topology as authored: the circuit is a netlist; H(s) is derived from it by the MNA engine. */
+export interface TopologyDef {
   id: string;
   group: string;
   name: string;
@@ -79,7 +83,8 @@ export interface Topology {
   parts: PartDef[];
   options?: OptionDef[];
   presets?: Preset[];
-  H(v: Values, s: Cx, o: Opts, z?: Zterm | null): Cx;
+  /** The circuit for given values and options. Input node "in", output node "out". */
+  netlist(v: Values, o: Opts): Netlist;
   analyze(v: Values, o: Opts, t: Topology): Metric[];
   targets: TargetDef[];
   /** The part the design search sweeps over standard values. */
@@ -88,4 +93,11 @@ export interface Topology {
   /** SVG viewBox for the schematic. */
   vb: string;
   sch(d: SchematicDrawer, o: Opts): void;
+}
+
+export interface Topology extends TopologyDef {
+  /** Small-signal transfer V(out)/V(source) with optional source/load impedances. */
+  H(v: Values, s: Cx, o: Opts, z?: Zterm | null): Cx;
+  /** The compiled circuit (cached), for impedances and node probes. */
+  circuit(v: Values, o: Opts): Circuit;
 }

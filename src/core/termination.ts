@@ -1,7 +1,7 @@
 // Source and load models: a Thevenin source of (Rs + sLs) with optional shunt cable capacitance,
 // and a load of RL ∥ CL.
 import { Cx, cx, ONE } from './complex';
-import type { Zterm } from './circuit';
+import type { Zterm } from './types';
 
 export interface SourceTerm { on: boolean; preset: string; R: number; L: number; C: number }
 export interface LoadTerm { on: boolean; preset: string; R: number; C: number }

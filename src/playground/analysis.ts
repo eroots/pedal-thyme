@@ -26,15 +26,15 @@ export function response(t: Topology, v: Values, o: Opts, freqs: number[], term?
 }
 
 /**
- * Value sets at the ± tolerance corners: every corner when there are ≤ 7 parts, otherwise a fixed
- * pseudo-random sample of 128 corners (always including all-low and all-high).
+ * Value sets at the ± tolerance corners: every corner when there are ≤ 6 parts, otherwise a fixed
+ * pseudo-random sample of 64 corners (always including all-low and all-high).
  */
 export function toleranceCorners(t: Topology, v: Values, rTolPct: number, cTolPct: number): Values[] {
   const parts = t.parts.filter(p => v[p.key] > 0), n = parts.length, runs: Values[] = [];
   let seed = 12345;
   const rnd = () => (seed = (seed * 1103515245 + 12345) >>> 0) / 4294967296;
-  const masks = n <= 7 ? Array.from({ length: 1 << n }, (_, i) => i)
-    : Array.from({ length: 128 }, (_, i) => (i === 0 ? 0 : i === 1 ? (1 << n) - 1 : Math.floor(rnd() * (1 << n))));
+  const masks = n <= 6 ? Array.from({ length: 1 << n }, (_, i) => i)
+    : Array.from({ length: 64 }, (_, i) => (i === 0 ? 0 : i === 1 ? (1 << n) - 1 : Math.floor(rnd() * (1 << n))));
   for (const mask of masks) {
     const vv = { ...v };
     parts.forEach((p, i) => {

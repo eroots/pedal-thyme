@@ -2,7 +2,9 @@
 import { Cx } from '../core/complex';
 import { stepSeries, R_SERIES, C_SERIES, type SeriesName } from '../core/eseries';
 import { Hfull, edges } from '../core/measure';
-import { termActive, type LoadTerm, type SourceTerm, type Term } from '../core/termination';
+import { termActive, termAt, type LoadTerm, type SourceTerm, type Term } from '../core/termination';
+import { opAmpModel } from '../engine/models';
+import { toSpice } from '../engine/spice';
 import type { Opts, Values } from '../core/types';
 import { TAU, db, fmtEng, parseEng } from '../core/units';
 import { TOPOS, topoById } from '../topologies';
@@ -95,10 +97,17 @@ function renderTopo(): void {
       <span class="unit">${unitOf(x.type)}</span>
     </div>`).join('');
 
-  $('#optsEditor').innerHTML = (t.options || []).map(o => o.type === 'range'
-    ? `<label class="opt range"><span class="rhead"><span>${esc(o.label)}</span><output>${esc(o.fmt!(Number(p.opts[o.key])))}</output></span>
-        <input type="range" data-opt="${o.key}" min="${o.min}" max="${o.max}" step="${o.step}" value="${p.opts[o.key]}"></label>`
-    : `<label class="opt"><input type="checkbox" data-opt="${o.key}" ${p.opts[o.key] ? 'checked' : ''}> ${esc(o.label)}</label>`).join('');
+  $('#optsEditor').innerHTML = (t.options || []).map(o => {
+    if (o.type === 'range') {
+      return `<label class="opt range"><span class="rhead"><span>${esc(o.label)}</span><output>${esc(o.fmt!(Number(p.opts[o.key])))}</output></span>
+        <input type="range" data-opt="${o.key}" min="${o.min}" max="${o.max}" step="${o.step}" value="${p.opts[o.key]}"></label>`;
+    }
+    if (o.type === 'select') {
+      return `<label class="opt select"><span>${esc(o.label)}</span><select data-opt="${o.key}">${(o.choices || []).map(c =>
+        `<option value="${esc(c.value)}" ${c.value === p.opts[o.key] ? 'selected' : ''}>${esc(c.label)}</option>`).join('')}</select></label>`;
+    }
+    return `<label class="opt"><input type="checkbox" data-opt="${o.key}" ${p.opts[o.key] ? 'checked' : ''}> ${esc(o.label)}</label>`;
+  }).join('') + opAmpNote(t, p.opts);
 
   $('#targetsEditor').innerHTML = t.targets.map(x => {
     const unit = { freq: 'Hz', db: 'dB', q: '', param: '×' }[x.kind];
@@ -115,6 +124,16 @@ function renderTopo(): void {
   $('#designOut').innerHTML = '';
   renderSweepCfg();
   update();
+}
+
+/** Explains what a non-ideal op-amp model adds (and doesn't), with any model caveat. */
+function opAmpNote(t: Topology, o: Opts): string {
+  if (!t.options?.some(x => x.key === 'opamp')) return '';
+  const key = String(o.opamp ?? 'ideal');
+  if (key === 'ideal') return '<p class="opt-note">Ideal op-amp: infinite gain and bandwidth. Pick a real part to see gain-bandwidth roll-off.</p>';
+  const m = opAmpModel(key);
+  return `<p class="opt-note">${esc(m.label)}: A0 ${fmtEng(m.a0)}, GBW ${fmtEng(m.gbw, 'Hz')}. Small-signal only (no slew or clipping). ` +
+    `Characteristics and target design still use ideal formulas; the plot and measured values use this model.${m.note ? ' ' + esc(m.note) : ''}</p>`;
 }
 
 function renderSweepCfg(): void {
@@ -157,6 +176,23 @@ function renderTermUI(): void {
   $('#srcR').value = fmtEng(src.R); $('#srcL').value = fmtEng(src.L); $('#srcC').value = fmtEng(src.C);
   $('#loadR').value = fmtEng(load.R); $('#loadC').value = fmtEng(load.C);
   for (const id of ['#srcR', '#srcL', '#srcC', '#loadR', '#loadC']) $(id).classList.remove('invalid');
+}
+
+/**
+ * |Zin| (with the current load, if on) and |Zout| (with the current source, if on) at a few
+ * frequencies: what the previous stage has to drive, and what the next stage sees.
+ */
+function impedanceTable(t: Topology, v: Values, o: Opts): string {
+  const c = t.circuit(v, o), term = termActive(S.term) ? S.term : null;
+  const cells = [100, 1000, 10e3].map(f => {
+    const sf = new Cx(0, TAU * f), z = termAt(term, sf);
+    return { f, zin: c.zin(sf, z.zl).abs(), zout: c.zout(sf, z.zs).abs() };
+  });
+  const fmtZ = (x: number) => (isFinite(x) && x < 1e11 ? fmtEng(x, 'Ω') : '≈ open');
+  return `<table id="zTable"><caption>Impedances${term ? ' (Zin with the load, Zout with the source)' : ''}</caption>
+    <tr><th></th>${cells.map(c => `<th>${fmtEng(c.f, 'Hz')}</th>`).join('')}</tr>
+    <tr><td>Input |Zin|</td>${cells.map(c => `<td class="num">${fmtZ(c.zin)}</td>`).join('')}</tr>
+    <tr><td>Output |Zout|</td>${cells.map(c => `<td class="num">${fmtZ(c.zout)}</td>`).join('')}</tr></table>`;
 }
 
 /** Side-by-side numbers for the ideal vs. terminated response of the current design. */
@@ -281,7 +317,7 @@ function update(mode?: 'fast'): void {
     $('#sweepTable').innerHTML = `<table><tr><th>Sweep step</th>${cols.map(c => `<th>${esc(c.label)}</th>`).join('')}</tr>${body}</table>`;
   } else $('#sweepTable').innerHTML = '';
 
-  $('#termEffect').innerHTML = ok ? termEffectTable(t, v, o) : '';
+  $('#termEffect').innerHTML = ok ? impedanceTable(t, v, o) + termEffectTable(t, v, o) : '';
   persist();
 }
 
@@ -354,6 +390,17 @@ function runDesign(): void {
   if (!(anchor > 0)) { outEl.innerHTML = '<div class="msg err">Enter a valid anchor value.</div>'; return; }
   p.anchor = anchor;
 
+  // Searches that iterate on numerical measurements can take a second; show progress first.
+  const btn = $<HTMLButtonElement>('#runDesign');
+  btn.disabled = true;
+  outEl.innerHTML = '<div class="msg">Searching standard values…</div>';
+  setTimeout(() => {
+    try { renderDesign(t, tg, anchor); } finally { btn.disabled = false; }
+  }, 20);
+}
+
+function renderDesign(t: Topology, tg: Values, anchor: number): void {
+  const p = cur(t), outEl = $('#designOut');
   let res;
   try {
     res = searchDesigns({ t, targets: tg, anchor, opts: p.opts, values: p.values, rSeries: S.settings.rSeries, cSeries: S.settings.cSeries });
@@ -458,6 +505,11 @@ function onOption(e: Event): void {
   if (el.type === 'checkbox') {
     if (e.type !== 'change') return;
     p.opts[k] = el.checked;
+  } else if (el.tagName === 'SELECT') {
+    if (e.type !== 'change') return;
+    p.opts[k] = el.value;
+    renderTopo(); // refreshes the model note
+    return;
   } else {
     p.opts[k] = +el.value;
     const def = topo().options!.find(x => x.key === k)!, outEl = el.closest('.opt')!.querySelector('output');
@@ -489,6 +541,32 @@ function onTermChange(e: Event): void {
   } else return;
   renderTermUI();
   update();
+}
+
+function download(filename: string, text: string, type: string): void {
+  const url = URL.createObjectURL(new Blob([text], { type }));
+  const a = document.createElement('a');
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+/** Download the current circuit (values, knob positions, op-amp model, source/load) as a SPICE deck. */
+function exportSpice(): void {
+  const t = topo(), p = cur(t);
+  if (!valuesValid(t, p.values)) return;
+  const knobs = (t.options || []).map(o => {
+    const val = p.opts[o.key];
+    if (o.type === 'range') return `${o.label}: ${o.fmt!(Number(val))}`;
+    if (o.type === 'select') return `${o.label}: ${o.choices?.find(c => c.value === val)?.label ?? val}`;
+    return `${o.label}: ${val ? 'on' : 'off'}`;
+  });
+  const [fmin, fmax] = fRange();
+  const text = toSpice(t.netlist(p.values, p.opts), {
+    title: t.name, term: termActive(S.term) ? S.term : null, fmin, fmax,
+    notes: knobs.length ? ['Settings: ' + knobs.join(', ')] : [],
+  });
+  download(`${t.id}.cir`, text, 'text/plain');
 }
 
 async function importDesigns(f: File): Promise<void> {
@@ -543,6 +621,7 @@ function wireEvents(): void {
     if (inp) { inp.focus(); inp.select(); flashPart(key); }
   });
   $('#snapAll').addEventListener('click', () => setValues(snapAllValues(topo(), cur().values, S.settings.rSeries, S.settings.cSeries)));
+  $('#exportSpice').addEventListener('click', exportSpice);
 
   $('#presetRow').addEventListener('change', e => {
     const el = tgt(e);
@@ -635,11 +714,7 @@ function wireEvents(): void {
   });
   $('#exportBtn').addEventListener('click', () => {
     const data = { app: 'pedal-filter-lab', version: 1, exported: new Date().toISOString(), saved: S.saved, compare: S.compare };
-    const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }));
-    const a = document.createElement('a');
-    a.href = url; a.download = 'pedal-filter-designs.json';
-    document.body.appendChild(a); a.click(); a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    download('pedal-filter-designs.json', JSON.stringify(data, null, 2), 'application/json');
   });
   $('#importFile').addEventListener('change', e => {
     const el = tgt(e), f = el.files?.[0];

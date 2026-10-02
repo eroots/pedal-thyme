@@ -20,8 +20,9 @@ npm run build      # dist/index.html: one self-contained file, opens by double-c
 
 | Path | Contents |
 |---|---|
-| `src/core/` | Complex numbers, units, E-series, circuit solvers, pot tapers, source/load terminations, measurements |
-| `src/topologies/` | The Playground catalogue: each topology's parts, H(s), metrics, design solver and schematic |
+| `src/core/` | Complex numbers, units, E-series, pot tapers, source/load terminations, measurements |
+| `src/engine/` | Netlist format, MNA small-signal solver (with Zin/Zout), op-amp and diode models, SPICE export |
+| `src/topologies/` | The Playground catalogue: each topology's parts, netlist, metrics, design solver and schematic |
 | `src/playground/` | Playground state, analysis, design search, schematic renderer and UI |
 | `src/ui/` | Shared UI pieces (Bode plot) |
-| `tests/` | Unit tests, including closed-form oracles for every transfer function |
+| `tests/` | Unit tests; `legacy.ts` keeps the original hand-written H(s) as oracles for the netlists |

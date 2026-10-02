@@ -2,15 +2,15 @@
 // engine; these closed-form oracles and physics checks must keep passing unchanged.
 import { describe, expect, it } from 'vitest';
 import { Cx, ONE, cx } from '../src/core/complex';
-import { solve2 } from '../src/core/circuit';
 import { bell, edges, Hfull, levelAt } from '../src/core/measure';
-import type { Term } from '../src/core/termination';
+import { termAt, type Term } from '../src/core/termination';
 import type { Opts, Values } from '../src/core/types';
 import { TAU, db } from '../src/core/units';
 import { TOPOS, topoById } from '../src/topologies';
 import type { Topology } from '../src/topologies/types';
 import { evaluate } from '../src/playground/analysis';
 import { searchDesigns } from '../src/playground/design';
+import { LEGACY_H } from './legacy';
 
 const defaults = (t: Topology) => ({
   v: Object.fromEntries(t.parts.map(p => [p.key, p.def])) as Values,
@@ -46,11 +46,6 @@ const ORACLES: Record<string, (v: Values, s: Cx, o: Opts) => Cx> = {
   'sk-hp': (v, s) => { const n = s.mul(s).scale(v.R1 * v.R2 * v.C1 * v.C2); return n.div(n.add(s.scale(v.R1 * (v.C1 + v.C2))).add(1)); },
   'mfb-lp': (v, s) => cx(-v.R2 / v.R1).div(ONE.add(s.scale(v.C2 * (v.R2 + v.R3 + v.R2 * v.R3 / v.R1))).add(s.mul(s).scale(v.C1 * v.C2 * v.R2 * v.R3))),
   'mfb-bp': (v, s) => s.scale(-v.C1 * v.R2 / v.R1).div(cx(1 / v.R1 + 1 / v.R3).add(s.scale(v.C1 + v.C2)).add(s.mul(s).scale(v.C1 * v.C2 * v.R2))),
-  'scoop-bm': (v, s, o) => {
-    const G1 = 1 / v.R1, G2 = 1 / v.R2, Gp = 1 / v.VR, t = Number(o.blend) / 100;
-    const [va, vb] = solve2(s.scale(v.C1).add(G1 + Gp), cx(-Gp), cx(-Gp), s.scale(v.C2).add(G2 + Gp), cx(G1), s.scale(v.C2));
-    return va.add(vb.sub(va).scale(t));
-  },
   'scoop-bt': (v, s) => { // equal-cap bridged-T
     const C = v.C1, a = s.mul(s).scale(C * C * v.R1 * v.R2);
     return a.add(s.scale(2 * C * v.R1)).add(1).div(a.add(s.scale(C * (2 * v.R1 + v.R2))).add(1));
@@ -63,8 +58,36 @@ describe('transfer functions match closed-form oracles', () => {
       const t = topo(id), { v, o } = defaults(t);
       for (const f of FREQS) {
         const a = t.H(v, s(f), o), b = H(v, s(f), o);
-        // ≤ 1e-6 relative: the nodal solver drives inputs through a 1 mΩ source.
         expect(a.sub(b).abs() / b.abs()).toBeLessThan(1e-6);
+      }
+    });
+  }
+});
+
+describe('MNA netlists match the pre-Phase-1 transfer functions', () => {
+  const pickup: Term = { src: { on: true, preset: 'x', R: 6e3, L: 2.5, C: 470e-12 }, load: { on: true, preset: 'y', R: 100e3, C: 470e-12 } };
+  // Exercise knobs and switches away from their defaults too.
+  const variants: Record<string, Opts[]> = {
+    'rc2-lp': [{ buf: false }, { buf: true }], 'rc2-hp': [{ buf: false }, { buf: true }], 'bp': [{ buf: false }, { buf: true }],
+    'scoop-bm': [{ blend: 0 }, { blend: 35 }, { blend: 100 }],
+    'gyrator': [{ pos: 100 }, { pos: -60 }, { pos: 0 }],
+    'ts-fmv': [{ treble: 5, mid: 5, bass: 5 }, { treble: 0, mid: 10, bass: 2 }, { treble: 10, mid: 0, bass: 10 }],
+    'ts-james': [{ treble: 5, bass: 5 }, { treble: 0, bass: 10 }, { treble: 10, bass: 0 }],
+  };
+  for (const t of TOPOS) {
+    it(t.id, () => {
+      const legacy = LEGACY_H[t.id];
+      expect(legacy, `legacy oracle for ${t.id}`).toBeDefined();
+      const { v, o } = defaults(t);
+      for (const opts of variants[t.id] || [{}]) {
+        const oo = { ...o, ...opts };
+        for (const f of FREQS) {
+          for (const z of [null, termAt(pickup, s(f))]) {
+            const a = t.H(v, s(f), oo, z), b = legacy(v, s(f), oo, z);
+            // The legacy nodal solver drove inputs through 1 mΩ; MNA uses an exact source.
+            expect(a.sub(b).abs() / Math.max(b.abs(), 1e-12)).toBeLessThan(1e-6);
+          }
+        }
       }
     });
   }
@@ -134,6 +157,44 @@ describe('measurements', () => {
     expect(bell(t, v, { pos: 100 }).gain).toBeCloseTo(-bell(t, v, { pos: -100 }).gain, 1);
     expect(bell(t, v, { pos: 0 }).f0).toBeNull();
   });
+});
+
+describe('real op-amp models', () => {
+  it('gyrator boost and Q barely change with a slow op-amp', () => {
+    const t = topo('gyrator'), { v } = defaults(t);
+    const ideal = bell(t, v, { pos: 100, opamp: 'ideal' }), slow = bell(t, v, { pos: 100, opamp: 'LM358' });
+    expect(Math.abs(slow.gain - ideal.gain)).toBeLessThan(0.3);
+    expect(Math.abs(slow.Q! / ideal.Q! - 1)).toBeLessThan(0.05);
+  });
+  it('a TS stage at full drive loses treble to gain-bandwidth', () => {
+    const t = topo('opamp-shelf'), v = { Rg: 4.7e3, Cg: 47e-9, Rf: 551e3, Cf: 0 };
+    const at = (opamp: string, f: number) => levelAt(t, v, { opamp }, f);
+    // At 1 kHz the loop gain is ≈ 3000/96 with a large phase angle (Cg), giving ≈ +0.16 dB by hand.
+    expect(Math.abs(at('TL072', 1000) - at('ideal', 1000) - 0.16)).toBeLessThan(0.02);
+    // Noise gain ≈ 118 → closed-loop corner ≈ 3 MHz / 118 ≈ 25 kHz with a TL072.
+    expect(at('ideal', 25e3) - at('TL072', 25e3)).toBeGreaterThan(2);
+    expect(at('ideal', 25e3) - at('TL072', 25e3)).toBeLessThan(4);
+  });
+});
+
+describe('impedances and SPICE export for every topology', () => {
+  it('RC low-pass: Zin = R + 1/sC, Zout = R ∥ 1/sC', () => {
+    const t = topo('rc-lp'), v = { R: 10e3, C: 10e-9 }, c = t.circuit(v, {}), f = 1000;
+    const zc = new Cx(0, -1 / (TAU * f * 10e-9));
+    expect(c.zin(s(f)).sub(zc.add(10e3)).abs() / zc.add(10e3).abs()).toBeLessThan(1e-6);
+    const par = zc.mul(10e3).div(zc.add(10e3));
+    expect(c.zout(s(f)).sub(par).abs() / par.abs()).toBeLessThan(1e-6);
+  });
+  for (const t of TOPOS) {
+    it(`${t.id} exports a complete SPICE deck`, async () => {
+      const { toSpice } = await import('../src/engine/spice');
+      const { v, o } = defaults(t);
+      const nl = t.netlist(v, o), text = toSpice(nl, { title: t.name });
+      expect(text).toContain('V_IN in 0 AC 1');
+      expect(text).toMatch(/\.ac dec 100 /);
+      for (const e of nl.elements) if ('name' in e) expect(text).toContain(e.name.replace(/[^A-Za-z0-9_]/g, '_'));
+    });
+  }
 });
 
 describe('design search', () => {

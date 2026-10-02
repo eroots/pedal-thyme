@@ -27,7 +27,11 @@ pins and wires**, extracted into a netlist and solved by a single MNA (modified 
 - Unit tests with Vitest.
 - Port the current app as-is first, then refactor.
 
-## Phase 1 — General circuit engine (no visible change)
+## Phase 1 — General circuit engine ✅ (2026-10-02)
+Done: `src/engine/` (netlist, MNA, models, SPICE export); all 17 topologies are netlists, checked against
+the old closed-form H(s) with and without source/load (`tests/legacy.ts`). The Playground gained an op-amp
+model selector, Zin/Zout readouts and "Export SPICE (.cir)". Switches, inductors and diodes (open in AC) are in
+the engine but not yet used by any Playground topology. Still to do: an LTspice cross-check run.
 - MNA with stamps for R, C, L, independent V sources, VCVS, ideal op-amp (nullor),
   real op-amp macromodel (A0, GBW pole, Rout; TL072 / 4558 / LM308 / NE5532 presets),
   3-terminal pot (track value, taper A/B/C, rotation), rheostat, switch (SPST/SPDT, kept simple),

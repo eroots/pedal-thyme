@@ -18,7 +18,7 @@ export interface Edges { fPeak: number; peakDb: number; fLo: number | null; fHi:
 
 /** Peak of the response and the −3 dB points relative to it (searched over 0.5 Hz – 2 MHz). */
 export function edges(t: Transfer, v: Values, o: Opts, term?: Term | null): Edges {
-  const N = 480, f0 = 0.5, f1 = 2e6, lf = (i: number) => f0 * Math.pow(f1 / f0, i / (N - 1));
+  const N = 320, f0 = 0.5, f1 = 2e6, lf = (i: number) => f0 * Math.pow(f1 / f0, i / (N - 1));
   const mag = (f: number) => Hfull(t, v, new Cx(0, TAU * f), o, term).abs();
   const m: number[] = new Array(N);
   let pk = 0, pkI = 0;
@@ -44,11 +44,12 @@ export interface Bell {
 }
 
 /**
- * Measure a bell-shaped deviation (scoop/notch or peak) relative to the average of the far-low and
- * far-high levels. Q uses the EQ convention: bandwidth between half-gain (dB) points.
+ * Measure a bell-shaped deviation (scoop/notch or peak) relative to the average of the levels at
+ * 0.5 Hz and 50 kHz. Q uses the EQ convention: bandwidth between half-gain (dB) points.
+ * The upper reference stays at 50 kHz so real op-amps' ultrasonic roll-off or peaking doesn't skew it.
  */
 export function bell(t: Transfer, v: Values, o: Opts, term?: Term | null): Bell {
-  const N = 400, f0 = 0.5, f1 = 2e6, lf = (i: number) => f0 * Math.pow(f1 / f0, i / (N - 1));
+  const N = 240, f0 = 0.5, f1 = 50e3, lf = (i: number) => f0 * Math.pow(f1 / f0, i / (N - 1));
   const dbAt = (f: number) => 20 * Math.log10(Hfull(t, v, new Cx(0, TAU * f), o, term).abs());
   const m: number[] = new Array(N);
   for (let i = 0; i < N; i++) m[i] = dbAt(lf(i));
@@ -63,7 +64,7 @@ export function bell(t: Transfer, v: Values, o: Opts, term?: Term | null): Bell 
   // Golden-section refine of the extreme in log-frequency.
   let a = Math.log(lf(Math.max(0, i0 - 1))), b = Math.log(lf(Math.min(N - 1, i0 + 1)));
   const gr = (Math.sqrt(5) - 1) / 2;
-  for (let k = 0; k < 50; k++) {
+  for (let k = 0; k < 36; k++) {
     const c = b - gr * (b - a), d = a + gr * (b - a);
     if (sgn * dbAt(Math.exp(c)) < sgn * dbAt(Math.exp(d))) b = d; else a = c;
   }

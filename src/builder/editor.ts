@@ -69,6 +69,10 @@ export class Editor {
   private readonly traceLayer: SVGGElement;
   private readonly content: SVGGElement;
   private traceTimer = 0;
+  /** Parts/point being pointed out (e.g. from the Checks list), drawn as pulsing outlines for a moment. */
+  private flash: { parts: string[]; at?: Pt; cls: string } | null = null;
+  private flashTimer = 0;
+  private viewAnim = 0;
 
   constructor(private readonly svg: SVGSVGElement, private readonly wrap: HTMLElement, doc: Schematic, private readonly on: EditorEvents) {
     this.doc = doc;
@@ -232,6 +236,42 @@ export class Editor {
     g.setAttribute('transform', traceTransform(t));
     g.setAttribute('opacity', String(t.opacity));
     for (const el of g.children) { el.setAttribute('width', String(t.w * t.scale)); el.setAttribute('height', String(t.h * t.scale)); }
+  }
+
+  /**
+   * Zoom and pan (animated) to show the given parts and/or point, select the parts and outline them
+   * briefly. Returns false if there is nothing to show.
+   */
+  focusOn(parts: string[], at: Pt | undefined, cls: 'error' | 'warning'): boolean {
+    const ps = this.doc.parts.filter(p => parts.includes(p.id));
+    const boxes = ps.map(partBox);
+    if (at) boxes.push([at[0] - 10, at[1] - 10, at[0] + 10, at[1] + 10]);
+    if (!boxes.length) return false;
+    const x0 = Math.min(...boxes.map(b => b[0])), y0 = Math.min(...boxes.map(b => b[1]));
+    const x1 = Math.max(...boxes.map(b => b[2])), y1 = Math.max(...boxes.map(b => b[3]));
+    const W = this.wrap.clientWidth || 800, H = this.wrap.clientHeight || 500, pad = 70;
+    const zoom = Math.max(0.4, Math.min(2.5, W / (x1 - x0 + 2 * pad), H / (y1 - y0 + 2 * pad)));
+    const to = { zoom, x: (x0 + x1) / 2 - W / zoom / 2, y: (y0 + y1) / 2 - H / zoom / 2 };
+    this.sel = new Set(ps.map(p => p.id));
+    this.on.select(this.sel);
+    this.flash = { parts: ps.map(p => p.id), at, cls };
+    clearTimeout(this.flashTimer);
+    this.flashTimer = window.setTimeout(() => { this.flash = null; this.render(); }, 2600);
+    // Ease the view over ~300 ms (zoom interpolated geometrically, centre linearly).
+    cancelAnimationFrame(this.viewAnim);
+    const from = { ...this.view }, t0 = performance.now();
+    const cx = (v: typeof from) => v.x + W / v.zoom / 2, cy = (v: typeof from) => v.y + H / v.zoom / 2;
+    const step = (now: number) => {
+      const t = Math.min(1, (now - t0) / 300), e = 1 - (1 - t) ** 3;
+      const z = from.zoom * (to.zoom / from.zoom) ** e;
+      const mx = cx(from) + (cx(to) - cx(from)) * e, my = cy(from) + (cy(to) - cy(from)) * e;
+      this.view = { zoom: z, x: mx - W / z / 2, y: my - H / z / 2 };
+      this.render();
+      if (t < 1) this.viewAnim = requestAnimationFrame(step);
+    };
+    this.viewAnim = requestAnimationFrame(step);
+    this.wrap.focus({ preventScroll: true });
+    return true;
   }
 
   getView() { return { ...this.view }; }
@@ -539,6 +579,14 @@ export class Editor {
     if (this.mode === 'delete' && this.delHover && !delPart) {
       const seg = wireSegmentAt(this.doc, this.delHover, this.cursor);
       if (seg) { const [a, b] = seg; over.push(`<line class="del-seg" x1="${a[0]}" y1="${a[1]}" x2="${b[0]}" y2="${b[1]}"/>`); }
+    }
+    if (this.flash) {
+      const f = this.flash;
+      for (const p of this.doc.parts.filter(q => f.parts.includes(q.id))) {
+        const [a, b, c, d] = partBox(p);
+        over.push(`<rect class="flash ${f.cls}" x="${a - 6}" y="${b - 6}" width="${c - a + 12}" height="${d - b + 12}" rx="6"/>`);
+      }
+      if (f.at) over.push(`<circle class="flash ${f.cls}" cx="${f.at[0]}" cy="${f.at[1]}" r="9"/>`);
     }
     if (this.drag?.kind === 'box') {
       const { start: s, now: n } = this.drag;

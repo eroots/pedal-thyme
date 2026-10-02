@@ -326,6 +326,14 @@ ul.erc li { padding: 6px 8px; border-radius: 6px; font-size: 13px; cursor: point
 ul.erc li.error { color: var(--bad); }
 ul.erc li.warning { color: var(--warn); }
 ul.erc li:hover { outline: 1px solid var(--line); }
+ul.erc li.static { cursor: default; }
+ul.erc li.static:hover { outline: none; }
+ul.erc li.active { outline: 1px solid currentColor; }
+#bCanvas .flash { fill: none; stroke-width: 2.5; vector-effect: non-scaling-stroke; animation: flash-pulse .8s ease-in-out 3; }
+#bCanvas .flash.warning { stroke: var(--warn); }
+#bCanvas .flash.error { stroke: var(--bad); }
+@keyframes flash-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .2; } }
+@media (prefers-reduced-motion: reduce) { #bCanvas .flash { animation: none; } }
 .warnc { color: var(--warn); }
 @media (max-width: 1150px) {
   .builder { grid-template-columns: 160px minmax(0, 1fr); }

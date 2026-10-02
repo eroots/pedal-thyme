@@ -337,13 +337,18 @@ export function initBuilder(): BuilderApi {
     $('#bErcStatus').innerHTML = errs ? `<span class="e-bad">${errs} error${errs > 1 ? 's' : ''}</span>` + (warns ? `, ${warns} warning${warns > 1 ? 's' : ''}` : '')
       : warns ? `<span class="warnc">${warns} warning${warns > 1 ? 's' : ''}</span>` : '<span class="e-good">No problems</span>';
     $('#bErc').innerHTML = ex.issues.length
-      ? `<ul class="erc">${ex.issues.map((i, k) => `<li class="${i.severity}" data-k="${k}">${i.severity === 'error' ? '✕' : '!'} ${esc(i.message)}</li>`).join('')}</ul>`
+      ? `<ul class="erc">${ex.issues.map((i, k) => `<li class="${i.severity}${i.parts?.length || i.at ? '' : ' static'}" data-k="${k}"${i.parts?.length || i.at ? ' title="Show on the schematic"' : ''}>${i.severity === 'error' ? '✕' : '!'} ${esc(i.message)}</li>`).join('')}</ul>`
       : '<p class="hint">The circuit is complete: every pin is connected and every net has a DC path to ground.</p>';
   }
   $('#bErc').addEventListener('click', e => {
     const li = (e.target as HTMLElement).closest<HTMLElement>('li[data-k]');
     const issue = li && ex.issues[+li.dataset.k!];
-    if (issue?.parts?.length) editor.selectIds(issue.parts);
+    if (!issue || !editor.focusOn(issue.parts ?? [], issue.at, issue.severity)) return;
+    document.querySelectorAll('#bErc li.active').forEach(x => x.classList.remove('active'));
+    li!.classList.add('active');
+    // On narrow screens the canvas may be scrolled away; bring it into view.
+    const r = $('#bCanvasWrap').getBoundingClientRect();
+    if (r.bottom < 0 || r.top > window.innerHeight) $('#bCanvasWrap').scrollIntoView({ behavior: 'smooth', block: 'center' });
   });
 
   let initialDrag: DragMode = 'stretch';

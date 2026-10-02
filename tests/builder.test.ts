@@ -47,6 +47,18 @@ describe('moving keeps wires attached', () => {
       expect(a[0] === b[0] || a[1] === b[1]).toBe(true);
     }
   });
+  it('move mode detaches the part and leaves wires and markers in place', () => {
+    const d = divider(), m = moveSelection(d, new Set(['R2']), new Set(), -200, 0, false);
+    expect(m.wires).toEqual(d.wires);
+    expect(m.parts.find(p => p.kind === 'GND')).toEqual(d.parts.find(p => p.kind === 'GND'));
+    expect(m.parts.find(p => p.id === 'R2')!.x).toBe(-100);
+    expect(errorsOf(m).filter(e => e.includes('R2 pin'))).toHaveLength(2);
+  });
+  it('stretch mode keeps the ground marker with its part', () => {
+    const m = moveSelection(divider(), new Set(['R2']), new Set(), 0, 40);
+    expect(m.parts.find(p => p.kind === 'GND')!.y).toBe(100);
+    expect(errorsOf(m)).toEqual([]);
+  });
   it('rotating a lone part re-routes its wires to the new pins', () => {
     const r = rotateSelection(divider(), new Set(['R1']), new Set());
     const pins = pinsOf(r.parts.find(p => p.id === 'R1')!).map(p => p.at);

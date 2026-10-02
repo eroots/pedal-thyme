@@ -17,6 +17,8 @@ export interface PartSpec {
   draw(p: SchPart): string;
   /** Local bounding box [x0, y0, x1, y1] of the symbol. */
   box: [number, number, number, number];
+  /** Size-dependent bounding box (e.g. a net label sized to its name); overrides `box`. */
+  boxOf?(p: SchPart): [number, number, number, number];
   /** Unit of `value`, if the part has one. */
   unit?: 'Ω' | 'F' | 'H' | 'V';
   /** Text shown under the ref (value, model…). */
@@ -47,6 +49,10 @@ function zigzag(): string {
   return line(-30, 0, -16, 0) + polyline(pts) + line(16, 0, 30, 0);
 }
 const TWO: PinSpec[] = [{ name: '1', at: [-30, 0] }, { name: '2', at: [30, 0] }];
+/** Net label line length: room for the name (≈ 6.5 units per character) plus margins. */
+export const labelLen = (p: SchPart): number => Math.max(20, Math.ceil(((p.props?.name || 'NET').length * 6.5 + 10) / 10) * 10);
+/** Symbol bounding box for a specific part instance. */
+export const boxOf = (p: SchPart): [number, number, number, number] => PARTS[p.kind].boxOf?.(p) ?? PARTS[p.kind].box;
 const wiperFrac = (p: SchPart) => clamp(taper(p.props?.turn ?? 0.5, p.props?.taper ?? 'B'), 1e-4, 1 - 1e-4);
 const two = (p: SchPart) => p.value ?? 0;
 
@@ -145,8 +151,10 @@ export const PARTS: Record<PartKind, PartSpec> = {
     elements: (p, n) => [{ type: 'V', name: p.ref || p.id, p: n('v'), n: GND, dc: p.value ?? 9 }],
   },
   LABEL: {
-    label: 'Net label', box: [0, -6, 30, 6], pins: [{ name: 'n', at: [0, 0] }],
-    draw: () => polyline([[0, 0], [6, -6], [30, -6], [30, 6], [6, 6], [0, 0]], 'flag'),
+    // A short line from the pin with a tick at the end; the name sits on top of the line.
+    label: 'Net label', box: [0, -14, 40, 4], pins: [{ name: 'n', at: [0, 0] }],
+    boxOf: p => [0, -14, labelLen(p), 4],
+    draw: p => { const L = labelLen(p); return line(0, 0, L, 0) + line(L, -4, L, 4); },
     elements: () => [],
   },
   IN: {

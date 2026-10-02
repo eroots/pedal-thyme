@@ -1,7 +1,7 @@
 // Render a schematic to an SVG string. Symbols are drawn in local coordinates under a transform;
 // text (refs, values, op-amp signs, jack names) is placed in world coordinates so it stays upright.
 import { dirToWorld, key, onSegment, svgTransform, toWorld, type Pt } from './geometry';
-import { PARTS } from './library';
+import { PARTS, boxOf, labelLen } from './library';
 import type { LabelSide, SchPart, Schematic } from './types';
 
 export interface RenderOptions {
@@ -76,7 +76,7 @@ export function renderSchematicBody(sch: Schematic, opt: RenderOptions = {}): { 
   // Parts.
   for (const p of sch.parts) {
     const spec = PARTS[p.kind];
-    const [bx0, by0, bx1, by1] = spec.box;
+    const [bx0, by0, bx1, by1] = boxOf(p);
     for (const c of [[bx0, by0], [bx1, by0], [bx0, by1], [bx1, by1]] as Pt[]) grow(toWorld(p, c));
     const hit = opt.editor ? `<rect class="hit" x="${bx0 - 4}" y="${by0 - 4}" width="${bx1 - bx0 + 8}" height="${by1 - by0 + 8}"/>` : '';
     let g = `<g transform="${svgTransform(p)}">${hit}${spec.draw(p)}</g>`;
@@ -92,7 +92,11 @@ export function renderSchematicBody(sch: Schematic, opt: RenderOptions = {}): { 
     } else if (p.kind === 'LABEL' || p.kind === 'SUPPLY') {
       const name = p.props?.name || (p.kind === 'SUPPLY' ? `${p.value ?? 9}V` : '?');
       if (p.kind === 'SUPPLY') { const [x, y] = toWorld(p, [0, -14]); g += text(x, y, name, 'pn', 'middle'); }
-      else { const [x, y] = toWorld(p, [9, 4]); g += text(x, y, name, 'pn', 'start'); }
+      else {
+        // Name on top of the label's line (beside it when the line is vertical).
+        const [mx, my] = toWorld(p, [labelLen(p) / 2, 0]);
+        g += p.rot === 0 || p.rot === 180 ? text(mx, my - 5, name, 'pn', 'middle') : text(mx + 6, my + 4, name, 'pn', 'start');
+      }
     } else if (p.kind === 'OA') {
       // Op-amps: ref and model just above (or below) the triangle, right of centre.
       const below = p.labelSide === 'b', val = spec.valueText!(p);

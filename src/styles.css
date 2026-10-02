@@ -309,3 +309,12 @@ ul.erc li:hover { outline: 1px solid var(--line); }
   .pal-grid { grid-template-columns: repeat(auto-fill, minmax(72px, 1fr)); }
   .b-side { grid-template-columns: 1fr; }
 }
+.b-toolbar .seg { display: inline-flex; }
+.b-toolbar .seg button { border-radius: 0; }
+.b-toolbar .seg button:first-child { border-radius: 6px 0 0 6px; }
+.b-toolbar .seg button:last-child { border-radius: 0 6px 6px 0; margin-left: -1px; }
+.pal { position: relative; }
+.pal kbd { position: absolute; top: 3px; right: 4px; font: 600 10px var(--mono); color: var(--muted); border: 1px solid var(--line); border-radius: 3px; padding: 0 3px; background: var(--panel); }
+.pal.active kbd { color: var(--accent); border-color: var(--accent); }
+.b-sim .plothead { margin-bottom: 6px; }
+.b-sim .plothead h2 { margin: 0; }

@@ -41,7 +41,13 @@ export function drawPlot(canvas: HTMLCanvasElement, cfg: PlotConfig): void {
   const colGrid = cssVar('--grid'), colGridS = cssVar('--grid-strong'), colMuted = cssVar('--muted'), colInk = cssVar('--ink');
   g.font = '11px system-ui, sans-serif';
 
-  // Frequency grid
+  // Frequency grid (labels are skipped where they would collide on narrow plots; decades win).
+  const labelled: number[] = [];
+  const fits = (x: number, w: number) => labelled.every(o => Math.abs(o - x) > w);
+  for (let d = Math.floor(lx0); d <= Math.ceil(lx1); d++) {
+    const f = 10 ** d;
+    if (f >= fmin * 0.999 && f <= fmax * 1.001) labelled.push(X(f));
+  }
   for (let d = Math.floor(lx0); d <= Math.ceil(lx1); d++) {
     for (let k = 1; k <= 9; k++) {
       const f = k * 10 ** d;
@@ -49,9 +55,12 @@ export function drawPlot(canvas: HTMLCanvasElement, cfg: PlotConfig): void {
       const x = Math.round(X(f)) + 0.5;
       g.strokeStyle = k === 1 ? colGridS : colGrid; g.lineWidth = 1;
       g.beginPath(); g.moveTo(x, m.t); g.lineTo(x, m.t + ph); g.stroke();
-      if (k === 1 || k === 2 || k === 5) {
+      // Clearance: half of this label + half of a similar neighbour + a gap.
+      const label = fmtFreqShort(f), w = g.measureText(label).width + 8;
+      if (k === 1 || ((k === 2 || k === 5) && fits(x, w))) {
+        if (k !== 1) labelled.push(x);
         g.fillStyle = colMuted; g.textAlign = 'center';
-        g.fillText(fmtFreqShort(f), x, H - 6);
+        g.fillText(label, x, H - 6);
       }
     }
   }

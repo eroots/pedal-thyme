@@ -106,6 +106,17 @@ describe('rendering', () => {
   });
 });
 
+describe('net labels', () => {
+  it('put the name above the label line, and the line fits the name', () => {
+    const doc = sch().part('LABEL', undefined, 100, 50, 0, undefined, { props: { name: 'VREF' } }).build();
+    const svg = renderSchematic(doc);
+    const y = Number(svg.match(/<text class="pn" x="[^"]+" y="([^"]+)"[^>]*>VREF</)![1]);
+    expect(y).toBeLessThan(50 - 3); // baseline above the line at y = 50
+    const lineEnd = Number(svg.match(/<line x1="0" y1="0" x2="([^"]+)" y2="0"\/>/)![1]);
+    expect(lineEnd).toBeGreaterThanOrEqual(4 * 6.5);
+  });
+});
+
 describe('Playground schematics', () => {
   const variants: Record<string, Opts[]> = {
     'rc2-lp': [{ buf: false }, { buf: true }], 'rc2-hp': [{ buf: false }, { buf: true }], 'bp': [{ buf: false }, { buf: true }],

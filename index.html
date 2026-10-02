@@ -137,9 +137,13 @@
     <div class="b-toolbar card">
       <button id="bToolSelect" title="Select and move (V)">Select</button>
       <button id="bToolWire" title="Draw wires (W)">Wire</button>
+      <span class="seg" role="group" aria-label="Drag behaviour">
+        <button id="bDragStretch" title="Stretch (S): dragged parts keep their wires, which stretch to follow. Hold Alt while dragging to move instead.">Stretch</button>
+        <button id="bDragMove" title="Move (M): dragged parts detach from their wires. Hold Alt while dragging to stretch instead.">Move</button>
+      </span>
       <span class="sep"></span>
-      <button id="bRotate" title="Rotate (R)">Rotate</button>
-      <button id="bMirror" title="Mirror (M)">Mirror</button>
+      <button id="bRotate" title="Rotate (Ctrl+R; right-click while placing)">Rotate</button>
+      <button id="bMirror" title="Mirror (Ctrl+E)">Mirror</button>
       <button id="bDelete" title="Delete (Del)">Delete</button>
       <span class="sep"></span>
       <button id="bUndo" title="Undo (Ctrl+Z)">Undo</button>
@@ -154,7 +158,10 @@
     </div>
     <p class="hint b-hint" id="bHint"></p>
     <section class="card b-sim">
-      <h2>Response at the output jack</h2>
+      <div class="plothead">
+        <h2>Response at the output jack</h2>
+        <label title="Keep the current dB range, so value changes don't rescale the plot"><input type="checkbox" id="bLockScale"> Fix scale</label>
+      </div>
       <canvas id="bSimCanvas"></canvas>
       <p class="hint" id="bSimMsg"></p>
     </section>

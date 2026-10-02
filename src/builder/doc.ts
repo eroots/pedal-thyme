@@ -2,7 +2,7 @@
 // derived data) and never mutates its input, so undo/redo can keep snapshots.
 import { pinsOf } from '../schematic/extract';
 import { key, onSegment, samePt, type Pt } from '../schematic/geometry';
-import { PARTS } from '../schematic/library';
+import { boxOf } from '../schematic/library';
 import type { PartKind, PartProps, Rot, SchPart, SchWire, Schematic } from '../schematic/types';
 import { routeOrtho } from './route';
 
@@ -204,7 +204,15 @@ const FOLLOWERS = new Set(['GND', 'SUPPLY', 'LABEL']);
  * travel with it; any other part touching a moved pin pin-to-pin gets a short connecting wire.
  */
 function transformSelection(doc0: Schematic, partIds: Set<string>, wireIds: Set<string>,
-  partFn: (p: SchPart) => SchPart, ptFn: (p: Pt) => Pt): Schematic {
+  partFn: (p: SchPart) => SchPart, ptFn: (p: Pt) => Pt, stretch = true): Schematic {
+  if (!stretch) {
+    // Move: only the selection moves; everything else (wires, markers) stays where it is.
+    return {
+      ...doc0,
+      parts: doc0.parts.map(p => (partIds.has(p.id) ? partFn({ ...p }) : p)),
+      wires: doc0.wires.map(w => (wireIds.has(w.id) ? { ...w, pts: w.pts.map(ptFn) } : w)),
+    };
+  }
   const doc = splitAtTaps(doc0, wireIds).doc;
   const before = pinMap(doc.parts.filter(p => partIds.has(p.id)));
   let parts = doc.parts.map(p => (partIds.has(p.id) ? partFn({ ...p }) : p));
@@ -236,13 +244,17 @@ function transformSelection(doc0: Schematic, partIds: Set<string>, wireIds: Set<
   return out;
 }
 
-export function moveSelection(doc: Schematic, partIds: Set<string>, wireIds: Set<string>, dx: number, dy: number): Schematic {
+/**
+ * Translate the selection. `stretch` (default) keeps connections: attached wires stretch and markers
+ * follow. With stretch = false the selection detaches and moves on its own.
+ */
+export function moveSelection(doc: Schematic, partIds: Set<string>, wireIds: Set<string>, dx: number, dy: number, stretch = true): Schematic {
   if (!dx && !dy) return doc;
-  return transformSelection(doc, partIds, wireIds, p => ({ ...p, x: p.x + dx, y: p.y + dy }), ([x, y]) => [x + dx, y + dy]);
+  return transformSelection(doc, partIds, wireIds, p => ({ ...p, x: p.x + dx, y: p.y + dy }), ([x, y]) => [x + dx, y + dy], stretch);
 }
 
 /** Rotate 90° clockwise: a lone part turns in place; a group turns about its (grid-snapped) centre. */
-export function rotateSelection(doc: Schematic, partIds: Set<string>, wireIds: Set<string>): Schematic {
+export function rotateSelection(doc: Schematic, partIds: Set<string>, wireIds: Set<string>, stretch = true): Schematic {
   const parts = doc.parts.filter(p => partIds.has(p.id)), wires = doc.wires.filter(w => wireIds.has(w.id));
   if (!parts.length && !wires.length) return doc;
   const pts: Pt[] = [...parts.map(p => [p.x, p.y] as Pt), ...wires.flatMap(w => w.pts)];
@@ -252,12 +264,12 @@ export function rotateSelection(doc: Schematic, partIds: Set<string>, wireIds: S
   return transformSelection(doc, partIds, wireIds, p => {
     const [x, y] = rot([p.x, p.y]);
     return { ...p, x, y, rot: ((p.rot + 90) % 360) as Rot };
-  }, rot);
+  }, rot, stretch);
 }
 
 /** Flip parts across their own horizontal axis (e.g. swap an op-amp's + and − inputs). */
-export function mirrorParts(doc: Schematic, partIds: Set<string>): Schematic {
-  return transformSelection(doc, partIds, new Set(), p => ({ ...p, mirror: !p.mirror || undefined }), p => p);
+export function mirrorParts(doc: Schematic, partIds: Set<string>, stretch = true): Schematic {
+  return transformSelection(doc, partIds, new Set(), p => ({ ...p, mirror: !p.mirror || undefined }), p => p, stretch);
 }
 
 export function deleteSelection(doc: Schematic, partIds: Set<string>, wireIds: Set<string>): Schematic {
@@ -330,7 +342,7 @@ export const isConnection = (doc: Schematic, at: Pt): boolean =>
 
 /** World-space bounding box of a part's symbol. */
 export function partBox(p: SchPart): [number, number, number, number] {
-  const [x0, y0, x1, y1] = PARTS[p.kind].box;
+  const [x0, y0, x1, y1] = boxOf(p);
   const corners = [[x0, y0], [x1, y0], [x0, y1], [x1, y1]] as Pt[];
   const ws = corners.map(([lx, ly]) => {
     const yy = p.mirror ? -ly : ly;

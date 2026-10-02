@@ -13,7 +13,7 @@ import { freqGrid } from '../playground/analysis';
 import { S, fRange } from '../playground/state';
 import { cssVar, drawPlot, magRange, PLOT_MARGIN } from '../ui/plot';
 import { emptyDoc, updatePart } from './doc';
-import { Editor, type Mode } from './editor';
+import { Editor, PART_KEYS, type DragMode, type Mode } from './editor';
 
 const LS_KEY = 'pedal-filter-lab.builder.v1';
 const $ = <T extends HTMLElement = HTMLInputElement>(sel: string): T => document.querySelector(sel) as T;
@@ -39,12 +39,14 @@ export function initBuilder(): BuilderApi {
   const saved = loadSaved();
   let ex: Extraction = extract(saved.doc);
   let hoverF: number | null = null;
+  let lockedRange: [number, number] | null = null;
   let plot: { freqs: number[]; mag: number[]; ph: number[] } | null = null;
 
   const editor = new Editor(document.querySelector<SVGSVGElement>('#bCanvas')!, $('#bCanvasWrap'), saved.doc, {
     change: (doc, committed) => { ex = extract(doc); renderErc(); scheduleSim(); if (committed) { save(); renderProps(); } updateToolbar(); },
     select: () => renderProps(),
     mode: (mode, kind) => renderModes(mode, kind),
+    dragMode: m => renderDragMode(m),
     edit: () => {
       renderProps();
       const inp = document.querySelector<HTMLInputElement>(`#bProps [data-field="value"]`) || document.querySelector<HTMLInputElement>(`#bProps [data-field="ref"]`);
@@ -60,7 +62,8 @@ export function initBuilder(): BuilderApi {
   /* ---------- Palette & toolbar ---------- */
   $('#bPalette').innerHTML = PALETTE.map(g => `<div class="group">${g.group}</div><div class="pal-grid">${g.kinds.map(k => {
     const part: SchPart = { id: 'x', kind: k, x: 0, y: 0, rot: 0, props: k === 'POT' || k === 'RHEO' ? { turn: 0.5 } : k === 'SPDT' ? { pos: 'a' } : undefined };
-    return `<button class="pal" data-kind="${k}" title="${esc(PARTS[k].label)}">${renderSchematic({ version: 1, parts: [part], wires: [] }, { bare: true, title: PARTS[k].label })}<span>${esc(PARTS[k].label)}</span></button>`;
+    const hk = Object.entries(PART_KEYS).find(([, kind]) => kind === k)?.[0];
+    return `<button class="pal" data-kind="${k}" title="${esc(PARTS[k].label)}${hk ? ` (${hk.toUpperCase()})` : ''}">${hk ? `<kbd>${hk.toUpperCase()}</kbd>` : ''}${renderSchematic({ version: 1, parts: [part], wires: [] }, { bare: true, title: PARTS[k].label })}<span>${esc(PARTS[k].label)}</span></button>`;
   }).join('')}</div>`).join('');
   $('#bPalette').addEventListener('click', e => {
     const b = (e.target as HTMLElement).closest<HTMLElement>('[data-kind]');
@@ -73,13 +76,15 @@ export function initBuilder(): BuilderApi {
     $('#bToolWire').classList.toggle('active', mode === 'wire');
     $('#bHint').textContent = mode === 'wire'
       ? 'Click to start a wire, click to bend it; it finishes on a pin or another wire (or double-click / right-click). Esc cancels.'
-      : mode === 'place' ? `Click to place a ${PARTS[kind!].label.toLowerCase()}. R rotates, M mirrors, Esc stops placing.`
-        : 'Drag to move (wires follow). Drag on empty space to box-select. Space+drag or middle-drag pans; wheel zooms.';
+      : mode === 'place' ? `Click to place a ${PARTS[kind!].label.toLowerCase()}. Right-click or Ctrl+R rotates, Ctrl+E mirrors, Esc stops placing.`
+        : 'Drag parts to stretch (wires follow) or move (detach): see the toolbar, or hold Alt to switch for one drag. Drag on empty space to box-select. Space+drag or middle-drag pans; wheel zooms.';
   }
 
   const actions: Record<string, () => void> = {
     bToolSelect: () => editor.setMode('select'),
     bToolWire: () => editor.setMode('wire'),
+    bDragStretch: () => editor.setDragMode('stretch'),
+    bDragMove: () => editor.setDragMode('move'),
     bRotate: () => editor.rotate(),
     bMirror: () => editor.mirror(),
     bDelete: () => editor.deleteSel(),
@@ -89,6 +94,12 @@ export function initBuilder(): BuilderApi {
     bNew: () => { if (confirm('Start a new, empty pedal? (You can undo this.)')) editor.load(emptyDoc()); },
   };
   for (const [id, fn] of Object.entries(actions)) $('#' + id).addEventListener('click', fn);
+  function renderDragMode(m: DragMode): void {
+    $('#bDragStretch').classList.toggle('active', m === 'stretch');
+    $('#bDragMove').classList.toggle('active', m === 'move');
+    try { localStorage.setItem(LS_KEY + '.drag', m); } catch { /* ignore */ }
+  }
+
   function updateToolbar(): void {
     $<HTMLButtonElement>('#bUndo').disabled = !editor.canUndo();
     $<HTMLButtonElement>('#bRedo').disabled = !editor.canRedo();
@@ -100,8 +111,11 @@ export function initBuilder(): BuilderApi {
     const parts = editor.doc.parts.filter(p => editor.sel.has(p.id)), wires = editor.doc.wires.filter(w => editor.sel.has(w.id));
     if (!sel.length) {
       el.innerHTML = `<h2>Properties</h2><p class="hint">Select a part to edit it, or pick one from the palette to place it.</p>
-        <table class="keys"><tr><td>W</td><td>Wire tool</td></tr><tr><td>V / Esc</td><td>Select tool</td></tr>
-        <tr><td>R / M</td><td>Rotate / mirror</td></tr><tr><td>Del</td><td>Delete</td></tr>
+        <table class="keys"><tr><td>R C L D</td><td>Resistor, capacitor, inductor, diode</td></tr>
+        <tr><td>G P O</td><td>Ground, pot, op-amp</td></tr>
+        <tr><td>W</td><td>Wire tool</td></tr><tr><td>V / Esc</td><td>Select tool</td></tr>
+        <tr><td>S / M</td><td>Drag stretches / moves (Alt flips)</td></tr>
+        <tr><td>Ctrl+R / Ctrl+E</td><td>Rotate / mirror</td></tr><tr><td>Del</td><td>Delete</td></tr>
         <tr><td>Ctrl+Z / Y</td><td>Undo / redo</td></tr><tr><td>Ctrl+C / V / D</td><td>Copy / paste / duplicate</td></tr>
         <tr><td>Arrows</td><td>Nudge</td></tr><tr><td>F</td><td>Fit to view</td></tr></table>`;
       return;
@@ -132,7 +146,7 @@ export function initBuilder(): BuilderApi {
     if (p.kind === 'SUPPLY') h += row('Voltage', `<span class="valrow"><input type="text" data-field="value" value="${esc(p.value ?? 9)}"><span class="unit">V</span></span>`);
     if (p.kind === 'D' || p.kind === 'LED') h += '<p class="hint">Diodes count as off (open) in this small-signal analysis; their clipping isn\'t simulated yet.</p>';
     if (p.kind === 'SUPPLY') h += '<p class="hint">Supplies are AC ground in the frequency response.</p>';
-    h += `<div class="btnrow"><button data-act="rotate" title="R">Rotate</button><button data-act="mirror" title="M">Mirror</button><button data-act="delete">Delete</button></div>`;
+    h += `<div class="btnrow"><button data-act="rotate" title="Ctrl+R">Rotate</button><button data-act="mirror" title="Ctrl+E">Mirror</button><button data-act="delete">Delete</button></div>`;
     el.innerHTML = h;
     el.dataset.id = p.id;
   }
@@ -231,7 +245,7 @@ export function initBuilder(): BuilderApi {
   function drawSim(): void {
     const cv = $<HTMLCanvasElement>('#bSimCanvas');
     if (!plot) { const g = cv.getContext('2d'); g?.clearRect(0, 0, cv.width, cv.height); return; }
-    const [y0, y1] = magRange([plot.mag]);
+    const [y0, y1] = lockedRange ?? magRange([plot.mag]);
     drawPlot(cv, {
       freqs: plot.freqs, fr: fRange(), y0, y1, step: (y1 - y0) > 48 ? 12 : 6, unit: '', hoverF,
       series: [{ vals: plot.mag, color: cssVar('--accent'), width: 2.2, label: 'Output' }],
@@ -246,7 +260,15 @@ export function initBuilder(): BuilderApi {
   });
   cv.addEventListener('pointerleave', () => { hoverF = null; drawSim(); });
   new ResizeObserver(() => drawSim()).observe(cv);
+  $('#bLockScale').addEventListener('change', e => {
+    const on = (e.target as HTMLInputElement).checked;
+    lockedRange = on && plot ? magRange([plot.mag]) : on ? [-48, 12] : null;
+    drawSim();
+  });
 
+  let initialDrag: DragMode = 'stretch';
+  try { if (localStorage.getItem(LS_KEY + '.drag') === 'move') initialDrag = 'move'; } catch { /* ignore */ }
+  editor.setDragMode(initialDrag);
   renderModes('select', null);
   renderProps();
   renderErc();

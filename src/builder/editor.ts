@@ -13,6 +13,11 @@ import {
 } from './doc';
 
 export type Mode = 'select' | 'wire' | 'place';
+/** Dragging either stretches attached wires (connections kept) or moves the selection on its own. */
+export type DragMode = 'stretch' | 'move';
+
+/** Single-key shortcuts that start placing a part (as in LTspice). */
+export const PART_KEYS: Record<string, PartKind> = { r: 'R', c: 'C', l: 'L', d: 'D', g: 'GND', p: 'POT', o: 'OA' };
 
 export interface EditorEvents {
   /** The document changed (committed or live during a drag). */
@@ -20,6 +25,7 @@ export interface EditorEvents {
   /** The selection or mode changed. */
   select(ids: Set<string>): void;
   mode(mode: Mode, placing: PartKind | null): void;
+  dragMode(mode: DragMode): void;
   /** Double-click on a part: e.g. focus its value field. */
   edit(id: string): void;
 }
@@ -31,6 +37,7 @@ export class Editor {
   doc: Schematic;
   sel = new Set<string>();
   mode: Mode = 'select';
+  dragMode: DragMode = 'stretch';
   private placing: { kind: PartKind; rot: Rot; mirror: boolean } | null = null;
   private draft: Pt[] | null = null;
   private cursor: Pt = [0, 0];
@@ -39,7 +46,7 @@ export class Editor {
   private undoStack: string[] = [];
   private redoStack: string[] = [];
   private clip: Clip | null = null;
-  private drag: null | { kind: 'move'; start: Pt; orig: Schematic; moved: boolean }
+  private drag: null | { kind: 'move'; start: Pt; orig: Schematic; moved: boolean; stretch: boolean }
     | { kind: 'box'; start: Pt; now: Pt; add: boolean }
     | { kind: 'pan'; sx: number; sy: number; vx: number; vy: number } = null;
   private spaceDown = false;
@@ -72,6 +79,12 @@ export class Editor {
     this.wrap.focus({ preventScroll: true });
   }
 
+  setDragMode(m: DragMode): void {
+    this.dragMode = m;
+    this.wrap.dataset.drag = m;
+    this.on.dragMode(m);
+  }
+
   selectIds(ids: Iterable<string>): void {
     this.sel = new Set(ids);
     this.on.select(this.sel);
@@ -99,12 +112,12 @@ export class Editor {
 
   rotate(): void {
     if (this.placing) { this.placing.rot = ((this.placing.rot + 90) % 360) as Rot; this.render(); return; }
-    if (this.sel.size) this.commit(rotateSelection(this.doc, this.selParts(), this.selWires()));
+    if (this.sel.size) this.commit(rotateSelection(this.doc, this.selParts(), this.selWires(), this.dragMode === 'stretch'));
   }
 
   mirror(): void {
     if (this.placing) { this.placing.mirror = !this.placing.mirror; this.render(); return; }
-    if (this.selParts().size) this.commit(mirrorParts(this.doc, this.selParts()));
+    if (this.selParts().size) this.commit(mirrorParts(this.doc, this.selParts(), this.dragMode === 'stretch'));
   }
 
   deleteSel(): void {
@@ -234,6 +247,7 @@ export class Editor {
     svg.addEventListener('contextmenu', e => {
       e.preventDefault();
       if (this.mode === 'wire' && this.draft) this.finishWire();
+      else if (this.mode === 'place') this.rotate();
       else if (this.mode !== 'select') this.setMode('select');
     });
     svg.addEventListener('wheel', e => {
@@ -282,7 +296,7 @@ export class Editor {
       if (e.shiftKey) { if (this.sel.has(id)) this.sel.delete(id); else this.sel.add(id); }
       else if (!this.sel.has(id)) this.sel = new Set([id]);
       this.on.select(this.sel);
-      this.drag = { kind: 'move', start: snapPt(p), orig: this.doc, moved: false };
+      this.drag = { kind: 'move', start: snapPt(p), orig: this.doc, moved: false, stretch: (this.dragMode === 'stretch') !== e.altKey };
     } else {
       if (!e.shiftKey) { this.sel.clear(); this.on.select(this.sel); }
       this.drag = { kind: 'box', start: p, now: p, add: e.shiftKey };
@@ -304,7 +318,7 @@ export class Editor {
     if (d?.kind === 'move') {
       const q = snapPt(p), dx = q[0] - d.start[0], dy = q[1] - d.start[1];
       d.moved = d.moved || dx !== 0 || dy !== 0;
-      if (d.moved) this.preview(moveSelection(d.orig, this.selParts(), this.selWires(), dx, dy));
+      if (d.moved) this.preview(moveSelection(d.orig, this.selParts(), this.selWires(), dx, dy, d.stretch));
       return;
     }
     if (d?.kind === 'box') { d.now = p; this.render(); return; }
@@ -340,8 +354,11 @@ export class Editor {
     if (ctrl && k === 'c') { e.preventDefault(); this.copy(); return; }
     if (ctrl && k === 'v') { e.preventDefault(); this.pasteClip(); return; }
     if (ctrl && k === 'd') { e.preventDefault(); this.duplicate(); return; }
+    if (ctrl && k === 'r') { e.preventDefault(); this.rotate(); return; }
+    if (ctrl && k === 'e') { e.preventDefault(); this.mirror(); return; }
     if (ctrl && k === 'a') { e.preventDefault(); this.selectIds([...this.doc.parts.map(p => p.id), ...this.doc.wires.map(w => w.id)]); return; }
-    if (ctrl) return;
+    if (ctrl || e.altKey) return;
+    if (PART_KEYS[k] && !e.shiftKey) { this.setMode('place', PART_KEYS[k]); return; }
     switch (e.key) {
       case ' ': this.spaceDown = true; e.preventDefault(); break;
       case 'Escape':
@@ -350,10 +367,10 @@ export class Editor {
         else { this.sel.clear(); this.on.select(this.sel); this.render(); }
         break;
       case 'Delete': case 'Backspace': e.preventDefault(); this.deleteSel(); break;
-      case 'r': case 'R': this.rotate(); break;
-      case 'm': case 'M': this.mirror(); break;
       case 'w': case 'W': this.setMode('wire'); break;
-      case 'v': case 'V': case 's': case 'S': this.setMode('select'); break;
+      case 'v': case 'V': this.setMode('select'); break;
+      case 's': case 'S': this.setDragMode('stretch'); break;
+      case 'm': case 'M': this.setDragMode('move'); break;
       case 'f': case 'F': this.fit(); break;
       case '+': case '=': this.zoomBy(1.2); break;
       case '-': this.zoomBy(1 / 1.2); break;
@@ -361,7 +378,7 @@ export class Editor {
         if (!this.sel.size) return;
         e.preventDefault();
         const dx = e.key === 'ArrowLeft' ? -10 : e.key === 'ArrowRight' ? 10 : 0, dy = e.key === 'ArrowUp' ? -10 : e.key === 'ArrowDown' ? 10 : 0;
-        this.commit(moveSelection(this.doc, this.selParts(), this.selWires(), dx, dy));
+        this.commit(moveSelection(this.doc, this.selParts(), this.selWires(), dx, dy, this.dragMode === 'stretch'));
         break;
       }
       default: break;
@@ -382,7 +399,7 @@ export class Editor {
     }
     if (this.placing) {
       const ghost = makePart(this.doc, this.placing.kind, this.cursor[0], this.cursor[1], this.placing.rot, this.placing.mirror);
-      over.push(`<g class="ghost">${renderSchematicBody({ version: 1, parts: [ghost], wires: [] }).body}</g>`);
+      over.push(`<g class="schem ghost">${renderSchematicBody({ version: 1, parts: [ghost], wires: [] }).body}</g>`);
     }
     if (this.mode === 'wire') {
       const at = this.hover || snapPt(this.cursor);

@@ -5,6 +5,7 @@
 // placed where its pins best match LTspice's and short wire stubs bridge the difference. The result is
 // then extracted and compared net-for-net with the LTspice nets; any pin that doesn't match is
 // reconnected with a net label instead, so the imported circuit is electrically the same.
+import { TAPERS, type TaperKey } from '../core/pots';
 import { DIODE_MODELS, OPAMP_MODELS } from '../engine/models';
 import { BJT_MODELS, JFET_MODELS, MOS_MODELS } from '../engine/semis';
 import { reattach } from '../builder/doc';
@@ -13,7 +14,7 @@ import { toWorld, type Pt } from '../schematic/geometry';
 import { PARTS, boxOf, labelLen } from '../schematic/library';
 import type { PartKind, PartProps, Rot, SchPart, Schematic } from '../schematic/types';
 import {
-  MODEL_SUFFIX, evalValue, ltNets, ltPieces, ltTransform, onSeg, parseAsc, parseAsy, readModels, readParams, symbolBase,
+  MODEL_SUFFIX, evalValue, ltNets, ltPieces, readSteps, ltTransform, onSeg, parseAsc, parseAsy, readModels, readParams, symbolBase,
   type AscSymbol, type AsySymbol, type LPt,
 } from './asc';
 import { OPAMP_GEOMETRIES, OPAMP_SYMBOLS } from './opamp-pins';
@@ -127,7 +128,8 @@ export function importAsc(text: string, asyTexts: Record<string, string> = {}, n
   const note = (s: string) => { if (!report.includes(s)) report.push(s); };
 
   // Resolve symbols and their pin positions (LTspice coordinates).
-  interface Comp { s: AscSymbol; map: SymMap; ref: string; lt: Record<string, LPt> }
+  /** `preset`: value/props already worked out (pots untangled from resistor pairs). */
+  interface Comp { s: AscSymbol; map: SymMap; ref: string; lt: Record<string, LPt>; preset?: Partial<SchPart> }
   const comps: Comp[] = [];
   let skipped = 0;
   for (const s of asc.symbols) {
@@ -147,6 +149,10 @@ export function importAsc(text: string, asyTexts: Record<string, string> = {}, n
   const GNDNET = asc.flags.find(f => f.name === '0' || f.name === 'GND');
   const gndNet = GNDNET ? nets.netOf(GNDNET.at) : null;
   const isGnd = (p: LPt) => gndNet !== null && nets.netOf(p) === gndNet;
+  // Pin groups of the parts as LTspice drew them (pots below replace resistor pairs, but LTspice's
+  // wire-cutting rule applies to the resistors as drawn).
+  const origGroups = comps.map(c => Object.values(c.lt));
+  untanglePots();
 
   // Voltage sources: the signal source becomes the input jack, grounded DC sources become supply rails.
   const fixed: { kind: PartKind; at: LPt; props?: PartProps; value?: number; ref?: string }[] = [];
@@ -209,7 +215,7 @@ export function importAsc(text: string, asyTexts: Record<string, string> = {}, n
   const points = new Map<string, Set<string>>();
   const mark = (p: Pt, net: string) => { const s = points.get(pk(p)) ?? new Set(); s.add(net); points.set(pk(p), s); };
   // LTspice's wires, split at every tap (minus the bits hidden under parts), so each connection is at a wire end.
-  const pinGroups = [...comps.map(c => Object.values(c.lt)), ...otherPins(asc.symbols, asy)];
+  const pinGroups = [...origGroups, ...otherPins(asc.symbols, asy)];
   for (const [a, b] of ltPieces(asc.wires, asc.flags.map(f => f.at), pinGroups)) {
     const net = nets.netOf(a), sa = sc(a), sb = sc(b);
     if (same(sa, sb)) continue;
@@ -411,8 +417,104 @@ export function importAsc(text: string, asyTexts: Record<string, string> = {}, n
   void models; void name;
   return { schematic, report, stats: { parts: comps.filter(c => c.map.kind !== 'V').length, skipped, labelled, layout, attachIssues } };
 
+  /* ---------- Pots drawn as resistors with a position parameter ---------- */
+  /**
+   * LTspice has no pot, so one is drawn as two resistors whose values depend on a position parameter
+   * (e.g. {Rpot*pos} and {Rpot*(1-pos)}, with .param pos=0.5), and a two-lug pot as one such resistor.
+   * A parameter counts as a knob if it sits in 0…1 and sweeping it 0 → 1 takes the resistor from about
+   * zero to its full value (or back). A rising and a falling resistor on the same knob that meet at one
+   * node become a pot (the rising one is lug 1 – wiper); a lone one becomes a variable resistor.
+   */
+  function untanglePots(): void {
+    const steps = readSteps(asc.texts);
+    const memo = new Map<string, Map<string, number>>();
+    const paramsAt = (q: string, x: number) => {
+      const k = `${q}=${x}`;
+      if (!memo.has(k)) memo.set(k, readParams(asc.texts, new Map([[q, x]])));
+      return memo.get(k)!;
+    };
+    interface Knob { c: Comp; q: string; up: boolean; total: number; at(x: number): number }
+    const knobs: Knob[] = [];
+    for (const c of comps) {
+      if (c.map.kind !== 'R') continue;
+      const v = (c.s.attrs.Value ?? '').trim();
+      const ids = new Set((v.match(/[a-z_][\w.]*/gi) ?? []).map(s => s.toLowerCase()));
+      for (const q of ids) {
+        const pos = params.get(q);
+        if (pos === undefined || pos < 0 || pos > 1) continue;
+        const at = (x: number) => evalValue(v, paramsAt(q, x)) ?? NaN;
+        const r0 = at(0), r1 = at(1);
+        if (!isFinite(r0) || !isFinite(r1) || r0 < 0 || r1 < 0) continue;
+        const total = Math.max(r0, r1), least = Math.min(r0, r1);
+        if (!(total > 0) || least > 0.005 * total) continue;
+        knobs.push({ c, q, up: r1 > r0, total, at });
+        break;
+      }
+    }
+    if (!knobs.length) return;
+    const netsOf = (c: Comp) => [nets.netOf(c.lt['1']), nets.netOf(c.lt['2'])];
+    const usedRefs = new Set(comps.map(c => c.ref.toUpperCase()));
+    let vr = 1;
+    const freshRef = () => { while (usedRefs.has(`VR${vr}`)) vr++; usedRefs.add(`VR${vr}`); return `VR${vr}`; };
+    /** The app's taper matching fraction(x) at a few points, or null. */
+    const fitTaper = (fraction: (x: number) => number): TaperKey | null =>
+      (['B', 'A', 'C'] as TaperKey[]).find(k => [0.25, 0.5, 0.75].every(x => Math.abs(fraction(x) - TAPERS[k].f(x)) < 0.01)) ?? null;
+    const taperNote = (ref: string, k: TaperKey | null, q: string) => {
+      if (!k) note(`${ref}: its "${q}" formula isn't a standard taper; imported as linear (B). Set the taper in Properties.`);
+    };
+    const replaced = new Set<Comp>();
+    const added: Comp[] = [];
+    const byParam = new Map<string, string[]>();
+    for (const a of knobs.filter(k => k.up)) {
+      if (replaced.has(a.c)) continue;
+      const [a1, a2] = netsOf(a.c);
+      const b = knobs.find(k => !k.up && k.q === a.q && !replaced.has(k.c) && Math.abs(k.total - a.total) < 0.02 * a.total &&
+        netsOf(k.c).filter(n => n === a1 || n === a2).length === 1);
+      if (!b) continue;
+      const [b1, b2] = netsOf(b.c);
+      const wNet = a1 === b1 || a1 === b2 ? a1 : a2;
+      const aw = a1 === wNet ? '1' : '2', aEnd = aw === '1' ? '2' : '1', bEnd = b1 === wNet ? '2' : '1';
+      // Name: the resistors' shared prefix (VR1a/VR1b → VR1), else the next free VRn.
+      let common = '';
+      while (common.length < Math.min(a.c.ref.length, b.c.ref.length) && a.c.ref[common.length].toUpperCase() === b.c.ref[common.length].toUpperCase()) common += a.c.ref[common.length];
+      common = common.replace(/[^a-z0-9]+$/i, '');
+      const ref = common.length >= 2 && /\d/.test(common) && !usedRefs.has(common.toUpperCase()) ? common : freshRef();
+      usedRefs.add(ref.toUpperCase());
+      const taperKey = fitTaper(x => a.at(x) / a.total);
+      taperNote(ref, taperKey, a.q);
+      const turn = Math.min(1, Math.max(0, params.get(a.q)!));
+      added.push({
+        s: a.c.s, ref,
+        map: { kind: 'POT', pins: { '1': [0, 0], w: [0, 0], '3': [0, 0] } },
+        lt: { '1': a.c.lt[aEnd], w: a.c.lt[aw], '3': b.c.lt[bEnd] },
+        preset: { value: +a.total.toPrecision(6), props: { taper: taperKey ?? 'B', turn, ...(steps.has(a.q) ? { sweep: true } : {}) } },
+      });
+      replaced.add(a.c).add(b.c);
+      byParam.set(a.q, [...(byParam.get(a.q) ?? []), ref]);
+      note(`${ref}: pot from ${a.c.ref} + ${b.c.ref} (${a.q} = ${turn})${steps.has(a.q) ? '; .step sweeps it, so it is marked Sweepable' : ''}.`);
+    }
+    // Lone knob resistors: two-lug pots (variable resistors). Lugs 2+3 ({R*(1-pos)}) turn the other way.
+    for (const k of knobs) {
+      if (replaced.has(k.c)) continue;
+      const taperKey = fitTaper(x => (k.up ? k.at(x) : k.at(1 - x)) / k.total);
+      taperNote(k.c.ref, taperKey, k.q);
+      const pos = Math.min(1, Math.max(0, params.get(k.q)!));
+      added.push({
+        s: k.c.s, ref: k.c.ref, map: { kind: 'RHEO', pins: { '1': [0, 0], '2': [0, 0] } }, lt: { ...k.c.lt },
+        preset: { value: +k.total.toPrecision(6), props: { taper: taperKey ?? 'B', turn: k.up ? pos : 1 - pos, ...(steps.has(k.q) ? { sweep: true } : {}) } },
+      });
+      replaced.add(k.c);
+      byParam.set(k.q, [...(byParam.get(k.q) ?? []), k.c.ref]);
+      note(`${k.c.ref}: variable resistor (${k.q} = ${pos})${steps.has(k.q) ? '; .step sweeps it, so it is marked Sweepable' : ''}.`);
+    }
+    for (const [q, refs] of byParam) if (refs.length > 1) note(`${refs.join(' and ')} all follow "${q}" in LTspice (ganged); here each has its own knob.`);
+    for (let i = comps.length - 1; i >= 0; i--) if (replaced.has(comps[i])) comps.splice(i, 1);
+    comps.push(...added);
+  }
+
   /* ---------- Values and models ---------- */
   function valueOf(c: Comp, kind: PartKind): Partial<SchPart> {
+    if (c.preset) return c.preset;
     const a = c.s.attrs, ref = c.ref;
     const v = (a.Value ?? '').trim().replace(new RegExp(`${MODEL_SUFFIX}$`, 'i'), '');
     switch (kind) {

@@ -5,8 +5,6 @@
 // pin that can't be wired cleanly gets a net-name flag instead. Every net carries its name from our
 // extraction, so jacks, rails and labels become LTspice flags, and the signal source and supplies are
 // voltage sources drawn to the left of the circuit. Models and op-amp macromodels go in a directive.
-import { taper } from '../core/pots';
-import { clamp } from '../core/units';
 import { modelLines, opAmpSubcktName, spiceNum, type UsedModels } from '../engine/spice';
 import { extract } from '../schematic/extract';
 import { toWorld, type Pt } from '../schematic/geometry';
@@ -48,6 +46,16 @@ const up = ([x, y]: Pt): LPt => [Math.round(x * K), Math.round(y * K)];
 const key = ([x, y]: LPt) => `${x},${y}`;
 const same = (a: LPt, b: LPt) => a[0] === b[0] && a[1] === b[1];
 const man = (a: LPt, b: LPt) => Math.abs(a[0] - b[0]) + Math.abs(a[1] - b[1]);
+
+/** Name of a pot's knob parameter in LTspice (e.g. VR1_pos). */
+const knobParam = (p: SchPart): string => `${(p.ref || p.id).replace(/[^\w]/g, '_')}_pos`;
+
+/** A taper as an LTspice expression of knob parameter q (matches TAPERS: A = (81^q − 1)/80). */
+function taperExpr(tp: string, q: string): string {
+  if (tp === 'A') return `(pow(81,${q})-1)/80`;
+  if (tp === 'C') return `(1-(pow(81,1-${q})-1)/80)`;
+  return q;
+}
 
 /** LTspice-safe net name; our automatic names (N001…) are renamed so they can't clash with LTspice's. */
 function ltNetName(n: string): string {
@@ -146,6 +154,8 @@ export function exportAsc(doc: Schematic, opt: AscExportOptions = {}): string {
   const used: UsedModels = { opamps: new Set(), diodes: new Set(), bjts: new Set(), jfets: new Set(), mosfets: new Set() };
   const sources: { inst: string; net: string; value: string; value2?: string }[] = [];
   const knobs: string[] = [];
+  /** Knob parameters (name, position) for the .param line. */
+  const knobParams: [string, number][] = [];
   const inst = (p: SchPart) => (p.ref || p.id).replace(/[^\w]/g, '_');
   const tgt = (p: SchPart, pin: string) => ({ at: up(toWorld(p, PARTS[p.kind].pins.find(q => q.name === pin)!.at)), net: netAt(p, pin) });
   const supplyNets = new Set<string>();
@@ -174,17 +184,22 @@ export function exportAsc(doc: Schematic, opt: AscExportOptions = {}): string {
         break;
       }
       case 'POT': {
+        // Two resistors driven by one knob parameter (lug 1 – wiper grows with it), so the knob can
+        // be turned (or .step-ped) in LTspice; the taper is written out as a formula.
         const turn = p.props?.turn ?? 0.5, tp = p.props?.taper ?? 'B', R = p.value ?? 100e3;
-        const f = clamp(taper(turn, tp), 1e-4, 1 - 1e-4);
-        place(RES, `${name}_a`, [['Value', spiceNum(R * f)]], { '1': tgt(p, '1'), '2': tgt(p, 'w') });
-        place(RES, `${name}_b`, [['Value', spiceNum(R * (1 - f))]], { '1': tgt(p, 'w'), '2': tgt(p, '3') });
-        knobs.push(`${p.ref || p.id}: ${spiceNum(R)} ${tp} pot at ${(turn * 10).toFixed(1)}/10 (two resistors)`);
+        const q = knobParam(p), f = taperExpr(tp, q);
+        place(RES, `${name}_a`, [['Value', `{${spiceNum(R)}*max(${f},1e-4)}`]], { '1': tgt(p, '1'), '2': tgt(p, 'w') });
+        place(RES, `${name}_b`, [['Value', `{${spiceNum(R)}*max(1-${f},1e-4)}`]], { '1': tgt(p, 'w'), '2': tgt(p, '3') });
+        knobParams.push([q, turn]);
+        knobs.push(`${p.ref || p.id}: ${spiceNum(R)} ${tp} pot, knob ${q}`);
         break;
       }
       case 'RHEO': {
         const turn = p.props?.turn ?? 0.5, tp = p.props?.taper ?? 'B', R = p.value ?? 100e3;
-        place(RES, name, [['Value', spiceNum(Math.max(1, R * taper(turn, tp)))]], { '1': tgt(p, '1'), '2': tgt(p, '2') });
-        knobs.push(`${p.ref || p.id}: ${spiceNum(R)} ${tp} variable resistor at ${(turn * 10).toFixed(1)}/10`);
+        const q = knobParam(p);
+        place(RES, name, [['Value', `{max(1,${spiceNum(R)}*${taperExpr(tp, q)})}`]], { '1': tgt(p, '1'), '2': tgt(p, '2') });
+        knobParams.push([q, turn]);
+        knobs.push(`${p.ref || p.id}: ${spiceNum(R)} ${tp} variable resistor, knob ${q}`);
         break;
       }
       default: {
@@ -222,7 +237,11 @@ export function exportAsc(doc: Schematic, opt: AscExportOptions = {}): string {
   // Directives and comments under the drawing.
   const lib = modelLines(used, 'n-p', MODEL_SUFFIX);
   const meas = (opt.measure ?? []).map(f => `.meas AC g${Math.round(f)} FIND mag(V(out)) AT ${spiceNum(f)}`);
-  const directive = [`.ac dec 100 ${spiceNum(opt.fmin ?? 10)} ${spiceNum(opt.fmax ?? 100e3)}`, ...meas, ...lib].join('\\n');
+  // Knob positions (0 = fully anticlockwise … 1 = fully clockwise), with a sweep ready to uncomment.
+  const knobLines = knobParams.length
+    ? [`.param ${knobParams.map(([q, t]) => `${q}=${+t.toFixed(4)}`).join(' ')}`, ...knobParams.map(([q]) => `;.step param ${q} 0 1 0.25`)]
+    : [];
+  const directive = [`.ac dec 100 ${spiceNum(opt.fmin ?? 10)} ${spiceNum(opt.fmax ?? 100e3)}`, ...knobLines, ...meas, ...lib].join('\\n');
   out.push(`TEXT ${x0} ${y1 + 64} Left 2 !${directive}`);
   const comments = [opt.title ? `${opt.title} (exported from Pedal Filter Lab)` : 'Exported from Pedal Filter Lab', ...(knobs.length ? ['Knobs: ' + knobs.join('; ')] : []), ...(opt.notes ?? [])];
   comments.forEach((c, i) => out.push(`TEXT ${x0} ${y0 - 64 - 32 * (comments.length - 1 - i)} Left 2 ;${c.replace(/\n/g, ' ')}`));

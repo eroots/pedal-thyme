@@ -247,9 +247,12 @@ class Expr {
   }
 }
 
-/** .param definitions from directive texts, evaluated in order (later ones may use earlier ones). */
-export function readParams(texts: AscText[]): Map<string, number> {
-  const params = new Map<string, number>();
+/**
+ * .param definitions from directive texts, evaluated in order (later ones may use earlier ones).
+ * `overrides` pin some parameters (e.g. a pot position) so the ones derived from them follow.
+ */
+export function readParams(texts: AscText[], overrides: Map<string, number> = new Map()): Map<string, number> {
+  const params = new Map<string, number>(overrides);
   const defs: [string, string][] = [];
   for (const t of texts) {
     if (!t.directive) continue;
@@ -273,6 +276,19 @@ export function readParams(texts: AscText[]): Map<string, number> {
 
 /** Our models are exported with this suffix (LTspice ships some of the same names); import strips it. */
 export const MODEL_SUFFIX = '_pfl';
+
+/** Parameters swept with .step (e.g. ".step param pos 0 1 0.1" or ".step param pos list 0.2 0.5"). */
+export function readSteps(texts: AscText[]): Set<string> {
+  const out = new Set<string>();
+  for (const t of texts) {
+    if (!t.directive) continue;
+    for (const line of t.text.split('\n')) {
+      const m = line.trim().match(/^\.step\s+(?:oct\s+|dec\s+|lin\s+)?param\s+([a-z_][\w.]*)/i);
+      if (m) out.add(m[1].toLowerCase());
+    }
+  }
+  return out;
+}
 
 /** .model cards: name → type (D, NPN, PNP, NJF, PJF, NMOS, PMOS, VDMOS …). */
 export function readModels(texts: AscText[]): Map<string, string> {

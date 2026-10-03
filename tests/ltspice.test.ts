@@ -202,3 +202,96 @@ TEXT 0 192 Left 2 !.param R=1k\\n.tran 10m
     expect(r.schematic.notes?.every(n => n.id.startsWith('note'))).toBe(true);
   });
 });
+
+describe('LTspice pots (no pot in LTspice: resistors driven by a position parameter)', () => {
+  it('export → import gives back the same pots: value, taper and knob position', () => {
+    for (const t of TEMPLATES.filter(x => x.id !== 'empty')) {
+      const doc = t.build();
+      const asc = exportAsc(doc);
+      const back = importAsc(asc).schematic;
+      for (const p of doc.parts.filter(q => q.kind === 'POT' || q.kind === 'RHEO')) {
+        const q = back.parts.find(r => r.ref === p.ref);
+        expect(q, `${t.id} ${p.ref}`).toBeDefined();
+        expect(q!.kind).toBe(p.kind);
+        expect(q!.value).toBeCloseTo(p.value!, 6);
+        expect(q!.props?.taper ?? 'B').toBe(p.props?.taper ?? 'B');
+        expect(q!.props?.turn).toBeCloseTo(p.props?.turn ?? 0.5, 4);
+      }
+    }
+  });
+  it('exports a .param per knob, the taper as a formula and a commented .step', () => {
+    const asc = exportAsc(TEMPLATES.find(t => t.id === 'ts')!.build());
+    expect(asc).toMatch(/\.param VR1_pos=0\.5 VR2_pos=0\.5 VR3_pos=0\.7/);
+    expect(asc).toMatch(/;\.step param VR3_pos 0 1 0\.25/);
+    expect(asc).toMatch(/SYMATTR Value \{100000\*max\(\(pow\(81,VR3_pos\)-1\)\/80,1e-4\)\}/);
+  });
+
+  // Hand-drawn LTspice style: a 3-lug pot as two resistors meeting at the wiper, and two-lug pots as
+  // single resistors ({R*pos} for lugs 1+2, {R*(1-pos)} for lugs 2+3).
+  const handDrawn = (extra = '') => `Version 4
+SHEET 1 880 680
+WIRE 32 64 -32 64
+WIRE 32 96 32 64
+WIRE 112 64 32 64
+WIRE 208 64 192 64
+WIRE 288 64 208 64
+WIRE 208 112 208 64
+WIRE 208 224 208 192
+WIRE 208 288 208 304
+FLAG -32 64 in
+FLAG 32 176 0
+FLAG 208 304 0
+FLAG 288 64 out
+SYMBOL voltage 32 80 R0
+SYMATTR InstName V1
+SYMATTR Value AC 1
+SYMBOL res 208 48 R90
+SYMATTR InstName R1
+SYMATTR Value 10k
+SYMBOL res 192 96 R0
+SYMATTR InstName VR1a
+SYMATTR Value {Rpot*(1-pos)}
+SYMBOL res 192 208 R0
+SYMATTR InstName VR1b
+SYMATTR Value {Rpot*pos}
+TEXT 0 360 Left 2 !.param Rpot=100k pos=0.3${extra}
+`;
+  it('turns a resistor pair on one parameter into a pot (rising resistor = lug 1 to wiper)', () => {
+    const r = importAsc(handDrawn('\\n.step param pos 0 1 0.1'));
+    const pot = r.schematic.parts.find(p => p.kind === 'POT')!;
+    expect(pot).toBeDefined();
+    expect(pot.ref).toBe('VR1');
+    expect(pot.value).toBe(100e3);
+    expect(pot.props).toMatchObject({ taper: 'B', turn: 0.3, sweep: true });
+    expect(r.schematic.parts.filter(p => p.kind === 'R').map(p => p.ref)).toEqual(['R1']);
+    expect(r.report.filter(x => x.startsWith('Check'))).toEqual([]);
+    // Same response as the two fixed resistors: 10k into (70k ∥ … ) — VR1b (30k) to ground is the wiper leg here.
+    const h = acModel(extract(r.schematic).netlist).circuit.transfer(new Cx(0, TAU * 1000)).abs();
+    expect(h).toBeCloseTo(100e3 / (10e3 + 100e3), 4);
+  });
+  it('turns a lone {R*pos} / {R*(1-pos)} resistor into a variable resistor with the right knob sense', () => {
+    const up = importAsc(`Version 4
+SHEET 1 880 680
+FLAG 0 0 a
+SYMBOL res -16 -16 R0
+SYMATTR InstName RG
+SYMATTR Value {RGain*pos}
+TEXT 0 200 Left 2 !.param RGain=500k pos=0.2
+`).schematic.parts.find(p => p.ref === 'RG')!;
+    expect(up).toMatchObject({ kind: 'RHEO', value: 500e3, props: { turn: 0.2, taper: 'B' } });
+    const down = importAsc(`Version 4
+SHEET 1 880 680
+SYMBOL res -16 -16 R0
+SYMATTR InstName RG
+SYMATTR Value {RGain*(1-pos)}
+TEXT 0 200 Left 2 !.param RGain=500k pos=0.2
+`).schematic.parts.find(p => p.ref === 'RG')!;
+    expect(down.kind).toBe('RHEO');
+    expect(down.props?.turn).toBeCloseTo(0.8, 9);
+  });
+  it('imports an unrecognised taper formula as linear and says so', () => {
+    const r = importAsc(handDrawn().replace('{Rpot*(1-pos)}', '{Rpot*(1-pos**2)}').replace('{Rpot*pos}', '{Rpot*pos**2}'));
+    expect(r.schematic.parts.find(p => p.kind === 'POT')?.props?.taper).toBe('B');
+    expect(r.report.some(x => /isn't a standard taper/.test(x))).toBe(true);
+  });
+});

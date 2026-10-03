@@ -289,6 +289,37 @@ TEXT 0 200 Left 2 !.param RGain=500k pos=0.2
     expect(down.kind).toBe('RHEO');
     expect(down.props?.turn).toBeCloseTo(0.8, 9);
   });
+  it('handles a pot with its wiper tied to lug 3, trimmers set by resistance, and leaves plain parameters alone', () => {
+    // As in a real preamp file: RTone2 has both ends on the wiper node (ground), RTrim1 is {RTrim1+1}
+    // with .step values, and R9 is just a parameterised fixed resistor.
+    const r = importAsc(`Version 4
+SHEET 1 880 680
+FLAG 16 16 sig
+FLAG 16 96 0
+FLAG 16 144 0
+FLAG 16 224 0
+SYMBOL res 0 0 R0
+SYMATTR InstName RTone1
+SYMATTR Value {250k*RTone+1}
+SYMBOL res 0 128 R0
+SYMATTR InstName RTone2
+SYMATTR Value {250k*(1-RTone)+1}
+SYMBOL res 200 0 R0
+SYMATTR InstName RTrim1
+SYMATTR Value {RTrim1+1}
+SYMBOL res 400 0 R0
+SYMATTR InstName R9
+SYMATTR Value {Rload}
+TEXT 0 300 Left 2 !.param RTone=0.3 RTrim1=10k Rload=47k
+TEXT 0 330 Left 2 !.step param RTrim1 list 5k 10k 50k
+`);
+    const parts = r.schematic.parts;
+    expect(parts.find(p => p.ref === 'RTone')).toMatchObject({ kind: 'POT', props: { turn: 0.3 } });
+    expect(parts.find(p => p.ref === 'RTone')!.value).toBeCloseTo(250e3, -1);
+    expect(parts.find(p => p.ref === 'RTrim1')).toMatchObject({ kind: 'RHEO', value: 50e3, props: { turn: 0.2, sweep: true } });
+    expect(parts.find(p => p.ref === 'R9')).toMatchObject({ kind: 'R', value: 47e3 });
+    expect(parts.filter(p => p.kind === 'POT')).toHaveLength(1);
+  });
   it('imports an unrecognised taper formula as linear and says so', () => {
     const r = importAsc(handDrawn().replace('{Rpot*(1-pos)}', '{Rpot*(1-pos**2)}').replace('{Rpot*pos}', '{Rpot*pos**2}'));
     expect(r.schematic.parts.find(p => p.kind === 'POT')?.props?.taper).toBe('B');

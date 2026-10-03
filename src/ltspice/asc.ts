@@ -277,14 +277,20 @@ export function readParams(texts: AscText[], overrides: Map<string, number> = ne
 /** Our models are exported with this suffix (LTspice ships some of the same names); import strips it. */
 export const MODEL_SUFFIX = '_pfl';
 
-/** Parameters swept with .step (e.g. ".step param pos 0 1 0.1" or ".step param pos list 0.2 0.5"). */
-export function readSteps(texts: AscText[]): Set<string> {
-  const out = new Set<string>();
+/**
+ * Parameters swept with .step, with the values swept ("list a b c" → those; "start stop step" and
+ * oct/dec ranges → start and stop). E.g. ".step param pos 0 1 0.1", ".step param R list 5k 10k".
+ */
+export function readSteps(texts: AscText[]): Map<string, number[]> {
+  const out = new Map<string, number[]>();
   for (const t of texts) {
     if (!t.directive) continue;
     for (const line of t.text.split('\n')) {
-      const m = line.trim().match(/^\.step\s+(?:oct\s+|dec\s+|lin\s+)?param\s+([a-z_][\w.]*)/i);
-      if (m) out.add(m[1].toLowerCase());
+      const m = line.trim().replace(/;.*$/, '').match(/^\.step\s+(?:oct\s+|dec\s+|lin\s+)?param\s+([a-z_][\w.]*)\s*(.*)$/i);
+      if (!m) continue;
+      const words = m[2].trim().split(/\s+/).filter(Boolean);
+      const nums = (words[0]?.toLowerCase() === 'list' ? words.slice(1) : words.slice(0, 2)).map(spiceNumber).filter((x): x is number => x !== null);
+      out.set(m[1].toLowerCase(), nums);
     }
   }
   return out;

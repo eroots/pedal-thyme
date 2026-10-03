@@ -451,7 +451,30 @@ export function importAsc(text: string, asyTexts: Record<string, string> = {}, n
         break;
       }
     }
-    if (!knobs.length) return;
+    // Trimmers set by their resistance: {RTrim} or {RTrim+1} with .param RTrim=10k. Taken as a variable
+    // resistor when the parameter is swept (.step) or named like a pot; the track value is the highest
+    // swept value, else the next standard value at least twice the setting.
+    const STD = [100, 200, 250, 500, 1e3, 2e3, 2.5e3, 5e3, 10e3, 20e3, 25e3, 50e3, 100e3, 200e3, 250e3, 500e3, 1e6, 2e6, 5e6];
+    const trims: { c: Comp; q: string; setting: number; total: number; how: string }[] = [];
+    for (const c of comps) {
+      if (c.map.kind !== 'R' || knobs.some(k => k.c === c)) continue;
+      const v = (c.s.attrs.Value ?? '').trim();
+      for (const q of new Set((v.match(/[a-z_][\w.]*/gi) ?? []).map(s => s.toLowerCase()))) {
+        const setting = params.get(q);
+        if (setting === undefined || !(setting > 1)) continue;
+        const potName = (n: string) => /trim|pot/i.test(n) || /^(vr|rv)\d/i.test(n);
+        if (!steps.has(q) && !potName(q) && !potName(c.ref)) continue;
+        const at = (x: number) => evalValue(v, paramsAt(q, x)) ?? NaN;
+        const r1 = at(setting), r2 = at(2 * setting);
+        // R must be (about) the parameter itself, plus at most a tiny guard resistance.
+        if (!(Math.abs(r2 - r1 - setting) < 0.01 * setting) || !(r1 - setting < Math.max(10, 0.01 * setting))) continue;
+        const swept = (steps.get(q) ?? []).filter(x => x > 0);
+        const total = swept.length ? Math.max(setting, ...swept) : STD.find(s => s >= 2 * setting) ?? 2 * setting;
+        trims.push({ c, q, setting, total, how: swept.length ? 'its highest .step value' : 'assumed, twice the setting' });
+        break;
+      }
+    }
+    if (!knobs.length && !trims.length) return;
     const netsOf = (c: Comp) => [nets.netOf(c.lt['1']), nets.netOf(c.lt['2'])];
     const usedRefs = new Set(comps.map(c => c.ref.toUpperCase()));
     let vr = 1;
@@ -467,18 +490,23 @@ export function importAsc(text: string, asyTexts: Record<string, string> = {}, n
     const byParam = new Map<string, string[]>();
     for (const a of knobs.filter(k => k.up)) {
       if (replaced.has(a.c)) continue;
-      const [a1, a2] = netsOf(a.c);
-      const b = knobs.find(k => !k.up && k.q === a.q && !replaced.has(k.c) && Math.abs(k.total - a.total) < 0.02 * a.total &&
-        netsOf(k.c).filter(n => n === a1 || n === a2).length === 1);
+      // The two halves meet at exactly one node, the wiper. One half may have both ends on that node:
+      // a pot used as a variable resistor with its wiper tied to lug 3 (or lug 1).
+      const wiperOf = (b: Knob): string | null => {
+        const sa = new Set(netsOf(a.c)), common = [...new Set(netsOf(b.c))].filter(n => sa.has(n));
+        return common.length === 1 ? common[0] : null;
+      };
+      const b = knobs.find(k => !k.up && k.q === a.q && !replaced.has(k.c) && Math.abs(k.total - a.total) < 0.02 * a.total && wiperOf(k) !== null);
       if (!b) continue;
-      const [b1, b2] = netsOf(b.c);
-      const wNet = a1 === b1 || a1 === b2 ? a1 : a2;
+      const wNet = wiperOf(b)!;
+      const [a1] = netsOf(a.c), [b1] = netsOf(b.c);
       const aw = a1 === wNet ? '1' : '2', aEnd = aw === '1' ? '2' : '1', bEnd = b1 === wNet ? '2' : '1';
-      // Name: the resistors' shared prefix (VR1a/VR1b → VR1), else the next free VRn.
+      // Name: the resistors' shared prefix, else the next free VRn.
       let common = '';
       while (common.length < Math.min(a.c.ref.length, b.c.ref.length) && a.c.ref[common.length].toUpperCase() === b.c.ref[common.length].toUpperCase()) common += a.c.ref[common.length];
       common = common.replace(/[^a-z0-9]+$/i, '');
-      const ref = common.length >= 2 && /\d/.test(common) && !usedRefs.has(common.toUpperCase()) ? common : freshRef();
+      // A meaningful shared name (VR1a/VR1b → VR1, RGain1/RGain2 → RGain); not a bare "R".
+      const ref = (common.length >= 3 || (common.length >= 2 && /\d/.test(common))) && !usedRefs.has(common.toUpperCase()) ? common : freshRef();
       usedRefs.add(ref.toUpperCase());
       const taperKey = fitTaper(x => a.at(x) / a.total);
       taperNote(ref, taperKey, a.q);
@@ -506,6 +534,15 @@ export function importAsc(text: string, asyTexts: Record<string, string> = {}, n
       replaced.add(k.c);
       byParam.set(k.q, [...(byParam.get(k.q) ?? []), k.c.ref]);
       note(`${k.c.ref}: variable resistor (${k.q} = ${pos})${steps.has(k.q) ? '; .step sweeps it, so it is marked Sweepable' : ''}.`);
+    }
+    for (const t of trims) {
+      const turn = Math.min(1, t.setting / t.total);
+      added.push({
+        s: t.c.s, ref: t.c.ref, map: { kind: 'RHEO', pins: { '1': [0, 0], '2': [0, 0] } }, lt: { ...t.c.lt },
+        preset: { value: t.total, props: { taper: 'B', turn: +turn.toFixed(4), ...(steps.has(t.q) ? { sweep: true } : {}) } },
+      });
+      replaced.add(t.c);
+      note(`${t.c.ref}: trimmer set to ${fmtR(t.setting)} by "${t.q}"; track ${fmtR(t.total)} (${t.how}), so its knob is at ${(turn * 10).toFixed(1)}/10.${steps.has(t.q) ? ' Marked Sweepable (.step).' : ''}`);
     }
     for (const [q, refs] of byParam) if (refs.length > 1) note(`${refs.join(' and ')} all follow "${q}" in LTspice (ganged); here each has its own knob.`);
     for (let i = comps.length - 1; i >= 0; i--) if (replaced.has(comps[i])) comps.splice(i, 1);
@@ -716,3 +753,5 @@ function labelRot(sch: Schematic, p: SchPart): Rot {
   }
   return best;
 }
+
+const fmtR = (r: number): string => (r >= 1e6 ? `${+(r / 1e6).toPrecision(3)}M` : r >= 1e3 ? `${+(r / 1e3).toPrecision(3)}k` : `${+r.toPrecision(3)}`) + 'Ω';

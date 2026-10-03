@@ -166,7 +166,7 @@ describe('SPICE export of transistors', () => {
     expect(deck).toMatch(/^Q1 c b e 2N3904$/m);
     expect(deck).toMatch(/^J1 c x 0 J201$/m);
     expect(deck).toMatch(/^\.model 2N3904 NPN\(/m);
-    expect(deck).toMatch(/^\.model J201 NJF\(.*approximate$/m);
+    expect(deck).toMatch(/^\.model J201 NJF\(Beta=1\.07m Vto=-0\.93/m);
   });
 });
 

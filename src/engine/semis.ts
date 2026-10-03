@@ -39,14 +39,15 @@ export const BJT_MODELS: Record<string, BjtModel> = {
 };
 
 export const JFET_MODELS: Record<string, JfetModel> = {
-  J201: { label: 'J201 (N-JFET, low Vp)', pol: 'n', vto: -0.8, beta: 0.94e-3, lambda: 0.01, cgs: 4e-12, cgd: 1.6e-12,
-    spice: 'NJF(Vto=-0.8 Beta=0.94m Lambda=10m Cgs=4p Cgd=1.6p)', approx: true },
+  // J201 and 2N5460: the manufacturer models LTspice ships (Linear Systems, Siliconix), less Rd/Rs.
+  J201: { label: 'J201 (N-JFET, low Vp)', pol: 'n', vto: -0.93, beta: 1.07e-3, lambda: 6.75e-3, cgs: 1e-12, cgd: 1e-12,
+    spice: 'NJF(Beta=1.07m Vto=-0.93 Lambda=6.75m Is=1.72f Rd=10 Rs=12 Cgd=1p Cgs=1p)' },
   '2N5457': { label: '2N5457 (N-JFET)', pol: 'n', vto: -1.8, beta: 1.0e-3, lambda: 0.01, cgs: 4e-12, cgd: 1.5e-12,
     spice: 'NJF(Vto=-1.8 Beta=1m Lambda=10m Cgs=4p Cgd=1.5p)', approx: true },
   MPF102: { label: 'MPF102 (N-JFET)', pol: 'n', vto: -3, beta: 0.67e-3, lambda: 0.01, cgs: 4.5e-12, cgd: 1.5e-12,
     spice: 'NJF(Vto=-3 Beta=0.67m Lambda=10m Cgs=4.5p Cgd=1.5p)', approx: true },
-  '2N5460': { label: '2N5460 (P-JFET)', pol: 'p', vto: -1.8, beta: 1.0e-3, lambda: 0.01, cgs: 5e-12, cgd: 2e-12,
-    spice: 'PJF(Vto=-1.8 Beta=1m Lambda=10m Cgs=5p Cgd=2p)', approx: true },
+  '2N5460': { label: '2N5460 (P-JFET)', pol: 'p', vto: -3.4, beta: 1.0e-3, lambda: 0.01, cgs: 5e-12, cgd: 5e-12,
+    spice: 'PJF(Is=1.5p Vto=-3.4 Beta=1.0m Lambda=10m Rd=10 Rs=10 Cgs=5p Cgd=5p)' },
 };
 
 /**

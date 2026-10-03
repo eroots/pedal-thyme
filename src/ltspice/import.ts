@@ -397,11 +397,14 @@ export function importAsc(text: string, asyTexts: Record<string, string> = {}, n
   for (const m of result.mismatches) note(m);
   if (labelled) note(`${labelled} pin${labelled > 1 ? 's were' : ' was'} connected with net labels (no clean wire route).`);
 
-  // Comments become notes; directives we can't use are listed.
-  const notes = asc.texts.filter(t => !t.directive && t.text.trim()).map((t, i) => {
+  // Comments become text notes, one per line. Directives aren't imported, including ones that are
+  // commented out (LTspice keeps disabled ".step"/".ac" lines as comments starting with a dot).
+  const notes: NonNullable<Schematic['notes']> = [];
+  for (const t of asc.texts.filter(t => !t.directive)) {
+    const lines = t.text.split('\n').map(l => l.replace(/\s+$/, '')).filter(l => l.trim() && !/^\s*[.;!]/.test(l));
     const [x, y] = sc([t.x, t.y]);
-    return { id: `n${i + 1}`, x, y, text: t.text.split('\n')[0].slice(0, 160), anchor: 'start' as const };
-  });
+    lines.forEach((l, k) => notes.push({ id: `note${notes.length + 1}`, x, y: y + 14 * k, text: l.trim().slice(0, 160), anchor: 'start' }));
+  }
   if (notes.length) schematic.notes = notes;
   const ignored = asc.texts.filter(t => t.directive).flatMap(t => t.text.split('\n')).map(l => l.trim()).filter(l => /^\.(lib|include|inc)\b/i.test(l));
   if (ignored.length) note(`Ignored ${ignored.join(', ')}: external model files aren't loaded; library models were substituted.`);

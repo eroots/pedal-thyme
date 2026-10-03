@@ -3,7 +3,7 @@
 import { pinsOf } from '../schematic/extract';
 import { key, onSegment, samePt, type Pt } from '../schematic/geometry';
 import { boxOf } from '../schematic/library';
-import type { PartKind, PartProps, Rot, SchPart, SchWire, Schematic } from '../schematic/types';
+import type { PartKind, PartProps, Rot, SchNote, SchPart, SchWire, Schematic } from '../schematic/types';
 import { routeOrtho } from './route';
 
 export const GRID = 10;
@@ -56,7 +56,7 @@ export function nextRef(doc: Schematic, prefix: string, taken: Set<string> = new
 
 /** Unique id with a prefix (ids are internal; refs are what users see). */
 export function nextId(doc: Schematic, prefix: string, taken: Set<string> = new Set()): string {
-  const used = new Set([...doc.parts.map(p => p.id), ...doc.wires.map(w => w.id), ...taken]);
+  const used = new Set([...doc.parts.map(p => p.id), ...doc.wires.map(w => w.id), ...(doc.notes ?? []).map(n => n.id), ...taken]);
   for (let n = 1; ; n++) if (!used.has(prefix + n)) return prefix + n;
 }
 
@@ -332,8 +332,26 @@ export function mirrorParts(doc: Schematic, partIds: Set<string>, stretch = true
   return transformSelection(doc, partIds, new Set(), p => ({ ...p, mirror: !p.mirror || undefined }), p => p, stretch);
 }
 
-export function deleteSelection(doc: Schematic, partIds: Set<string>, wireIds: Set<string>): Schematic {
-  return { ...doc, parts: doc.parts.filter(p => !partIds.has(p.id)), wires: doc.wires.filter(w => !wireIds.has(w.id)) };
+export function deleteSelection(doc: Schematic, partIds: Set<string>, wireIds: Set<string>, noteIds: Set<string> = new Set()): Schematic {
+  const out: Schematic = { ...doc, parts: doc.parts.filter(p => !partIds.has(p.id)), wires: doc.wires.filter(w => !wireIds.has(w.id)) };
+  if (doc.notes && noteIds.size) out.notes = doc.notes.filter(n => !noteIds.has(n.id));
+  return out;
+}
+
+/* ---------- Text notes ---------- */
+/** Add a text note (left-aligned at x, y); returns the new note's id. */
+export function addNote(doc: Schematic, x: number, y: number, text = 'Text'): { doc: Schematic; id: string } {
+  const id = nextId(doc, 'note');
+  return { doc: { ...doc, notes: [...(doc.notes ?? []), { id, x: snap(x), y: snap(y), text, anchor: 'start' }] }, id };
+}
+
+export function moveNotes(doc: Schematic, ids: Set<string>, dx: number, dy: number): Schematic {
+  if (!ids.size || !doc.notes) return doc;
+  return { ...doc, notes: doc.notes.map(n => (ids.has(n.id) ? { ...n, x: n.x + dx, y: n.y + dy } : n)) };
+}
+
+export function updateNote(doc: Schematic, id: string, patch: Partial<SchNote>): Schematic {
+  return { ...doc, notes: (doc.notes ?? []).map(n => (n.id === id ? { ...n, ...patch } : n)) };
 }
 
 /** Distance from point p to segment a–b. */
@@ -388,11 +406,11 @@ export function updatePart(doc: Schematic, id: string, patch: Partial<SchPart>):
 }
 
 /* ---------- Clipboard ---------- */
-export interface Clip { parts: SchPart[]; wires: SchWire[] }
+export interface Clip { parts: SchPart[]; wires: SchWire[]; notes?: SchNote[] }
 
-export function copySelection(doc: Schematic, partIds: Set<string>, wireIds: Set<string>): Clip {
+export function copySelection(doc: Schematic, partIds: Set<string>, wireIds: Set<string>, noteIds: Set<string> = new Set()): Clip {
   const c = clone(doc);
-  return { parts: c.parts.filter(p => partIds.has(p.id)), wires: c.wires.filter(w => wireIds.has(w.id)) };
+  return { parts: c.parts.filter(p => partIds.has(p.id)), wires: c.wires.filter(w => wireIds.has(w.id)), notes: (c.notes ?? []).filter(n => noteIds.has(n.id)) };
 }
 
 /** Paste with an offset; refs that clash are renumbered. Returns the new doc and the pasted ids. */
@@ -413,7 +431,14 @@ export function paste(doc: Schematic, clip: Clip, dx: number, dy: number): { doc
     ids.add(id);
     return { id, pts: w.pts.map(([x, y]) => [x + dx, y + dy] as Pt) };
   });
-  return { doc: { ...doc, parts: [...doc.parts, ...parts], wires: [...doc.wires, ...wires] }, ids };
+  const notes = (clip.notes ?? []).map(n => {
+    const id = nextId(doc, 'note', ids);
+    ids.add(id);
+    return { ...n, id, x: n.x + dx, y: n.y + dy };
+  });
+  const out: Schematic = { ...doc, parts: [...doc.parts, ...parts], wires: [...doc.wires, ...wires] };
+  if (notes.length) out.notes = [...(doc.notes ?? []), ...notes];
+  return { doc: out, ids };
 }
 
 /* ---------- Hit testing helpers ---------- */

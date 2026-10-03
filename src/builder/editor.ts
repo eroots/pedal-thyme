@@ -11,11 +11,11 @@ import { pinsOf } from '../schematic/extract';
 import type { Pt } from '../schematic/geometry';
 import type { PartKind, Rot, Schematic } from '../schematic/types';
 import {
-  addPart, addWire, copySelection, deleteSelection, deleteWireSegment, isConnection, makePart, mirrorParts, moveSelection,
+  addNote, addPart, addWire, copySelection, deleteSelection, deleteWireSegment, isConnection, makePart, mirrorParts, moveNotes, moveSelection,
   nearestAnchor, partBox, paste, rotateSelection, snapPt, wireSegmentAt, type Clip,
 } from './doc';
 
-export type Mode = 'select' | 'wire' | 'place' | 'delete';
+export type Mode = 'select' | 'wire' | 'place' | 'delete' | 'text';
 /** Dragging either stretches attached wires (connections kept) or moves the selection on its own. */
 export type DragMode = 'stretch' | 'move';
 
@@ -159,19 +159,19 @@ export class Editor {
 
   deleteSel(): void {
     if (!this.sel.size) return;
-    const doc = deleteSelection(this.doc, this.selParts(), this.selWires());
+    const doc = deleteSelection(this.doc, this.selParts(), this.selWires(), this.selNotes());
     this.sel.clear();
     this.on.select(this.sel);
     this.commit(doc);
   }
 
-  copy(): void { if (this.sel.size) this.clip = copySelection(this.doc, this.selParts(), this.selWires()); }
+  copy(): void { if (this.sel.size) this.clip = copySelection(this.doc, this.selParts(), this.selWires(), this.selNotes()); }
 
   /** Paste at the mouse cursor (top-left of the copied items lands there), or offset if the cursor is away. */
   pasteClip(): void {
     if (!this.clip) return;
-    const xs = [...this.clip.parts.map(p => p.x), ...this.clip.wires.flatMap(w => w.pts.map(p => p[0]))];
-    const ys = [...this.clip.parts.map(p => p.y), ...this.clip.wires.flatMap(w => w.pts.map(p => p[1]))];
+    const xs = [...this.clip.parts.map(p => p.x), ...this.clip.wires.flatMap(w => w.pts.map(p => p[0])), ...(this.clip.notes ?? []).map(n => n.x)];
+    const ys = [...this.clip.parts.map(p => p.y), ...this.clip.wires.flatMap(w => w.pts.map(p => p[1])), ...(this.clip.notes ?? []).map(n => n.y)];
     if (!xs.length) return;
     const [x0, y0] = [Math.min(...xs), Math.min(...ys)];
     const [cx, cy] = snapPt(this.cursor);
@@ -280,6 +280,11 @@ export class Editor {
   /* ---------- Internals ---------- */
   private selParts(): Set<string> { return new Set(this.doc.parts.filter(p => this.sel.has(p.id)).map(p => p.id)); }
   private selWires(): Set<string> { return new Set(this.doc.wires.filter(w => this.sel.has(w.id)).map(w => w.id)); }
+  private selNotes(): Set<string> { return new Set((this.doc.notes ?? []).filter(n => this.sel.has(n.id)).map(n => n.id)); }
+  /** Part, wire or note under the pointer. */
+  private hitId(t: Element): string | undefined {
+    return t.closest<SVGElement>('[data-id]')?.dataset.id ?? t.closest<SVGElement>('[data-note]')?.dataset.note ?? t.closest<SVGElement>('[data-wire]')?.dataset.wire;
+  }
 
   /**
    * Show a document without recording it (live drags, sliders). The next commit() records the
@@ -302,14 +307,14 @@ export class Editor {
     this.redoStack = [];
     this.doc = doc;
     // Drop selection entries that no longer exist.
-    const ids = new Set([...doc.parts.map(p => p.id), ...doc.wires.map(w => w.id)]);
+    const ids = new Set([...doc.parts.map(p => p.id), ...doc.wires.map(w => w.id), ...(doc.notes ?? []).map(n => n.id)]);
     for (const id of [...this.sel]) if (!ids.has(id)) this.sel.delete(id);
     this.on.change(this.doc, true);
     this.render();
   }
 
   private afterHistory(): void {
-    const ids = new Set([...this.doc.parts.map(p => p.id), ...this.doc.wires.map(w => w.id)]);
+    const ids = new Set([...this.doc.parts.map(p => p.id), ...this.doc.wires.map(w => w.id), ...(this.doc.notes ?? []).map(n => n.id)]);
     for (const id of [...this.sel]) if (!ids.has(id)) this.sel.delete(id);
     this.on.select(this.sel);
     this.on.change(this.doc, true);
@@ -347,8 +352,8 @@ export class Editor {
     svg.addEventListener('pointerleave', () => { this.hover = null; this.render(); });
     svg.addEventListener('dblclick', e => {
       if (this.mode === 'wire') { this.finishWire(); return; }
-      const g = (e.target as Element).closest<SVGGElement>('[data-id]');
-      if (g && this.mode === 'select') this.on.edit(g.dataset.id!);
+      const g = (e.target as Element).closest<SVGGElement>('[data-id], [data-note]');
+      if (g && this.mode === 'select') this.on.edit(g.dataset.id ?? g.dataset.note!);
     });
     svg.addEventListener('contextmenu', e => {
       e.preventDefault();
@@ -391,6 +396,17 @@ export class Editor {
       return;
     }
 
+    if (this.mode === 'text') {
+      // Place a note, select it and hand over to Properties to type its text.
+      e.preventDefault(); // keep the mouse from pulling focus back to the canvas
+      const r = addNote(this.doc, p[0], p[1] + 4);
+      this.commit(r.doc);
+      this.setMode('select');
+      this.selectIds([r.id]);
+      this.on.edit(r.id);
+      return;
+    }
+
     if (this.mode === 'place' && this.placing) {
       // Probes stick to the nearest pin or wire, so they land on a net.
       const at = this.placing.kind === 'PROBE' ? this.wireTarget(p) : p;
@@ -416,7 +432,9 @@ export class Editor {
     if (this.mode === 'delete') {
       const t = e.target as Element;
       const partId = t.closest<SVGElement>('[data-id]')?.dataset.id, wireId = t.closest<SVGElement>('[data-wire]')?.dataset.wire;
-      if (partId) this.commit(deleteSelection(this.doc, new Set([partId]), new Set()));
+      const noteId = t.closest<SVGElement>('[data-note]')?.dataset.note;
+      if (noteId) this.commit(deleteSelection(this.doc, new Set(), new Set(), new Set([noteId])));
+      else if (partId) this.commit(deleteSelection(this.doc, new Set([partId]), new Set()));
       else if (wireId) this.commit(deleteWireSegment(this.doc, wireId, p));
       else { this.drag = { kind: 'box', start: p, now: p, add: false, del: true }; this.svg.setPointerCapture(e.pointerId); }
       this.delHover = null;
@@ -426,7 +444,7 @@ export class Editor {
 
     // Select mode.
     const t = e.target as Element;
-    const id = t.closest<SVGElement>('[data-id]')?.dataset.id ?? t.closest<SVGElement>('[data-wire]')?.dataset.wire;
+    const id = this.hitId(t);
     if (id) {
       if (e.shiftKey) { if (this.sel.has(id)) this.sel.delete(id); else this.sel.add(id); }
       else if (!this.sel.has(id)) this.sel = new Set([id]);
@@ -458,14 +476,14 @@ export class Editor {
     if (d?.kind === 'move') {
       const q = snapPt(p), dx = q[0] - d.start[0], dy = q[1] - d.start[1];
       d.moved = d.moved || dx !== 0 || dy !== 0;
-      if (d.moved) this.preview(moveSelection(d.orig, this.selParts(), this.selWires(), dx, dy, d.stretch));
+      if (d.moved) this.preview(moveNotes(moveSelection(d.orig, this.selParts(), this.selWires(), dx, dy, d.stretch), this.selNotes(), dx, dy));
       return;
     }
     if (d?.kind === 'box') { d.now = p; this.render(); return; }
     this.hover = this.mode === 'wire' ? this.wireTarget(p) : null;
     if (this.mode === 'delete') {
       const t = e.target as Element;
-      const id = t.closest<SVGElement>('[data-id]')?.dataset.id ?? t.closest<SVGElement>('[data-wire]')?.dataset.wire ?? null;
+      const id = this.hitId(t) ?? null;
       if (id !== this.delHover || id) { this.delHover = id; this.render(); }
       return;
     }
@@ -488,13 +506,15 @@ export class Editor {
         if (d.del) {
           const parts = new Set(this.doc.parts.filter(p => { const [a, b, c, dd] = partBox(p); return inside(a, b) && inside(c, dd); }).map(p => p.id));
           const wires = new Set(this.doc.wires.filter(w => w.pts.every(([x, y]) => inside(x, y))).map(w => w.id));
-          if (parts.size || wires.size) this.commit(deleteSelection(this.doc, parts, wires));
+          const notes = new Set((this.doc.notes ?? []).filter(n => inside(n.x, n.y)).map(n => n.id));
+          if (parts.size || wires.size || notes.size) this.commit(deleteSelection(this.doc, parts, wires, notes));
           this.render();
           return;
         }
         if (!d.add) this.sel.clear();
         for (const p of this.doc.parts) { const [a, b, c, dd] = partBox(p); if (inside(a, b) && inside(c, dd)) this.sel.add(p.id); }
         for (const w of this.doc.wires) if (w.pts.every(([x, y]) => inside(x, y))) this.sel.add(w.id);
+        for (const n of this.doc.notes ?? []) if (inside(n.x, n.y)) this.sel.add(n.id);
         this.on.select(this.sel);
       }
       this.render();
@@ -511,7 +531,7 @@ export class Editor {
     if (ctrl && k === 'd') { e.preventDefault(); this.duplicate(); return; }
     if (ctrl && k === 'r') { e.preventDefault(); this.rotate(); return; }
     if (ctrl && k === 'e') { e.preventDefault(); this.mirror(); return; }
-    if (ctrl && k === 'a') { e.preventDefault(); this.selectIds([...this.doc.parts.map(p => p.id), ...this.doc.wires.map(w => w.id)]); return; }
+    if (ctrl && k === 'a') { e.preventDefault(); this.selectIds([...this.doc.parts.map(p => p.id), ...this.doc.wires.map(w => w.id), ...(this.doc.notes ?? []).map(n => n.id)]); return; }
     if (ctrl || e.altKey) return;
     if (PART_KEYS[k] && !e.shiftKey) { this.setMode('place', PART_KEYS[k]); return; }
     switch (e.key) {
@@ -525,6 +545,7 @@ export class Editor {
       case 'Delete': case 'Backspace': e.preventDefault(); this.deleteOrMode(); break;
       case 'w': case 'W': this.setMode('wire'); break;
       case 'v': case 'V': this.setMode('select'); break;
+      case 't': case 'T': this.setMode('text'); break;
       case 's': case 'S': this.setDragMode('stretch'); break;
       case 'm': case 'M': this.setDragMode('move'); break;
       case 'f': case 'F': this.fit(); break;
@@ -535,7 +556,7 @@ export class Editor {
         if (!this.sel.size) return;
         e.preventDefault();
         const dx = e.key === 'ArrowLeft' ? -10 : e.key === 'ArrowRight' ? 10 : 0, dy = e.key === 'ArrowUp' ? -10 : e.key === 'ArrowDown' ? 10 : 0;
-        this.commit(moveSelection(this.doc, this.selParts(), this.selWires(), dx, dy, this.dragMode === 'stretch'));
+        this.commit(moveNotes(moveSelection(this.doc, this.selParts(), this.selWires(), dx, dy, this.dragMode === 'stretch'), this.selNotes(), dx, dy));
         break;
       }
       default: break;
@@ -555,7 +576,7 @@ export class Editor {
     const W = this.wrap.clientWidth || 800, H = this.wrap.clientHeight || 500;
     const { x, y, zoom } = this.view;
     this.svg.setAttribute('viewBox', `${x} ${y} ${W / zoom} ${H / zoom}`);
-    const delPart = this.mode === 'delete' && this.delHover && this.doc.parts.some(p => p.id === this.delHover) ? this.delHover : null;
+    const delPart = this.mode === 'delete' && this.delHover && (this.doc.parts.some(p => p.id === this.delHover) || (this.doc.notes ?? []).some(n => n.id === this.delHover)) ? this.delHover : null;
     const body = renderSchematicBody(this.doc, { editor: true, selected: this.sel, highlight: delPart ? [delPart] : [] }).body;
     const over: string[] = [];
 

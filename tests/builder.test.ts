@@ -149,3 +149,26 @@ describe('placing and pasting', () => {
     expect(r.doc.wires).toHaveLength(d.wires.length + 1);
   });
 });
+
+describe('text notes', () => {
+  it('are added, moved, copied and deleted like other objects', async () => {
+    const { addNote, moveNotes, copySelection, paste, deleteSelection, updateNote } = await import('../src/builder/doc');
+    let d = emptyDoc();
+    const a = addNote(d, 13, 47, 'Gain stage');
+    d = a.doc;
+    expect(d.notes).toEqual([{ id: a.id, x: 10, y: 50, text: 'Gain stage', anchor: 'start' }]);
+    const b = addNote(d, 0, 0);
+    expect(b.id).not.toBe(a.id);
+    d = moveNotes(b.doc, new Set([a.id]), 30, -10);
+    expect(d.notes!.find(n => n.id === a.id)).toMatchObject({ x: 40, y: 40 });
+    d = updateNote(d, a.id, { text: 'Clipping' });
+    expect(d.notes!.find(n => n.id === a.id)!.text).toBe('Clipping');
+    const r = paste(d, copySelection(d, new Set(), new Set(), new Set([a.id])), 20, 20);
+    expect(r.doc.notes).toHaveLength(3);
+    expect(new Set(r.doc.notes!.map(n => n.id)).size).toBe(3);
+    d = deleteSelection(r.doc, new Set(), new Set(), new Set([a.id]));
+    expect(d.notes!.map(n => n.text)).toEqual(['Text', 'Clipping']);
+    // Notes are not part of the circuit.
+    expect(extract(d).netlist.elements).toEqual(extract(emptyDoc()).netlist.elements);
+  });
+});

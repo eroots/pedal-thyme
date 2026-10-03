@@ -270,6 +270,13 @@ nav.sections button.active { background: var(--accent); color: var(--accent-ink)
 #bCanvas .comp.sel .pn { fill: var(--accent); }
 #bCanvas .schem .wire.sel { stroke: var(--accent); stroke-width: 2.6; }
 #bCanvas .overlay { pointer-events: none; }
+#bCanvas .note { cursor: move; }
+#bCanvas .note-hit { fill: transparent; stroke: none; }
+#bCanvas .note:hover .note-hit { stroke: var(--line); stroke-width: 1; vector-effect: non-scaling-stroke; }
+#bCanvas .note.sel text { fill: var(--accent); }
+#bCanvas .note.sel .note-hit { stroke: var(--accent); stroke-width: 1; stroke-dasharray: 3 2; vector-effect: non-scaling-stroke; }
+#bCanvas .note.hl text { fill: var(--bad); }
+.b-canvas-wrap[data-mode="text"] { cursor: text; }
 #bCanvas .trace-layer { pointer-events: none; }
 #bCanvas .trace-frame { fill: none; stroke: none; }
 /* Scans are dark lines on white: in dark mode, invert them so they read as light lines on the dark canvas. */

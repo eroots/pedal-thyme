@@ -11,7 +11,7 @@ import { onSegment, samePt, type Pt } from '../schematic/geometry';
 import { renderSchematic, renderSchematicBody } from '../schematic/render';
 import type { PartKind, SchPart, Schematic } from '../schematic/types';
 import { S } from '../playground/state';
-import { emptyDoc, partBox, updatePart } from './doc';
+import { emptyDoc, partBox, updateNote, updatePart } from './doc';
 import { Editor, PART_KEYS, type DragMode, type Mode } from './editor';
 import { initFileBar } from './filebar';
 import { initFrontPanel } from './frontpanel';
@@ -59,8 +59,11 @@ export function initBuilder(): BuilderApi {
     bias: () => toggleBias(),
     edit: () => {
       renderProps();
-      const inp = document.querySelector<HTMLInputElement>(`#bProps [data-field="value"]`) || document.querySelector<HTMLInputElement>(`#bProps [data-field="ref"]`);
-      inp?.focus(); inp?.select();
+      // After the click that triggered this has finished (it may move focus to the canvas).
+      setTimeout(() => {
+        const inp = document.querySelector<HTMLInputElement>('#bProps [data-notefield="text"]') || document.querySelector<HTMLInputElement>('#bProps [data-field="value"]') || document.querySelector<HTMLInputElement>('#bProps [data-field="ref"]');
+        inp?.focus(); inp?.select();
+      }, 0);
     },
   });
   if (saved.view) editor.setView(saved.view);
@@ -88,11 +91,13 @@ export function initBuilder(): BuilderApi {
     document.querySelectorAll<HTMLElement>('#bPalette [data-kind]').forEach(b => b.classList.toggle('active', mode === 'place' && b.dataset.kind === kind));
     $('#bToolSelect').classList.toggle('active', mode === 'select');
     $('#bToolWire').classList.toggle('active', mode === 'wire');
+    $('#bToolText').classList.toggle('active', mode === 'text');
     $('#bDelete').classList.toggle('active', mode === 'delete');
     $('#bHint').textContent = mode === 'delete'
       ? 'Delete mode: click a part or wire segment to delete it, or drag a box to delete everything inside. Esc or right-click to stop.'
       : mode === 'wire'
       ? 'Click to start a wire, click to bend it; it finishes on a pin or another wire (or double-click / right-click). Esc cancels.'
+      : mode === 'text' ? 'Click where the text note should go, then type it in Properties. Esc cancels.'
       : mode === 'place' ? `Click to place a ${PARTS[kind!].label.toLowerCase()}. Right-click or Ctrl+R rotates, Ctrl+E mirrors, Esc stops placing.`
         : 'Drag parts to stretch (wires follow) or move (detach): see the toolbar, or hold Alt to switch for one drag. Drag on empty space to box-select. Space+drag or middle-drag pans; wheel zooms.';
   }
@@ -100,6 +105,7 @@ export function initBuilder(): BuilderApi {
   const actions: Record<string, () => void> = {
     bToolSelect: () => editor.setMode('select'),
     bToolWire: () => editor.setMode('wire'),
+    bToolText: () => editor.setMode('text'),
     bDragStretch: () => editor.setDragMode('stretch'),
     bDragMove: () => editor.setDragMode('move'),
     bRotate: () => editor.rotate(),
@@ -126,21 +132,34 @@ export function initBuilder(): BuilderApi {
   function renderProps(): void {
     const el = $('#bProps'), sel = [...editor.sel];
     const parts = editor.doc.parts.filter(p => editor.sel.has(p.id)), wires = editor.doc.wires.filter(w => editor.sel.has(w.id));
+    const notes = (editor.doc.notes ?? []).filter(n => editor.sel.has(n.id));
+    if (notes.length === 1 && !parts.length && !wires.length) {
+      const n = notes[0];
+      const opt = (v: string, label: string) => `<option value="${v}" ${(n.anchor || 'middle') === v ? 'selected' : ''}>${label}</option>`;
+      el.innerHTML = `<h2>Text note</h2>
+        <label class="prop"><span>Text</span><input type="text" data-notefield="text" value="${esc(n.text)}" spellcheck="true"></label>
+        <label class="prop"><span>Align</span><select data-notefield="anchor">${opt('start', 'Left')}${opt('middle', 'Centre')}${opt('end', 'Right')}</select></label>
+        <p class="hint">Drag the text to move it. Notes don't affect the circuit.</p>
+        <div class="btnrow"><button data-act="delete">Delete</button></div>`;
+      el.dataset.id = n.id;
+      return;
+    }
     if (!sel.length) {
       el.innerHTML = `<h2>Properties</h2><p class="hint">Select a part to edit it, or pick one from the palette to place it.</p>
         <table class="keys"><tr><td>R C L D</td><td>Resistor, capacitor, inductor, diode</td></tr>
         <tr><td>G P O</td><td>Ground, pot, op-amp</td></tr>
         <tr><td>Q J</td><td>NPN transistor, N-channel JFET</td></tr>
         <tr><td>B</td><td>Show / hide DC bias voltages</td></tr>
-        <tr><td>W</td><td>Wire tool</td></tr><tr><td>V / Esc</td><td>Select tool</td></tr>
+        <tr><td>W</td><td>Wire tool</td></tr><tr><td>T</td><td>Text note</td></tr><tr><td>V / Esc</td><td>Select tool</td></tr>
         <tr><td>S / M</td><td>Drag stretches / moves (Alt flips)</td></tr>
         <tr><td>Ctrl+R / Ctrl+E</td><td>Rotate / mirror</td></tr><tr><td>Del</td><td>Delete selection, or delete mode</td></tr>
         <tr><td>Ctrl+Z / Y</td><td>Undo / redo</td></tr><tr><td>Ctrl+C / V / D</td><td>Copy / paste / duplicate</td></tr>
         <tr><td>Arrows</td><td>Nudge</td></tr><tr><td>F</td><td>Fit to view</td></tr></table>`;
       return;
     }
-    if (parts.length !== 1 || wires.length) {
-      el.innerHTML = `<h2>Properties</h2><p>${parts.length ? `${parts.length} part${parts.length > 1 ? 's' : ''}` : ''}${parts.length && wires.length ? ', ' : ''}${wires.length ? `${wires.length} wire${wires.length > 1 ? 's' : ''}` : ''} selected.</p>
+    if (parts.length !== 1 || wires.length || notes.length) {
+      const counts = [[parts.length, 'part'], [wires.length, 'wire'], [notes.length, 'note']].filter(([c]) => c).map(([c, w]) => `${c} ${w}${c === 1 ? '' : 's'}`);
+      el.innerHTML = `<h2>Properties</h2><p>${counts.join(', ')} selected.</p>
         <div class="btnrow"><button data-act="rotate">Rotate</button><button data-act="delete">Delete</button></div>`;
       return;
     }
@@ -306,6 +325,15 @@ export function initBuilder(): BuilderApi {
     const next = updatePart(editor.doc, p.id, patch);
     if (live) editor.preview(next); else editor.commit(next);
   }
+  // Text notes: live preview while typing, one undo step per edit.
+  const noteEdit = (el: HTMLInputElement, live: boolean) => {
+    const id = propEl.dataset.id, f = el.dataset.notefield as 'text' | 'anchor';
+    if (!id || !(editor.doc.notes ?? []).some(n => n.id === id)) return;
+    const next = updateNote(editor.doc, id, f === 'text' ? { text: el.value } : { anchor: el.value as 'start' | 'middle' | 'end' });
+    if (live) editor.preview(next); else editor.commit(next);
+  };
+  propEl.addEventListener('input', e => { const el = e.target as HTMLInputElement; if (el.dataset.notefield === 'text') noteEdit(el, true); });
+  propEl.addEventListener('change', e => { const el = e.target as HTMLInputElement; if (el.dataset.notefield) noteEdit(el, false); });
   propEl.addEventListener('input', e => {
     const el = e.target as HTMLInputElement;
     if (el.dataset.field && (el.type === 'range' || el.dataset.field === 'value')) applyField(el, true);
@@ -314,6 +342,7 @@ export function initBuilder(): BuilderApi {
   propEl.addEventListener('keydown', e => {
     const el = e.target as HTMLInputElement;
     if (e.key === 'Enter' && el.dataset.field) { applyField(el, false); editor.commit(editor.doc); }
+    if (e.key === 'Enter' && el.dataset.notefield) { noteEdit(el, false); $('#bCanvasWrap').focus(); }
   });
   propEl.addEventListener('click', e => {
     const b = (e.target as HTMLElement).closest<HTMLElement>('button');

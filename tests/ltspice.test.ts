@@ -187,3 +187,18 @@ describe('LTspice export → import round trip keeps every circuit identical', (
     });
   }
 });
+
+describe('LTspice text', () => {
+  it('imports comments as movable notes, but no directives (even commented-out ones)', () => {
+    const asc = `Version 4
+SHEET 1 880 680
+TEXT 0 0 Left 2 !.step param R 1k 10k 1k
+TEXT 0 64 Left 2 ;.ac dec 100 10 100k
+TEXT 0 128 Left 2 ;Tone stack\\n;.param x=1\\nBass boost
+TEXT 0 192 Left 2 !.param R=1k\\n.tran 10m
+`;
+    const r = importAsc(asc);
+    expect(r.schematic.notes?.map(n => n.text)).toEqual(['Tone stack', 'Bass boost']);
+    expect(r.schematic.notes?.every(n => n.id.startsWith('note'))).toBe(true);
+  });
+});

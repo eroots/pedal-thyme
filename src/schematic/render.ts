@@ -146,7 +146,15 @@ export function renderSchematicBody(sch: Schematic, opt: RenderOptions = {}): { 
   for (const { at, n } of ptsAt.values()) if (n >= 3) out.push(`<circle class="dot" cx="${at[0]}" cy="${at[1]}" r="2.7"/>`);
 
   // Notes.
-  for (const n of sch.notes || []) out.push(text(n.x, n.y, n.text, 'tiny', n.anchor || 'middle'));
+  for (const n of sch.notes || []) {
+    const t = text(n.x, n.y, n.text, 'tiny', n.anchor || 'middle');
+    if (!opt.editor) { out.push(t); continue; }
+    // In the editor a note is an object: selectable, with a generous hit area around its text.
+    const w = Math.max(12, n.text.length * 5.2), anchor = n.anchor || 'middle';
+    const x0 = anchor === 'start' ? n.x : anchor === 'end' ? n.x - w : n.x - w / 2;
+    const cls = `note${sel.has(n.id) ? ' sel' : ''}${hl.has(n.id) ? ' hl' : ''}`;
+    out.push(`<g class="${cls}" data-note="${esc(n.id)}"><rect class="note-hit" x="${x0 - 3}" y="${n.y - 10}" width="${w + 6}" height="14" rx="2"/>${t}</g>`);
+  }
 
   if (!isFinite(bounds.x0)) { bounds.x0 = 0; bounds.y0 = 0; bounds.x1 = 100; bounds.y1 = 60; }
   return { body: out.join(''), bounds, textBoxes };

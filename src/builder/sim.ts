@@ -1,7 +1,7 @@
 // Builder simulation: responses at the output jack and at probes, with an optional source/load,
 // plus the document variants used for sweeps and tolerance bands. Pure functions (no DOM).
 import { Cx } from '../core/complex';
-import { taper } from '../core/pots';
+import { potFraction } from '../core/pots';
 import { termAt, type Term } from '../core/termination';
 import { TAU, db, fmtEng } from '../core/units';
 import type { OpPoint } from '../engine/dc';
@@ -142,4 +142,4 @@ export function controlsOf(doc: Schematic): SchPart[] {
 }
 
 /** Fraction of the track between pin 1 and the wiper (for knob drawings). */
-export const wiperFraction = (p: SchPart): number => taper(p.props?.turn ?? 0.5, p.props?.taper ?? 'B');
+export const wiperFraction = (p: SchPart): number => potFraction(p.props?.turn ?? 0.5, p.props?.taper ?? 'B', p.props?.reverse);

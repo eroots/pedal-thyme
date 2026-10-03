@@ -4,7 +4,7 @@
 // A compiled Circuit pre-stamps everything that doesn't depend on frequency, so each solve is
 // A(s) = G + s·Cm + (1/s)·Lm (+ op-amp gain terms), then one dense complex LU.
 import { Cx, cx, ONE } from '../core/complex';
-import { taper } from '../core/pots';
+import { potFraction } from '../core/pots';
 import { clamp } from '../core/units';
 import { opAmpModel } from './models';
 import { GND, elementNodes, type Element, type Netlist, type Node } from './netlist';
@@ -82,12 +82,12 @@ export class Circuit {
         case 'C': admit(this.Cm, ix(e.a), ix(e.b), e.value); break;
         case 'L': admit(this.Lm, ix(e.a), ix(e.b), 1 / e.value); this.hasL = true; break;
         case 'POT': {
-          const f = clamp(taper(e.rot, e.taper), POT_END, 1 - POT_END);
+          const f = clamp(potFraction(e.rot, e.taper, e.reverse), POT_END, 1 - POT_END);
           admit(this.G, ix(e.a), ix(e.w), 1 / (e.value * f));
           admit(this.G, ix(e.w), ix(e.b), 1 / (e.value * (1 - f)));
           break;
         }
-        case 'RHEO': admit(this.G, ix(e.a), ix(e.b), 1 / Math.max(1, e.value * taper(e.rot, e.taper))); break;
+        case 'RHEO': admit(this.G, ix(e.a), ix(e.b), 1 / Math.max(1, e.value * potFraction(e.rot, e.taper, e.reverse))); break;
         case 'OA': {
           const m = opAmpModel(e.model);
           if (m.a0 !== Infinity) {

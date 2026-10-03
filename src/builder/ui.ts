@@ -182,6 +182,11 @@ export function initBuilder(): BuilderApi {
       h += row('Taper', `<select data-field="taper">${Object.entries(TAPERS).map(([k, t]) => `<option value="${k}" ${p.props?.taper === k ? 'selected' : ''}>${t.label}</option>`).join('')}</select>`);
       const turn = Math.round((p.props?.turn ?? 0.5) * 100);
       h += row(`Rotation <output>${turn}%</output>`, `<input type="range" data-field="turn" min="0" max="100" value="${turn}">`);
+      // Variable resistor: lugs 1 + 2 (unticked) or 2 + 3; pot: lugs 1 and 3 swapped. The symbol stays put.
+      const rev = p.kind === 'RHEO'
+        ? ['Lugs 2 + 3', 'resistance falls as the knob turns up (unticked: lugs 1 + 2)']
+        : ['Reverse', 'lugs 1 and 3 swapped: turning up moves the wiper towards pin 1'];
+      h += row(rev[0], `<span class="chk"><input type="checkbox" data-field="reverse" ${p.props?.reverse ? 'checked' : ''}> <span class="hint">${rev[1]}</span></span>`);
     }
     if (SWEEPABLE_KINDS.includes(p.kind)) {
       h += row('Sweepable', `<span class="chk"><input type="checkbox" data-field="sweep" ${p.props?.sweep ? 'checked' : ''}> <span class="hint">offer ${p.kind === 'POT' || p.kind === 'RHEO' ? 'its rotation and value' : 'its value'} in the Sweep menu</span></span>`);
@@ -328,6 +333,7 @@ export function initBuilder(): BuilderApi {
     else if (f === 'pos') patch = { props: { pos: el.value as 'a' | 'b' } };
     else if (f === 'name') patch = { props: { name: el.value.trim() } };
     else if (f === 'sweep') patch = { props: { sweep: el.checked || undefined } };
+    else if (f === 'reverse') patch = { props: { reverse: el.checked || undefined } };
     if (!patch) return;
     const next = updatePart(editor.doc, p.id, patch);
     if (live) editor.preview(next); else editor.commit(next);

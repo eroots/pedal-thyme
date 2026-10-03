@@ -13,7 +13,7 @@ export type LabelSide = 't' | 'b' | 'l' | 'r';
 export interface PartProps {
   /** Pot taper. */
   taper?: TaperKey;
-  /** Pot rotation 0..1 (wiper travels from pin 1 to pin 3). */
+  /** Pot rotation 0..1 (wiper travels from pin 1 to pin 3, or 3 to 1 when reversed). */
   turn?: number;
   /** Op-amp, diode or transistor model key. */
   model?: string;
@@ -23,6 +23,8 @@ export interface PartProps {
   pos?: 'a' | 'b';
   /** Net name for LABEL and SUPPLY parts (e.g. "VREF", "9V"). */
   name?: string;
+  /** Pots: lugs 1 and 3 swapped (variable resistor: lugs 2+3), so turning up moves the other way. */
+  reverse?: boolean;
   /** Builder: offer this part (value, and rotation for pots) in the Sweep menu. */
   sweep?: boolean;
 }

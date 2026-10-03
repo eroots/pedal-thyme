@@ -13,6 +13,12 @@ export const TAPERS: Record<TaperKey, { label: string; f: (r: number) => number 
 
 export const taper = (r: number, k: string): number => (TAPERS[k as TaperKey] || TAPERS.B).f(clamp(r, 0, 1));
 
+/**
+ * Fraction of the track between pin 1 and the wiper. Reversed = lugs 1 and 3 swapped in the wiring (or a
+ * variable resistor on lugs 2+3): the taper stays with the track, so it's 1 − taper(r), not taper(1 − r).
+ */
+export const potFraction = (r: number, k: string, reverse?: boolean): number => (reverse ? 1 - taper(r, k) : taper(r, k));
+
 /** Split a track of resistance R at fraction `frac` (clamped away from 0/1 to keep solves finite). */
 export const potSplit = (R: number, frac: number): [number, number] => {
   const f = clamp(frac, 1e-4, 1 - 1e-4);

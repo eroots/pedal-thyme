@@ -9,7 +9,7 @@
 // Op-amp rails are the circuit's supply span (highest and lowest DC source, including ground) minus
 // each model's headroom. The run starts from the DC operating point, settled with a few large
 // backward-Euler steps so the op-amp integrators and bias network are at rest.
-import { taper } from '../core/pots';
+import { potFraction } from '../core/pots';
 import { clamp } from '../core/units';
 import type { Term } from '../core/termination';
 import { dcOp } from './dc';
@@ -25,6 +25,9 @@ const RY = 1e3;
 /** Softness of the op-amp output clamp (V). */
 const CLAMP_SOFT = 0.05;
 const JFET_GATE_IS = 1e-14;
+/** Newton iterations per (sub)step, and how many times a failed step may be halved. */
+const NEWTON_MAX = 30;
+const MAX_SPLIT = 6;
 
 export interface TransientOptions {
   /** Simulation rate (Hz): the audio rate times the oversampling factor. */
@@ -47,6 +50,7 @@ export interface TransientResult {
 type Method = 'be' | 'trap';
 /** `damped`: always integrated with backward Euler (stiff internal nodes, where the trapezoidal rule rings). */
 interface Reactive { a: number; b: number; kind: 'C' | 'L'; value: number; damped?: boolean }
+interface Compiled { method: Method; Wb0: Float64Array; Wu: Float64Array; WT: Float64Array; WN: Float64Array; G: Float64Array }
 interface Control { terms: [number, number][]; limit?: { nvt: number; vcrit: number } | { step: number } }
 interface Port { from: number; to: number }
 interface Device {
@@ -70,8 +74,10 @@ export class TransientSim {
   private readonly outRow: number[];
   readonly rails: [number, number];
   // Per-method precomputation (rows = controls, reactive voltages, outputs).
-  private M: { Wb0: Float64Array; Wu: Float64Array; WT: Float64Array; WN: Float64Array; G: Float64Array } | null = null;
-  private method: Method = 'trap';
+  // Matrices per substep level (level k = step h/2^k; level 0 is the normal step).
+  private levels: Compiled[] = [];
+  private h = 0;
+  private uPrev = 0;
 
   // State.
   private vR: Float64Array; private iR: Float64Array;
@@ -124,12 +130,12 @@ export class TransientSim {
       switch (e.type) {
         case 'R': cond(node(e.a), node(e.b), 1 / e.value); break;
         case 'POT': {
-          const f = clamp(taper(e.rot, e.taper), POT_END, 1 - POT_END);
+          const f = clamp(potFraction(e.rot, e.taper, e.reverse), POT_END, 1 - POT_END);
           cond(node(e.a), node(e.w), 1 / (e.value * f));
           cond(node(e.w), node(e.b), 1 / (e.value * (1 - f)));
           break;
         }
-        case 'RHEO': cond(node(e.a), node(e.b), 1 / Math.max(1, e.value * taper(e.rot, e.taper))); break;
+        case 'RHEO': cond(node(e.a), node(e.b), 1 / Math.max(1, e.value * potFraction(e.rot, e.taper, e.reverse))); break;
         case 'C': reactive(e.a, e.b, 'C', e.value); break;
         case 'L': reactive(e.a, e.b, 'L', e.value); break;
         case 'G': {
@@ -253,15 +259,14 @@ export class TransientSim {
     const at = (k: number) => (k < 0 ? 0 : x0[k]);
     this.reactive.forEach((r, k) => { this.vR[k] = at(r.a) - at(r.b); });
     this.controls.forEach((c, k) => { this.v[k] = c.terms.reduce((s, [i, w]) => s + w * x0[i], 0); });
-    this.compile('be', 5e-3);
+    this.setMethod('be', 5e-3);
     for (let k = 0; k < 40; k++) this.step(0);
-    this.compile('trap', 1 / opt.rate);
+    this.setMethod('trap', 1 / opt.rate);
     this.unconverged = 0;
   }
 
-  /** Precompute the matrices for an integration method and step. */
-  private compile(method: Method, h: number): void {
-    this.method = method;
+  /** Precompute the matrices for an integration method and step size. */
+  private compile(method: Method, h: number): Compiled {
     const { N, reactive } = this;
     const Gk = new Float64Array(reactive.length);
     reactive.forEach((r, k) => {
@@ -294,18 +299,49 @@ export class TransientSim {
       reactive.forEach((e, k) => { WT[r * nR + k] = (e.a >= 0 ? z[e.a] : 0) - (e.b >= 0 ? z[e.b] : 0); });
       this.ports.forEach((p, j) => { WN[r * nP + j] = (p.to >= 0 ? z[p.to] : 0) - (p.from >= 0 ? z[p.from] : 0); });
     });
-    this.M = { Wb0, Wu, WT, WN, G: Gk };
+    return { method, Wb0, Wu, WT, WN, G: Gk };
   }
 
-  /** Advance one step with input u (volts at the source); returns the output node voltages. */
+  /** Switch integration method and base step; substep matrices are built on demand. */
+  private setMethod(method: Method, h: number): void {
+    this.h = h;
+    this.levels = [this.compile(method, h)];
+  }
+  private level(k: number): Compiled {
+    if (!this.levels[k]) this.levels[k] = this.compile(this.levels[0].method, this.h / 2 ** k);
+    return this.levels[k];
+  }
+
+  /** Advance one step with input u (volts at the source), writing the recorded node voltages to `out`. */
   step(u: number, out?: Float64Array): void {
-    const M = this.M!, nC = this.controls.length, nR = this.reactive.length, nP = this.ports.length;
+    this.advance(0, this.uPrev, u, out);
+    this.uPrev = u;
+  }
+
+  /**
+   * One step at substep level k (step h/2^k) from input u0 to u1. If Newton doesn't converge, the
+   * state is restored and the step is redone as two half steps (input interpolated), up to MAX_SPLIT
+   * levels deep, so fast transients through high-gain stages still resolve.
+   */
+  private advance(k: number, u0: number, u1: number, out?: Float64Array): void {
+    if (k === MAX_SPLIT) { if (!this.solve(this.level(k), u1, out)) this.unconverged++; return; }
+    const vR = this.vR.slice(), iR = this.iR.slice(), v = this.v.slice();
+    if (this.solve(this.level(k), u1, out)) return;
+    this.vR.set(vR); this.iR.set(iR); this.v.set(v);
+    const um = (u0 + u1) / 2;
+    this.advance(k + 1, u0, um);
+    this.advance(k + 1, um, u1, out);
+  }
+
+  /** Solve one step with the given matrices; returns whether Newton converged (the state advances either way). */
+  private solve(M: Compiled, u: number, out?: Float64Array): boolean {
+    const nC = this.controls.length, nR = this.reactive.length, nP = this.ports.length;
     const R = nC + nR + this.outRow.length;
     // History sources of the companion models.
     const Jh = new Float64Array(nR);
     for (let k = 0; k < nR; k++) {
       const e = this.reactive[k], g = M.G[k], v = this.vR[k], i = this.iR[k];
-      const trap = this.method === 'trap' && !e.damped;
+      const trap = M.method === 'trap' && !e.damped;
       Jh[k] = e.kind === 'C' ? (trap ? g * v + i : g * v) : (trap ? -(i + g * v) : -i);
     }
     const base = new Float64Array(R);
@@ -337,7 +373,7 @@ export class TransientSim {
         return worst;
       };
       let r = residual(v);
-      for (let it = 0; it < 80; it++) {
+      for (let it = 0; it < NEWTON_MAX; it++) {
         for (let a = 0; a < nC; a++) for (let b = 0; b < nC; b++) {
           let d = a === b ? -1 : 0;
           for (let j = 0; j < nP; j++) d += M.WN[a * nP + j] * Jf[j * nC + b];
@@ -370,7 +406,6 @@ export class TransientSim {
       }
       evalAt(v);
     }
-    if (!ok) this.unconverged++;
     // Reactive voltages and outputs.
     for (let k = 0; k < nR; k++) {
       const r = nC + k;
@@ -385,6 +420,7 @@ export class TransientSim {
       for (let j = 0; j < nP; j++) s += M.WN[r * nP + j] * ip[j];
       out[o] = s;
     }
+    return ok;
   }
 
   /** Run an input signal (volts, one sample per step) and record the outputs. */

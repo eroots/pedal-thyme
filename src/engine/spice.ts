@@ -1,5 +1,5 @@
 // Export a netlist as a SPICE deck (tested against LTspice syntax) for cross-checking.
-import { taper } from '../core/pots';
+import { potFraction } from '../core/pots';
 import type { Term } from '../core/termination';
 import { clamp } from '../core/units';
 import { DIODE_MODELS, OPAMP_MODELS, opAmpModel } from './models';
@@ -69,15 +69,15 @@ export function toSpice(nl: Netlist, opt: SpiceOptions = {}): string {
         break;
       }
       case 'POT': {
-        const f = clamp(taper(e.rot, e.taper), 1e-4, 1 - 1e-4);
-        lines.push(`* ${e.name}: ${spiceNum(e.value)} ohm pot, taper ${e.taper}, rotation ${(e.rot * 100).toFixed(0)}%`);
+        const f = clamp(potFraction(e.rot, e.taper, e.reverse), 1e-4, 1 - 1e-4);
+        lines.push(`* ${e.name}: ${spiceNum(e.value)} ohm pot, taper ${e.taper}, rotation ${(e.rot * 100).toFixed(0)}%${e.reverse ? ', reversed' : ''}`);
         lines.push(`${ename('R', e.name + '_1')} ${nn[0]} ${nn[1]} ${spiceNum(e.value * f)}`);
         lines.push(`${ename('R', e.name + '_3')} ${nn[1]} ${nn[2]} ${spiceNum(e.value * (1 - f))}`);
         break;
       }
       case 'RHEO':
-        lines.push(`* ${e.name}: ${spiceNum(e.value)} ohm pot as variable resistor, taper ${e.taper}, rotation ${(e.rot * 100).toFixed(0)}%`);
-        lines.push(`${ename('R', e.name)} ${nn[0]} ${nn[1]} ${spiceNum(Math.max(1, e.value * taper(e.rot, e.taper)))}`);
+        lines.push(`* ${e.name}: ${spiceNum(e.value)} ohm pot as variable resistor, taper ${e.taper}, rotation ${(e.rot * 100).toFixed(0)}%${e.reverse ? ', reversed' : ''}`);
+        lines.push(`${ename('R', e.name)} ${nn[0]} ${nn[1]} ${spiceNum(Math.max(1, e.value * potFraction(e.rot, e.taper, e.reverse)))}`);
         break;
       case 'SW':
         lines.push(e.closed ? `${ename('R', e.name)} ${nn[0]} ${nn[1]} 1e-3 ; switch closed` : `* ${e.name}: switch open`);

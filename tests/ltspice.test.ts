@@ -286,8 +286,21 @@ SYMATTR InstName RG
 SYMATTR Value {RGain*(1-pos)}
 TEXT 0 200 Left 2 !.param RGain=500k pos=0.2
 `).schematic.parts.find(p => p.ref === 'RG')!;
-    expect(down.kind).toBe('RHEO');
-    expect(down.props?.turn).toBeCloseTo(0.8, 9);
+    // Lugs 2+3: imported as a reversed variable resistor whose knob follows pos.
+    expect(down).toMatchObject({ kind: 'RHEO', value: 500e3, props: { reverse: true, taper: 'B' } });
+    expect(down.props?.turn).toBeCloseTo(0.2, 9);
+  });
+  it('round-trips reversed pots and lugs 2+3 variable resistors', () => {
+    const doc = TEMPLATES.find(t => t.id === 'ts')!.build();
+    doc.parts = doc.parts.map(p => (p.ref === 'VR3' || p.ref === 'VR1' ? { ...p, props: { ...p.props, reverse: true } } : p));
+    const back = importAsc(exportAsc(doc)).schematic;
+    for (const ref of ['VR1', 'VR3']) {
+      const a = doc.parts.find(p => p.ref === ref)!, b = back.parts.find(p => p.ref === ref)!;
+      expect(b, ref).toMatchObject({ kind: a.kind, props: { reverse: true, taper: a.props?.taper } });
+      expect(b.props?.turn).toBeCloseTo(a.props!.turn!, 4);
+    }
+    const h = (d: Schematic) => acModel(extract(d).netlist).circuit.transfer(new Cx(0, TAU * 1000));
+    expect(h(back).sub(h(doc)).abs() / h(doc).abs()).toBeLessThan(1e-4);
   });
   it('handles a pot with its wiper tied to lug 3, trimmers set by resistance, and leaves plain parameters alone', () => {
     // As in a real preamp file: RTone2 has both ends on the wiper node (ground), RTrim1 is {RTrim1+1}

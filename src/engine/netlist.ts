@@ -19,9 +19,9 @@ export type Element =
    * Potentiometer. `a` = terminal 1 (CCW end), `w` = wiper, `b` = terminal 3 (CW end).
    * rot ∈ [0, 1] turns the wiper from a to b: R(a,w) = value · taper(rot).
    */
-  | { type: 'POT'; name: string; a: Node; w: Node; b: Node; value: number; taper: TaperKey; rot: number }
-  /** Pot wired as a variable resistor: R = max(1 Ω, value · taper(rot)). */
-  | { type: 'RHEO'; name: string; a: Node; b: Node; value: number; taper: TaperKey; rot: number }
+  | { type: 'POT'; name: string; a: Node; w: Node; b: Node; value: number; taper: TaperKey; rot: number; reverse?: boolean }
+  /** Pot wired as a variable resistor: R = max(1 Ω, value · taper(rot)), or value · (1 − taper(rot)) on lugs 2+3 (reverse). */
+  | { type: 'RHEO'; name: string; a: Node; b: Node; value: number; taper: TaperKey; rot: number; reverse?: boolean }
   /** SPST switch (closed = ideal short, open = absent). */
   | { type: 'SW'; name: string; a: Node; b: Node; closed: boolean }
   /** SPDT switch: `com` connects to `a` or `b`. */

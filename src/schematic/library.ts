@@ -1,6 +1,6 @@
 // Part library: pin positions, schematic symbols (in local coordinates), default label placement and
 // the netlist elements each part becomes. Two-terminal parts have pins at (−30, 0) and (30, 0).
-import { taper, type TaperKey } from '../core/pots';
+import { potFraction, type TaperKey } from '../core/pots';
 import { clamp, fmtEng } from '../core/units';
 import { OPAMP_MODELS, DIODE_MODELS } from '../engine/models';
 import { BJT_MODELS, JFET_MODELS, MOS_MODELS } from '../engine/semis';
@@ -54,7 +54,7 @@ const TWO: PinSpec[] = [{ name: '1', at: [-30, 0] }, { name: '2', at: [30, 0] }]
 export const labelLen = (p: SchPart): number => Math.max(20, Math.ceil(((p.props?.name || 'NET').length * 6.5 + 10) / 10) * 10);
 /** Symbol bounding box for a specific part instance. */
 export const boxOf = (p: SchPart): [number, number, number, number] => PARTS[p.kind].boxOf?.(p) ?? PARTS[p.kind].box;
-const wiperFrac = (p: SchPart) => clamp(taper(p.props?.turn ?? 0.5, p.props?.taper ?? 'B'), 1e-4, 1 - 1e-4);
+const wiperFrac = (p: SchPart) => clamp(potFraction(p.props?.turn ?? 0.5, p.props?.taper ?? 'B', p.props?.reverse), 1e-4, 1 - 1e-4);
 const two = (p: SchPart) => p.value ?? 0;
 
 /* Transistors: control pin at (−30, 0); collector/drain at (10, −30), emitter/source at (10, 30). */
@@ -108,19 +108,19 @@ export const PARTS: Record<PartKind, PartSpec> = {
     label: 'Potentiometer', box: [-30, -30, 30, 7], unit: 'Ω', avoid: [0, -1],
     pins: [{ name: '1', at: [-30, 0] }, { name: '3', at: [30, 0] }, { name: 'w', at: [0, -30] }],
     draw: p => zigzag() + arrow(0, -30, -16 + 32 * wiperFrac(p), -8),
-    valueText: p => `${fmtEng(p.value, 'Ω')} ${p.props?.taper ?? 'B'}`,
+    valueText: p => `${fmtEng(p.value, 'Ω')} ${p.props?.taper ?? 'B'}${p.props?.reverse ? ' rev' : ''}`,
     elements: (p, n) => [{
       type: 'POT', name: p.ref || p.id, a: n('1'), w: n('w'), b: n('3'), value: two(p),
-      taper: (p.props?.taper ?? 'B') as TaperKey, rot: p.props?.turn ?? 0.5,
+      taper: (p.props?.taper ?? 'B') as TaperKey, rot: p.props?.turn ?? 0.5, ...(p.props?.reverse ? { reverse: true } : {}),
     }],
   },
   RHEO: {
     label: 'Variable resistor', pins: TWO, box: [-30, -15, 30, 15], unit: 'Ω', labelPad: 9,
     draw: () => zigzag() + arrow(-13, 15, 13, -15),
-    valueText: p => `${fmtEng(p.value, 'Ω')} ${p.props?.taper ?? 'B'}`,
+    valueText: p => `${fmtEng(p.value, 'Ω')} ${p.props?.taper ?? 'B'}${p.props?.reverse ? ' rev' : ''}`,
     elements: (p, n) => [{
       type: 'RHEO', name: p.ref || p.id, a: n('1'), b: n('2'), value: two(p),
-      taper: (p.props?.taper ?? 'B') as TaperKey, rot: p.props?.turn ?? 0.5,
+      taper: (p.props?.taper ?? 'B') as TaperKey, rot: p.props?.turn ?? 0.5, ...(p.props?.reverse ? { reverse: true } : {}),
     }],
   },
   D: {

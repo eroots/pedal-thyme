@@ -501,6 +501,7 @@ export function importAsc(text: string, asyTexts: Record<string, string> = {}, n
       const wNet = wiperOf(b)!;
       const [a1] = netsOf(a.c), [b1] = netsOf(b.c);
       const aw = a1 === wNet ? '1' : '2', aEnd = aw === '1' ? '2' : '1', bEnd = b1 === wNet ? '2' : '1';
+      const reversed = /_b$/i.test(a.c.ref) && /_a$/i.test(b.c.ref);
       // Name: the resistors' shared prefix, else the next free VRn.
       let common = '';
       while (common.length < Math.min(a.c.ref.length, b.c.ref.length) && a.c.ref[common.length].toUpperCase() === b.c.ref[common.length].toUpperCase()) common += a.c.ref[common.length];
@@ -514,8 +515,10 @@ export function importAsc(text: string, asyTexts: Record<string, string> = {}, n
       added.push({
         s: a.c.s, ref,
         map: { kind: 'POT', pins: { '1': [0, 0], w: [0, 0], '3': [0, 0] } },
-        lt: { '1': a.c.lt[aEnd], w: a.c.lt[aw], '3': b.c.lt[bEnd] },
-        preset: { value: +a.total.toPrecision(6), props: { taper: taperKey ?? 'B', turn, ...(steps.has(a.q) ? { sweep: true } : {}) } },
+        // Our own exports name the pin-1 half "_a": if that's the falling half, the pot was reversed —
+        // keep its lugs where they were and mark it reversed rather than flipping the symbol.
+        lt: reversed ? { '1': b.c.lt[bEnd], w: a.c.lt[aw], '3': a.c.lt[aEnd] } : { '1': a.c.lt[aEnd], w: a.c.lt[aw], '3': b.c.lt[bEnd] },
+        preset: { value: +a.total.toPrecision(6), props: { taper: taperKey ?? 'B', turn, ...(reversed ? { reverse: true } : {}), ...(steps.has(a.q) ? { sweep: true } : {}) } },
       });
       replaced.add(a.c).add(b.c);
       byParam.set(a.q, [...(byParam.get(a.q) ?? []), ref]);
@@ -524,12 +527,13 @@ export function importAsc(text: string, asyTexts: Record<string, string> = {}, n
     // Lone knob resistors: two-lug pots (variable resistors). Lugs 2+3 ({R*(1-pos)}) turn the other way.
     for (const k of knobs) {
       if (replaced.has(k.c)) continue;
-      const taperKey = fitTaper(x => (k.up ? k.at(x) : k.at(1 - x)) / k.total);
+      // {R*pos} is lugs 1+2; {R*(1-pos)} is lugs 2+3 (reversed), so the knob still follows pos.
+      const taperKey = fitTaper(x => (k.up ? k.at(x) / k.total : 1 - k.at(x) / k.total));
       taperNote(k.c.ref, taperKey, k.q);
       const pos = Math.min(1, Math.max(0, params.get(k.q)!));
       added.push({
         s: k.c.s, ref: k.c.ref, map: { kind: 'RHEO', pins: { '1': [0, 0], '2': [0, 0] } }, lt: { ...k.c.lt },
-        preset: { value: +k.total.toPrecision(6), props: { taper: taperKey ?? 'B', turn: k.up ? pos : 1 - pos, ...(steps.has(k.q) ? { sweep: true } : {}) } },
+        preset: { value: +k.total.toPrecision(6), props: { taper: taperKey ?? 'B', turn: pos, ...(k.up ? {} : { reverse: true }), ...(steps.has(k.q) ? { sweep: true } : {}) } },
       });
       replaced.add(k.c);
       byParam.set(k.q, [...(byParam.get(k.q) ?? []), k.c.ref]);

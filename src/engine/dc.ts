@@ -4,7 +4,7 @@
 //
 // If plain Newton fails, the solver retries with gmin stepping (a shrinking shunt from every node
 // to ground), then with source stepping (supplies ramped up from 10%).
-import { taper } from '../core/pots';
+import { potFraction } from '../core/pots';
 import { clamp } from '../core/units';
 import { diodeModel, opAmpModel } from './models';
 import { GND, elementNodes, isNonlinear, type Element, type Netlist, type Node } from './netlist';
@@ -122,12 +122,12 @@ class DcSystem {
       switch (e.type) {
         case 'R': cond(ix(e.a), ix(e.b), 1 / e.value); break;
         case 'POT': {
-          const f = clamp(taper(e.rot, e.taper), POT_END, 1 - POT_END);
+          const f = clamp(potFraction(e.rot, e.taper, e.reverse), POT_END, 1 - POT_END);
           cond(ix(e.a), ix(e.w), 1 / (e.value * f));
           cond(ix(e.w), ix(e.b), 1 / (e.value * (1 - f)));
           break;
         }
-        case 'RHEO': cond(ix(e.a), ix(e.b), 1 / Math.max(1, e.value * taper(e.rot, e.taper))); break;
+        case 'RHEO': cond(ix(e.a), ix(e.b), 1 / Math.max(1, e.value * potFraction(e.rot, e.taper, e.reverse))); break;
         case 'OA': {
           const m = opAmpModel(e.model);
           if (m.a0 !== Infinity) {

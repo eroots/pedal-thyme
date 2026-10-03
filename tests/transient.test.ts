@@ -114,3 +114,22 @@ describe('audio analysis and signals', () => {
     expect(lagOf(p)).toBeGreaterThan(lagOf(Math.round(p * 1.25)));
   });
 });
+
+describe('hard transients through high-gain stages', () => {
+  it('a three-stage JFET preamp (imported from LTspice) renders a strummed chord without diverging', async () => {
+    const { default: asc } = await import('./fixtures/benson-preamp.asc?raw');
+    const { importAsc } = await import('../src/ltspice/import');
+    const { E_MAJOR, pluck } = await import('../src/audio/signals');
+    const ex = extract(importAsc(asc).schematic);
+    // This used to fail Newton on almost every step, blow up and then fall silent (heard as clicks);
+    // failed steps are now redone as substeps.
+    const r = renderAudio(ex.netlist, pluck(E_MAJOR, 0.4, 0.5, FS), { fs: FS, oversample: 4 });
+    const y = r.out.get(ex.netlist.output)!;
+    expect(r.unconverged).toBe(0);
+    const [lo, hi] = peak(y);
+    expect(hi).toBeLessThan(9); expect(lo).toBeGreaterThan(-9);
+    expect(hi - lo).toBeGreaterThan(1); // still loud at the end: not collapsed to silence
+    const [lo2, hi2] = peak(y, Math.floor(y.length * 0.8));
+    expect(hi2 - lo2).toBeGreaterThan(1);
+  });
+});

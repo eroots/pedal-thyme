@@ -131,3 +131,19 @@ describe('SPICE export', () => {
     expect(text).toMatch(/RVR_3 w 0 9000\n/);
   });
 });
+
+describe('reversed pots', () => {
+  it('a reversed pot equals the same pot with lugs 1 and 3 swapped (taper stays with the track)', () => {
+    const f = s(1000);
+    for (const tp of ['A', 'B', 'C'] as const) for (const rot of [0.1, 0.5, 0.8]) {
+      const rev = circ([R('R1', 'in', 'a', 10e3), { ...POT('VR1', 'a', 'out', GND, 100e3, rot, tp), reverse: true } as Netlist['elements'][number]]);
+      const swapped = circ([R('R1', 'in', 'a', 10e3), POT('VR1', GND, 'out', 'a', 100e3, rot, tp)]);
+      close(rev.transfer(f), swapped.transfer(f), 1e-9);
+    }
+  });
+  it('a reversed (lugs 2+3) variable resistor is value · (1 − taper)', () => {
+    const c = circ([R('R1', 'in', 'out', 10e3), { ...RHEO('VR1', 'out', GND, 100e3, 0.3, 'A'), reverse: true } as Netlist['elements'][number]]);
+    const rv = 100e3 * (1 - (Math.pow(81, 0.3) - 1) / 80);
+    close(c.transfer(s(1000)), rv / (rv + 10e3), 1e-9);
+  });
+});

@@ -188,8 +188,10 @@ export function exportAsc(doc: Schematic, opt: AscExportOptions = {}): string {
         // be turned (or .step-ped) in LTspice; the taper is written out as a formula.
         const turn = p.props?.turn ?? 0.5, tp = p.props?.taper ?? 'B', R = p.value ?? 100e3;
         const q = knobParam(p), f = taperExpr(tp, q);
-        place(RES, `${name}_a`, [['Value', `{${spiceNum(R)}*max(${f},1e-4)}`]], { '1': tgt(p, '1'), '2': tgt(p, 'w') });
-        place(RES, `${name}_b`, [['Value', `{${spiceNum(R)}*max(1-${f},1e-4)}`]], { '1': tgt(p, 'w'), '2': tgt(p, '3') });
+        // _a is always the pin-1 half; reversed pots swap which half grows with the knob.
+        const [fa, fb] = p.props?.reverse ? [`1-${f}`, f] : [f, `1-${f}`];
+        place(RES, `${name}_a`, [['Value', `{${spiceNum(R)}*max(${fa},1e-4)}`]], { '1': tgt(p, '1'), '2': tgt(p, 'w') });
+        place(RES, `${name}_b`, [['Value', `{${spiceNum(R)}*max(${fb},1e-4)}`]], { '1': tgt(p, 'w'), '2': tgt(p, '3') });
         knobParams.push([q, turn]);
         knobs.push(`${p.ref || p.id}: ${spiceNum(R)} ${tp} pot, knob ${q}`);
         break;
@@ -197,7 +199,8 @@ export function exportAsc(doc: Schematic, opt: AscExportOptions = {}): string {
       case 'RHEO': {
         const turn = p.props?.turn ?? 0.5, tp = p.props?.taper ?? 'B', R = p.value ?? 100e3;
         const q = knobParam(p);
-        place(RES, name, [['Value', `{max(1,${spiceNum(R)}*${taperExpr(tp, q)})}`]], { '1': tgt(p, '1'), '2': tgt(p, '2') });
+        const fr = p.props?.reverse ? `(1-${taperExpr(tp, q)})` : taperExpr(tp, q); // lugs 2+3: falls as the knob turns up
+        place(RES, name, [['Value', `{max(1,${spiceNum(R)}*${fr})}`]], { '1': tgt(p, '1'), '2': tgt(p, '2') });
         knobParams.push([q, turn]);
         knobs.push(`${p.ref || p.id}: ${spiceNum(R)} ${tp} variable resistor, knob ${q}`);
         break;

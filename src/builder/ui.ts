@@ -35,7 +35,6 @@ const PALETTE: { group: string; kinds: PartKind[] }[] = [
   { group: 'Transistors', kinds: ['NPN', 'PNP', 'NJF', 'PJF', 'NMOS', 'PMOS'] },
   { group: 'Active', kinds: ['OA', 'BUF'] },
   { group: 'Connections', kinds: ['IN', 'OUT', 'GND', 'SUPPLY', 'LABEL'] },
-  { group: 'Measure', kinds: ['PROBE'] },
 ];
 
 export interface BuilderApi {
@@ -52,7 +51,7 @@ export function initBuilder(): BuilderApi {
   const editor = new Editor(document.querySelector<SVGSVGElement>('#bCanvas')!, $('#bCanvasWrap'), saved.doc, {
     change: (doc, committed) => {
       ex = extract(doc); renderErc(); sim.update(doc, ex, committed); panel.sync(doc); renderBias();
-      if (committed) sound.invalidate();
+      if (committed) { sound.invalidate(); files.changed(); }
       if (committed) { save(); renderProps(); }
       updateToolbar();
     },
@@ -77,7 +76,7 @@ export function initBuilder(): BuilderApi {
   });
   const panel = initFrontPanel($('#bKnobs'), editor);
   const trace = initTrace(editor, msg => { if (msg) $('#bHint').textContent = msg; else renderModes(editor.mode, null); });
-  initFileBar(editor, sim, trace);
+  const files = initFileBar(editor, sim, trace);
 
   function save(): void {
     try { localStorage.setItem(LS_KEY, JSON.stringify({ doc: editor.doc, view: editor.getView() })); } catch { /* ignore */ }
@@ -99,6 +98,7 @@ export function initBuilder(): BuilderApi {
     $('#bToolSelect').classList.toggle('active', mode === 'select');
     $('#bToolWire').classList.toggle('active', mode === 'wire');
     $('#bToolText').classList.toggle('active', mode === 'text');
+    $('#bToolProbe').classList.toggle('active', mode === 'place' && kind === 'PROBE');
     $('#bDelete').classList.toggle('active', mode === 'delete');
     $('#bHint').textContent = mode === 'delete'
       ? 'Delete mode: click a part or wire segment to delete it, or drag a box to delete everything inside. Esc or right-click to stop.'
@@ -113,6 +113,7 @@ export function initBuilder(): BuilderApi {
     bToolSelect: () => editor.setMode('select'),
     bToolWire: () => editor.setMode('wire'),
     bToolText: () => editor.setMode('text'),
+    bToolProbe: () => editor.setMode('place', 'PROBE'),
     bDragStretch: () => editor.setDragMode('stretch'),
     bDragMove: () => editor.setDragMode('move'),
     bRotate: () => editor.rotate(),
@@ -157,7 +158,7 @@ export function initBuilder(): BuilderApi {
         <tr><td>G P O</td><td>Ground, pot, op-amp</td></tr>
         <tr><td>Q J</td><td>NPN transistor, N-channel JFET</td></tr>
         <tr><td>B</td><td>Show / hide DC bias voltages</td></tr>
-        <tr><td>W</td><td>Wire tool</td></tr><tr><td>T</td><td>Text note</td></tr><tr><td>V / Esc</td><td>Select tool</td></tr>
+        <tr><td>W</td><td>Wire tool</td></tr><tr><td>T</td><td>Text note</td></tr><tr><td>X</td><td>Probe (see a net on the Response plot)</td></tr><tr><td>V / Esc</td><td>Select tool</td></tr>
         <tr><td>S / M</td><td>Drag stretches / moves (Alt flips)</td></tr>
         <tr><td>Ctrl+R / Ctrl+E</td><td>Rotate / mirror</td></tr><tr><td>Del</td><td>Delete selection, or delete mode</td></tr>
         <tr><td>Ctrl+Z / Y</td><td>Undo / redo</td></tr><tr><td>Ctrl+C / V / D</td><td>Copy / paste / duplicate</td></tr>

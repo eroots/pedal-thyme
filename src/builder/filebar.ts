@@ -1,4 +1,4 @@
-// Builder file toolbar: pedal name, New (templates), Open, Save and Export.
+// Builder file toolbar: pedal name, New (templates), Folder, Open, Save / Save as, and Export.
 import { termActive } from '../core/termination';
 import { fRange } from '../playground/state';
 import { download } from '../ui/download';
@@ -10,6 +10,7 @@ import { bomCsv, makeProject, parseProject, projectSpice, safeFileName, schemati
 import type { Trace } from './trace';
 import type { SimPanel } from './simpanel';
 import { TEMPLATES } from './templates';
+import { ProjectFolder, allowed, canSaveAs, canWriteFolders, saveAsDialog, writeHandle, type FolderEntry } from './folder';
 
 const NAME_KEY = 'pedal-filter-lab.builder.name';
 const $ = <T extends HTMLElement = HTMLInputElement>(sel: string): T => document.querySelector(sel) as T;
@@ -22,7 +23,12 @@ function latin1(text: string): Uint8Array<ArrayBuffer> {
   return Uint8Array.from(t, c => (c.charCodeAt(0) < 256 ? c.charCodeAt(0) : 63));
 }
 
-export function initFileBar(editor: Editor, sim: SimPanel, trace: { set(t: Trace | null): void }): void {
+export interface FileBar {
+  /** The document changed (marks unsaved changes). */
+  changed(): void;
+}
+
+export function initFileBar(editor: Editor, sim: SimPanel, trace: { set(t: Trace | null): void }): FileBar {
   const nameEl = $('#bName');
   try { nameEl.value = localStorage.getItem(NAME_KEY) || ''; } catch { /* ignore */ }
   const name = () => nameEl.value.trim() || 'Untitled pedal';
@@ -42,6 +48,7 @@ export function initFileBar(editor: Editor, sim: SimPanel, trace: { set(t: Trace
     const t = TEMPLATES.find(x => x.id === b.dataset.template)!;
     editor.load(t.build());
     setName(t.id === 'empty' ? '' : t.name);
+    void folder.setCurrent(null).then(() => { dirty = true; showState(); });
   });
 
   // Import notes (LTspice substitutions and the like).
@@ -53,42 +60,146 @@ export function initFileBar(editor: Editor, sim: SimPanel, trace: { set(t: Trace
   };
   notice.addEventListener('click', e => { if ((e.target as Element).closest('.close')) notice.hidden = true; });
 
-  // Open a project file, or import an LTspice schematic (with any .asy symbol files selected alongside it).
-  $('#bOpen').addEventListener('change', async e => {
-    const input = e.target as HTMLInputElement, files = [...(input.files ?? [])];
-    input.value = '';
-    if (!files.length) return;
-    const asc = files.find(f => /\.asc$/i.test(f.name));
-    try {
-      if (asc) {
-        const asy: Record<string, string> = {};
-        for (const f of files.filter(f => /\.asy$/i.test(f.name))) asy[f.name] = decodeLtspice(new Uint8Array(await f.arrayBuffer()));
-        const r = importAsc(decodeLtspice(new Uint8Array(await asc.arrayBuffer())), asy);
-        editor.load(r.schematic);
-        setName(asc.name.replace(/\.asc$/i, ''));
-        const n = r.stats.parts;
-        showNotice(`Imported ${asc.name}: ${n} part${n === 1 ? '' : 's'}${r.stats.skipped ? `, ${r.stats.skipped} skipped` : ''}.`, r.report);
-        return;
-      }
-      const f = files[0];
-      if (/\.asy$/i.test(f.name)) throw new Error('select the .asc schematic together with its .asy symbol files.');
-      const p = parseProject(await f.text());
+  /* ---------- Opening ---------- */
+  const folder = new ProjectFolder();
+  let dirty = false;
+  const stateEl = $<HTMLSpanElement>('#bSaveState');
+  const showState = () => {
+    const file = folder.current?.name;
+    stateEl.textContent = dirty ? (file ? `${file} · unsaved changes` : 'Not saved') : file ? `Saved · ${file}` : '';
+    stateEl.classList.toggle('dirty', dirty);
+    stateEl.title = folder.name ? `Folder: ${folder.name}` : '';
+  };
+
+  /** Open a schematic file: a project (.pfl.json/.json) or an LTspice .asc (with any .asy symbols). */
+  async function openFile(file: File, handle: FileSystemFileHandle | null, symbols: { name: string; text: string }[] = []): Promise<void> {
+    if (/\.asc$/i.test(file.name)) {
+      const asy = Object.fromEntries(symbols.map(s => [s.name, s.text]));
+      const r = importAsc(decodeLtspice(new Uint8Array(await file.arrayBuffer())), asy);
+      editor.load(r.schematic);
+      setName(file.name.replace(/\.asc$/i, ''));
+      const n = r.stats.parts;
+      showNotice(`Imported ${file.name}: ${n} part${n === 1 ? '' : 's'}${r.stats.skipped ? `, ${r.stats.skipped} skipped` : ''}. Save keeps it as a new .pfl.json; the .asc is left as it is.`, r.report);
+      await folder.setCurrent(null);
+      dirty = true;
+    } else {
+      const p = parseProject(await file.text());
       editor.load(p.schematic);
       if (p.view) editor.setView(p.view);
       if (p.sim) sim.apply(p.sim);
       trace.set(p.trace ?? null);
       setName(p.name);
       notice.hidden = true;
+      await folder.setCurrent(handle);
+      dirty = false;
+    }
+    showState();
+  }
+
+  // Open a project file, or import an LTspice schematic (with any .asy symbol files selected alongside it).
+  $('#bOpen').addEventListener('change', async e => {
+    const input = e.target as HTMLInputElement, files = [...(input.files ?? [])];
+    input.value = '';
+    if (!files.length) return;
+    const main = files.find(f => /\.asc$/i.test(f.name)) ?? files.find(f => !/\.asy$/i.test(f.name));
+    try {
+      if (!main) throw new Error('select the .asc schematic together with its .asy symbol files.');
+      const symbols = await Promise.all(files.filter(f => /\.asy$/i.test(f.name)).map(async f => ({ name: f.name, text: decodeLtspice(new Uint8Array(await f.arrayBuffer())) })));
+      await openFile(main, null, symbols);
     } catch (err) {
-      alert(`Couldn’t open ${(asc ?? files[0]).name}: ${(err as Error).message}`);
+      alert(`Couldn’t open ${(main ?? files[0]).name}: ${(err as Error).message}`);
     }
   });
 
-  // Save the project.
-  $('#bSave').addEventListener('click', () => {
-    const p = makeProject(name(), editor.doc, sim.settings(), editor.getView(), editor.trace);
-    download(`${safeFileName(name())}.pfl.json`, JSON.stringify(p, null, 2), 'application/json');
+  /* ---------- Folder ---------- */
+  const folderEl = $<HTMLDivElement>('#bFolder');
+  let listed: FolderEntry[] = [], symbolsListed: FolderEntry[] = [];
+  async function renderFolder(ask = false): Promise<void> {
+    const nameHtml = folder.name ? `<p class="folder-name">📁 <b>${esc(folder.name)}</b></p>` : '';
+    const chooseLabel = folder.name ? 'Choose a different folder…' : 'Choose folder…';
+    if (canWriteFolders && folder.dir && (await folder.needsPermission()) && !ask) {
+      folderEl.innerHTML = `${nameHtml}<button data-folder="allow"><b>Open this folder again</b><span>The browser asks once per session.</span></button><button data-folder="choose">${chooseLabel}</button>`;
+      return;
+    }
+    const { schematics, symbols } = await folder.list(ask);
+    listed = schematics; symbolsListed = symbols;
+    const current = folder.current?.name;
+    const items = schematics.length
+      ? schematics.map((e, i) => `<button data-entry="${i}" class="folder-file${e.name === current ? ' current' : ''}">${esc(e.name)}</button>`).join('')
+      : folder.name ? '<p class="hint">No schematics here yet (.pfl.json or .asc).</p>' : '';
+    const note = canWriteFolders
+      ? (folder.name ? '' : '<p class="hint">Pick the folder where you keep your schematics. Save then writes straight into it.</p>')
+      : '<p class="hint">This browser can’t save into folders (Chrome and Edge can), so Save downloads the file. You can still pick a folder to open its schematics from here.</p>';
+    folderEl.innerHTML = `${nameHtml}${note}<div class="folder-list">${items}</div>` +
+      `<div class="folder-actions">${folder.name ? '<button data-folder="refresh">Refresh</button>' : ''}<button data-folder="choose">${chooseLabel}</button></div>`;
+  }
+  $<HTMLDetailsElement>('#bFolderMenu').addEventListener('toggle', e => { if ((e.target as HTMLDetailsElement).open) void renderFolder(); });
+  folderEl.addEventListener('click', async e => {
+    const b = (e.target as Element).closest<HTMLButtonElement>('button');
+    if (!b) return;
+    try {
+      if (b.dataset.folder === 'choose') {
+        if (canWriteFolders) { if (await folder.choose()) await renderFolder(true); }
+        else $<HTMLInputElement>('#bFolderInput').click();
+      } else if (b.dataset.folder === 'allow' || b.dataset.folder === 'refresh') {
+        await renderFolder(true);
+      } else if (b.dataset.entry) {
+        const entry = listed[+b.dataset.entry];
+        closeMenus();
+        const symbols = /\.asc$/i.test(entry.name)
+          ? await Promise.all(symbolsListed.map(async s => ({ name: s.name, text: decodeLtspice(new Uint8Array(await (await s.read()).arrayBuffer())) })))
+          : [];
+        await openFile(await entry.read(), entry.handle ?? null, symbols);
+      }
+    } catch (err) {
+      alert(`Folder: ${(err as Error).message}`);
+    }
   });
+  // Fallback folder picker (Firefox, Safari): read-only listing for this session.
+  $<HTMLInputElement>('#bFolderInput').addEventListener('change', e => {
+    const input = e.target as HTMLInputElement;
+    folder.useFiles([...(input.files ?? [])]);
+    input.value = '';
+    $<HTMLDetailsElement>('#bFolderMenu').open = true;
+    void renderFolder();
+  });
+
+  /* ---------- Saving ---------- */
+  async function save(as: boolean): Promise<void> {
+    const data = JSON.stringify(makeProject(name(), editor.doc, sim.settings(), editor.getView(), editor.trace), null, 2);
+    const fileName = `${safeFileName(name())}.pfl.json`;
+    try {
+      if (!canWriteFolders && !canSaveAs) {
+        download(fileName, data, 'application/json');
+      } else if (!as && folder.current) {
+        await writeHandle(folder.current, data);
+      } else if (!as && folder.dir && (await allowed(folder.dir, 'readwrite', true))) {
+        if ((await folder.has(fileName)) && !confirm(`${fileName} already exists in “${folder.name}”. Replace it?`)) return;
+        await folder.setCurrent(await folder.write(fileName, data));
+      } else if (canSaveAs) {
+        const fh = await saveAsDialog(fileName, data, folder.dir);
+        if (!fh) return;
+        await folder.setCurrent(fh);
+      } else {
+        download(fileName, data, 'application/json');
+      }
+      dirty = false;
+      showState();
+      if ($<HTMLDetailsElement>('#bFolderMenu').open) void renderFolder();
+    } catch (err) {
+      alert(`Couldn’t save: ${(err as Error).message}`);
+    }
+  }
+  $('#bSave').addEventListener('click', () => void save(false));
+  $('#bSaveAs').addEventListener('click', () => void save(true));
+  if (!canWriteFolders && !canSaveAs) {
+    $('#bSave').title = 'Download this pedal as a .pfl.json file (Ctrl+S)';
+    $('#bSaveAs').hidden = true;
+  }
+  document.addEventListener('keydown', e => {
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's' && !$<HTMLElement>('#builder').hidden) { e.preventDefault(); void save(e.shiftKey); }
+  });
+  void folder.restore().then(showState);
 
   // Exports.
   $('#bExportMenu').addEventListener('click', async e => {
@@ -117,4 +228,6 @@ export function initFileBar(editor: Editor, sim: SimPanel, trace: { set(t: Trace
       }
     }
   });
+
+  return { changed: () => { dirty = true; showState(); } };
 }

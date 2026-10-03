@@ -138,6 +138,7 @@
       <button id="bToolSelect" title="Select and move (V)">Select</button>
       <button id="bToolWire" title="Draw wires (W)">Wire</button>
       <button id="bToolText" title="Add a text note (T)">Text</button>
+      <button id="bToolProbe" title="Place a probe on a wire or pin to see that net on the Response plot (X)">Probe</button>
       <span class="seg" role="group" aria-label="Drag behaviour">
         <button id="bDragStretch" title="Stretch (S): dragged parts keep their wires, which stretch to follow. Hold Alt while dragging to move instead.">Stretch</button>
         <button id="bDragMove" title="Move (M): dragged parts detach from their wires. Hold Alt while dragging to stretch instead.">Move</button>
@@ -157,7 +158,11 @@
       <input type="text" id="bName" placeholder="Untitled pedal" aria-label="Pedal name" spellcheck="false">
       <details class="menu" id="bNewMenu"><summary>New ▾</summary><div class="menu-items" id="bTemplates"></div></details>
       <label class="btn" title="Open a saved pedal (.pfl.json), or import an LTspice schematic (.asc — select its .asy symbol files too for third-party parts such as pots)">Open<input type="file" id="bOpen" accept=".json,application/json,.asc,.asy" multiple hidden></label>
-      <button id="bSave" title="Download this pedal as a .pfl.json file">Save</button>
+      <details class="menu" id="bFolderMenu"><summary title="Your folder of schematics: open them from here; Save writes back to them">Folder ▾</summary><div class="menu-items folder-menu" id="bFolder"></div></details>
+      <input type="file" id="bFolderInput" webkitdirectory multiple hidden>
+      <button id="bSave" title="Save (Ctrl+S)">Save</button>
+      <button id="bSaveAs" title="Save under a new name">Save as…</button>
+      <span class="b-save-state" id="bSaveState"></span>
       <details class="menu" id="bExportMenu"><summary>Export ▾</summary><div class="menu-items">
         <button data-export="asc">LTspice schematic (.asc)</button>
         <button data-export="spice">SPICE netlist (.cir)</button>

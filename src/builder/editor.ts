@@ -20,7 +20,7 @@ export type Mode = 'select' | 'wire' | 'place' | 'delete' | 'text';
 export type DragMode = 'stretch' | 'move';
 
 /** Single-key shortcuts that start placing a part (as in LTspice). */
-export const PART_KEYS: Record<string, PartKind> = { r: 'R', c: 'C', l: 'L', d: 'D', g: 'GND', p: 'POT', o: 'OA', q: 'NPN', j: 'NJF' };
+export const PART_KEYS: Record<string, PartKind> = { r: 'R', c: 'C', l: 'L', d: 'D', g: 'GND', p: 'POT', o: 'OA', q: 'NPN', j: 'NJF', x: 'PROBE' };
 
 export interface EditorEvents {
   /** The document changed (committed or live during a drag). */

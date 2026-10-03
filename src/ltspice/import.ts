@@ -7,12 +7,13 @@
 // reconnected with a net label instead, so the imported circuit is electrically the same.
 import { DIODE_MODELS, OPAMP_MODELS } from '../engine/models';
 import { BJT_MODELS, JFET_MODELS, MOS_MODELS } from '../engine/semis';
+import { reattach } from '../builder/doc';
 import { extract } from '../schematic/extract';
 import { toWorld, type Pt } from '../schematic/geometry';
-import { PARTS, boxOf } from '../schematic/library';
+import { PARTS, boxOf, labelLen } from '../schematic/library';
 import type { PartKind, PartProps, Rot, SchPart, Schematic } from '../schematic/types';
 import {
-  MODEL_SUFFIX, evalValue, ltNets, ltTransform, onSeg, parseAsc, parseAsy, readModels, readParams, symbolBase,
+  MODEL_SUFFIX, evalValue, ltNets, ltPieces, ltTransform, onSeg, parseAsc, parseAsy, readModels, readParams, symbolBase,
   type AscSymbol, type AsySymbol, type LPt,
 } from './asc';
 import { OPAMP_GEOMETRIES, OPAMP_SYMBOLS } from './opamp-pins';
@@ -23,7 +24,7 @@ export interface ImportResult {
   /** Human-readable notes: substitutions, skipped parts, connections made with labels. */
   report: string[];
   /** Parts imported / skipped. */
-  stats: { parts: number; skipped: number; labelled: number };
+  stats: { parts: number; skipped: number; labelled: number; layout: 'attached' | 'stubs'; attachIssues: string[] };
 }
 
 type Role = PartKind | 'V';
@@ -207,7 +208,20 @@ export function importAsc(text: string, asyTexts: Record<string, string> = {}, n
   // Points that would connect to anything touching them: pins and wire ends, with their nets.
   const points = new Map<string, Set<string>>();
   const mark = (p: Pt, net: string) => { const s = points.get(pk(p)) ?? new Set(); s.add(net); points.set(pk(p), s); };
-  for (const [a, b] of asc.wires) { const net = nets.netOf(a); addWire([sc(a), sc(b)], net); mark(sc(a), net); mark(sc(b), net); }
+  // LTspice's wires, split at every tap (minus the bits hidden under parts), so each connection is at a wire end.
+  const pinGroups = [...comps.map(c => Object.values(c.lt)), ...otherPins(asc.symbols, asy)];
+  for (const [a, b] of ltPieces(asc.wires, asc.flags.map(f => f.at), pinGroups)) {
+    const net = nets.netOf(a), sa = sc(a), sb = sc(b);
+    if (same(sa, sb)) continue;
+    addWire([sa, sb], net); mark(sa, net); mark(sb, net);
+  }
+  // Jumpers are shorts: draw them as wires.
+  for (const [a, b] of jumperShorts(asc.symbols)) {
+    const net = nets.netOf(a), sa = sc(a), sb = sc(b);
+    if (same(sa, sb)) continue;
+    addWire(sa[0] === sb[0] || sa[1] === sb[1] ? [sa, sb] : [sa, [sb[0], sa[1]], sb], net);
+    mark(sa, net); mark(sb, net);
+  }
   // Targets of every part pin (where LTspice's pins were), so stubs and placements avoid foreign ones.
   for (const c of comps) for (const p of Object.values(c.lt)) mark(sc(p), nets.netOf(p));
 
@@ -290,53 +304,97 @@ export function importAsc(text: string, asyTexts: Record<string, string> = {}, n
     });
   }
 
-  // Stubs from each pin to where LTspice had it.
-  const stubbed = new Set<string>();
-  for (const t of pinTargets) {
-    const q = toWorld(t.part, PARTS[t.part.kind].pins.find(p => p.name === t.pin)!.at);
-    if (same(q, t.target)) { stubbed.add(`${t.part.id}:${t.pin}`); continue; }
-    const routes: Pt[][] = q[0] === t.target[0] || q[1] === t.target[1] ? [[q, t.target]] : [[q, [t.target[0], q[1]], t.target], [q, [q[0], t.target[1]], t.target]];
-    const ok = routes.find(r => r.every((p, i) => i === 0 || !foreignOnSeg(r[i - 1], p, t.net)) && !foreignAt(q, t.net));
-    if (ok) { addWire(ok, t.net); stubbed.add(`${t.part.id}:${t.pin}`); }
+  /* ---------- Connect the pins: move LTspice's wire ends onto our pins ---------- */
+  // Our symbols are a different size, so each pin sits a little way from where LTspice had it (its
+  // "target"). Wire ends and markers at a target follow the pin, re-routed like a stretch move. Where
+  // two parts' pins met at one target, short stubs join them there instead. If that ever disagrees with
+  // LTspice's nets, fall back to stubs everywhere, which keeps LTspice's wires exactly as drawn.
+  const pinAt = (t: { part: SchPart; pin: string }) => toWorld(t.part, PARTS[t.part.kind].pins.find(p => p.name === t.pin)!.at);
+  const byTarget = new Map<string, typeof pinTargets>();
+  for (const t of pinTargets) byTarget.set(pk(t.target), [...(byTarget.get(pk(t.target)) ?? []), t]);
+  const baseParts = parts.slice(), baseWires = wires.slice();
+  const markerIds = new Set([...markerFor.keys()].map(p => p.id));
+
+  function connect(attach: boolean): { parts: SchPart[]; wires: { id: string; pts: Pt[] }[]; unrouted: typeof pinTargets } {
+    let ps = baseParts.map(p => ({ ...p }));
+    let ws = baseWires.map(w => ({ ...w, pts: w.pts.slice() }));
+    const stubs: typeof pinTargets = [];
+    const moved = new Map<string, Pt>();
+    for (const [key, ts] of byTarget) {
+      const away = ts.filter(t => !same(pinAt(t), t.target));
+      if (!away.length) continue;
+      if (!attach || ts.length > 1) { stubs.push(...away); continue; }
+      const q = pinAt(ts[0]), net = ts[0].net;
+      const wiresAt = (p: Pt) => ws.filter(w => same(w.pts[0], p) || same(w.pts[w.pts.length - 1], p));
+      const markerAt = (p: Pt) => ps.some(m => markerIds.has(m.id) && m.x === p[0] && m.y === p[1]);
+      // Our pin may reach past a junction LTspice drew just off its smaller symbol (an op-amp output,
+      // say): drop the wire hidden under our symbol and move the junction itself onto the pin.
+      let cur: Pt = ts[0].target;
+      const dropped = new Set<string>();
+      for (let guard = 0; guard < 4; guard++) {
+        const at = wiresAt(cur).filter(w => !dropped.has(w.id));
+        if (at.length !== 1 || markerAt(cur) || at[0].pts.length !== 2) break;
+        const other = same(at[0].pts[0], cur) ? at[0].pts[1] : at[0].pts[0];
+        if (!onSeg(other, cur, q)) break;
+        dropped.add(at[0].id);
+        cur = other;
+      }
+      if (dropped.size) ws = ws.filter(w => !dropped.has(w.id));
+      // If the pin already lands on a wire of its own net, it's connected: leave the wires alone (the
+      // dead end left at the old position is trimmed later).
+      const deadEnd = !markerAt(cur) && wiresAt(cur).length <= 1;
+      const onOwnNet = ws.some(w => !wiresAt(cur).includes(w) && segs.some(s => s.net === net && w.pts.some(p => same(p, s.a) || same(p, s.b))) &&
+        w.pts.some((p, i) => i > 0 && onSeg(q, w.pts[i - 1], p)));
+      if (deadEnd && onOwnNet) continue;
+      if (!same(cur, q)) moved.set(pk(cur), q);
+      // Markers (ground, labels, jacks, rails) sitting on the target travel with the pin.
+      ps = ps.map(p => (markerIds.has(p.id) && ((p.x === ts[0].target[0] && p.y === ts[0].target[1]) || (p.x === cur[0] && p.y === cur[1])) ? { ...p, x: q[0], y: q[1] } : p));
+      void key;
+    }
+    if (moved.size) ws = reattach(ws, moved, new Set(), ps);
+    // Stubs: an L from the pin to its target, avoiding anything foreign on the way.
+    const unrouted: typeof pinTargets = [];
+    for (const t of stubs) {
+      const q = pinAt(t), T = t.target;
+      const routes: Pt[][] = q[0] === T[0] || q[1] === T[1] ? [[q, T]] : [[q, [T[0], q[1]], T], [q, [q[0], T[1]], T]];
+      const ok = routes.find(r => r.every((p, i) => i === 0 || !foreignOnSeg(r[i - 1], p, t.net)) && !foreignAt(q, t.net));
+      if (ok) { ws.push({ id: `w${++wid}`, pts: ok.filter((p, i) => i === 0 || !same(p, ok[i - 1])) }); } else unrouted.push(t);
+    }
+    return { parts: ps, wires: ws, unrouted };
   }
 
-  /* ---------- Verify against the LTspice nets, and repair with labels ---------- */
   const ltName = (net: string) => nets.nameOf(net) ?? `N_${net.replace(/[^\d-]/g, '_')}`;
-  let labelled = 0;
-  const addLabelAt = (at: Pt, net: string, away: Pt) => {
-    if (gndNet !== null && net === gndNet) { parts.push({ id: newId('gnd'), kind: 'GND', x: at[0], y: at[1], rot: 0 }); return; }
-    const dx = Math.sign(at[0] - away[0]), dy = Math.sign(at[1] - away[1]);
-    const rot: Rot = Math.abs(dx) >= Math.abs(dy) ? (dx >= 0 ? 0 : 180) : dy > 0 ? 90 : 270;
-    parts.push({ id: newId('lbl'), kind: 'LABEL', x: at[0], y: at[1], rot, props: { name: ltName(net) } });
+  const pinKeys = pinTargets.map(t => ({ key: `${t.part.id}:${t.pin}`, net: t.net, ref: t.part.ref || t.part.id, pin: t.pin }));
+  const finish = (r: ReturnType<typeof connect>): { schematic: Schematic; mismatches: string[]; labelled: number } => {
+    // Pins with no clean route are joined by net name (labels), on both sides.
+    const extra: SchPart[] = [];
+    const labelAt = (at: Pt, net: string, away: Pt) => {
+      if (gndNet !== null && net === gndNet) { extra.push({ id: newId('gnd'), kind: 'GND', x: at[0], y: at[1], rot: 0 }); return; }
+      const dx = Math.sign(at[0] - away[0]), dy = Math.sign(at[1] - away[1]);
+      const rot: Rot = Math.abs(dx) >= Math.abs(dy) ? (dx >= 0 ? 0 : 180) : dy > 0 ? 90 : 270;
+      extra.push({ id: newId('lbl'), kind: 'LABEL', x: at[0], y: at[1], rot, props: { name: ltName(net) } });
+    };
+    const nets2 = new Set<string>();
+    for (const t of r.unrouted) { labelAt(pinAt(t), t.net, [t.part.x, t.part.y]); nets2.add(t.net); }
+    for (const net of nets2) {
+      if (gndNet !== null && net === gndNet) continue;
+      const w = r.wires.find(w => segs.some(s => s.net === net && w.pts.some(p => same(p, s.a) || same(p, s.b))));
+      if (w) labelAt(w.pts[0], net, w.pts[1]);
+    }
+    let sch: Schematic = { version: 1, parts: [...r.parts, ...extra], wires: r.wires };
+    sch = pruneDangling(sch);
+    sch = { ...sch, parts: sch.parts.map(p => (p.kind === 'LABEL' ? { ...p, rot: labelRot(sch, p) } : p)) };
+    return { schematic: sch, mismatches: verify(sch, pinKeys), labelled: r.unrouted.length };
   };
-  // Pins that got no stub are joined by name.
-  const labelledNets = new Set<string>();
-  for (const t of pinTargets) {
-    if (stubbed.has(`${t.part.id}:${t.pin}`)) continue;
-    const q = toWorld(t.part, PARTS[t.part.kind].pins.find(p => p.name === t.pin)!.at);
-    addLabelAt(q, t.net, [t.part.x, t.part.y]);
-    labelledNets.add(t.net);
-    labelled++;
+  let result = finish(connect(true)), layout: 'attached' | 'stubs' = 'attached';
+  const attachIssues = result.mismatches;
+  if (result.mismatches.length) {
+    const fallback = finish(connect(false));
+    if (fallback.mismatches.length <= result.mismatches.length) { result = fallback; layout = 'stubs'; }
   }
-  // Each labelled net also needs its name where the rest of it is drawn.
-  const anchorFor = (net: string): { at: Pt; away: Pt } | null => {
-    const st = pinTargets.find(t => t.net === net && stubbed.has(`${t.part.id}:${t.pin}`));
-    if (st) return { at: st.target, away: [st.part.x, st.part.y] };
-    const g = segs.find(s => s.net === net);
-    if (g) return { at: g.a, away: g.b };
-    const m = [...markerFor].find(([, n]) => n === net);
-    return m ? { at: [m[0].x, m[0].y], away: [m[0].x - 1, m[0].y] } : null;
-  };
-  for (const net of labelledNets) {
-    if (gndNet !== null && net === gndNet) continue;
-    const a = anchorFor(net);
-    if (a) addLabelAt(a.at, net, a.away);
-  }
-
-  let schematic: Schematic = { version: 1, parts, wires };
-  schematic = pruneDangling(schematic);
-  const mismatches = verify(schematic, pinTargets.map(t => ({ key: `${t.part.id}:${t.pin}`, net: t.net, ref: t.part.ref || t.part.id, pin: t.pin })));
-  for (const m of mismatches) note(m);
+  let schematic = result.schematic;
+  const labelled = result.labelled;
+  for (const m of result.mismatches) note(m);
   if (labelled) note(`${labelled} pin${labelled > 1 ? 's were' : ' was'} connected with net labels (no clean wire route).`);
 
   // Comments become notes; directives we can't use are listed.
@@ -348,7 +406,7 @@ export function importAsc(text: string, asyTexts: Record<string, string> = {}, n
   const ignored = asc.texts.filter(t => t.directive).flatMap(t => t.text.split('\n')).map(l => l.trim()).filter(l => /^\.(lib|include|inc)\b/i.test(l));
   if (ignored.length) note(`Ignored ${ignored.join(', ')}: external model files aren't loaded; library models were substituted.`);
   void models; void name;
-  return { schematic, report, stats: { parts: comps.filter(c => c.map.kind !== 'V').length, skipped, labelled } };
+  return { schematic, report, stats: { parts: comps.filter(c => c.map.kind !== 'V').length, skipped, labelled, layout, attachIssues } };
 
   /* ---------- Values and models ---------- */
   function valueOf(c: Comp, kind: PartKind): Partial<SchPart> {
@@ -512,4 +570,44 @@ function otherPins(symbols: AscSymbol[], asy: Map<string, AsySymbol>): LPt[][] {
     const local: LPt[] = user ? user.pins.map(p => p.at) : (SYMBOL_PINS[base] ?? []).flatMap((v, i, a) => (i % 2 ? [] : [[v, a[i + 1]] as LPt]));
     return local.length ? [local.map(p => { const o = ltTransform(s.orient, p); return [s.x + o[0], s.y + o[1]] as LPt; })] : [];
   });
+}
+
+/**
+ * Direction for a net label: one whose line doesn't run along a wire at its pin, and whose line and
+ * name overlap the fewest wires and symbols (right, down, left, up break ties).
+ */
+function labelRot(sch: Schematic, p: SchPart): Rot {
+  const at: Pt = [p.x, p.y];
+  const dirs = sch.wires.flatMap(w => w.pts.flatMap((q, i) => {
+    const out: Pt[] = [];
+    if (same(q, at)) { if (i > 0) out.push(w.pts[i - 1]); if (i < w.pts.length - 1) out.push(w.pts[i + 1]); }
+    return out.map(o => [Math.sign(o[0] - at[0]), Math.sign(o[1] - at[1])] as Pt);
+  }));
+  const L = labelLen(p), tw = (p.props?.name || 'NET').length * 7 + 4; // name width, with a little clearance
+  const [x, y] = at;
+  // Label footprint (line plus name) for each direction; vertical labels put the name beside the line.
+  const boxes: Record<Rot, [number, number, number, number]> = {
+    0: [x, y - 14, x + L, y + 4], 180: [x - L, y - 14, x, y + 4],
+    90: [x - 2, y, x + 6 + tw, y + L], 270: [x - 2, y - L, x + 6 + tw, y],
+  };
+  const hits = (b: [number, number, number, number]) => {
+    let n = 0;
+    for (const w of sch.wires) for (let i = 1; i < w.pts.length; i++) {
+      const a = w.pts[i - 1], c = w.pts[i];
+      if (Math.max(a[0], c[0]) > b[0] + 1 && Math.min(a[0], c[0]) < b[2] - 1 && Math.max(a[1], c[1]) > b[1] + 1 && Math.min(a[1], c[1]) < b[3] - 1) n++;
+    }
+    for (const o of sch.parts) {
+      if (o === p || o.kind === 'LABEL' || o.kind === 'GND') continue;
+      const [x0, y0, x1, y1] = boxOf(o), c0 = toWorld(o, [x0, y0]), c1 = toWorld(o, [x1, y1]);
+      if (Math.max(c0[0], c1[0]) > b[0] && Math.min(c0[0], c1[0]) < b[2] && Math.max(c0[1], c1[1]) > b[1] && Math.min(c0[1], c1[1]) < b[3]) n += 2;
+    }
+    return n;
+  };
+  let best: Rot = p.rot, score = Infinity;
+  for (const [dx, dy, rot] of [[1, 0, 0], [0, 1, 90], [-1, 0, 180], [0, -1, 270]] as const) {
+    if (dirs.some(d => d[0] === dx && d[1] === dy)) continue;
+    const s = hits(boxes[rot]);
+    if (s < score) { score = s; best = rot; }
+  }
+  return best;
 }

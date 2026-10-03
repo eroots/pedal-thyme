@@ -109,6 +109,33 @@ function routeClashes(parts: SchPart[], wires: SchWire[], pts: Pt[], selfId?: st
   return false;
 }
 
+/** Does any segment of this route pass through a part's symbol (not just touch its edge at a pin)? */
+function crossesBodies(parts: SchPart[], pts: Pt[]): boolean {
+  for (const p of parts) {
+    if (FOLLOWERS.has(p.kind) || p.kind === 'IN' || p.kind === 'OUT') continue;
+    const [x0, y0, x1, y1] = partBox(p);
+    for (let i = 1; i < pts.length; i++) {
+      const a = pts[i - 1], b = pts[i];
+      const sx0 = Math.min(a[0], b[0]), sx1 = Math.max(a[0], b[0]), sy0 = Math.min(a[1], b[1]), sy1 = Math.max(a[1], b[1]);
+      if (sx1 > x0 + 3 && sx0 < x1 - 3 && sy1 > y0 + 3 && sy0 < y1 - 3) return true;
+    }
+  }
+  return false;
+}
+
+/** Outward direction of the (non-marker) part pin at `at`, along the pin's main axis from the part's origin. */
+function pinDir(parts: SchPart[], at: Pt): Pt | null {
+  for (const p of parts) {
+    if (FOLLOWERS.has(p.kind) || p.kind === 'IN' || p.kind === 'OUT') continue;
+    const r = pinsOf(p).find(q => samePt(q.at, at));
+    if (!r) continue;
+    const dx = r.at[0] - p.x, dy = r.at[1] - p.y;
+    if (dx === 0 && dy === 0) return null;
+    return Math.abs(dx) >= Math.abs(dy) ? [Math.sign(dx), 0] : [0, Math.sign(dy)];
+  }
+  return null;
+}
+
 /** Orthogonal ways to move one end of a wire to `to`, best first. */
 function endRoutes(pts: Pt[], atStart: boolean, to: Pt): Pt[][] {
   const P = atStart ? [...pts].reverse() : [...pts]; // the moving end is last
@@ -135,7 +162,7 @@ function endRoutes(pts: Pt[], atStart: boolean, to: Pt): Pt[][] {
  * Keep wires attached when pins move: unselected wire ends sitting on an old pin position follow it,
  * along the first orthogonal route that doesn't touch anything new.
  */
-function reattach(wires: SchWire[], moved: Map<string, Pt>, skip: Set<string>, parts: SchPart[]): SchWire[] {
+export function reattach(wires: SchWire[], moved: Map<string, Pt>, skip: Set<string>, parts: SchPart[]): SchWire[] {
   return wires.map(w => {
     if (skip.has(w.id) || w.pts.length < 2) return w;
     const last = w.pts.length - 1;
@@ -147,17 +174,41 @@ function reattach(wires: SchWire[], moved: Map<string, Pt>, skip: Set<string>, p
     }
     let pts = w.pts;
     const fix = (atStart: boolean, to: Pt) => {
+      const good = (c: Pt[]) => !routeClashes(parts, wires, c, w.id) && !crossesBodies(parts, c);
       const cands = endRoutes(pts, atStart, to);
-      const ok = cands.find(c => !routeClashes(parts, wires, c, w.id));
+      const ok = cands.find(good);
       if (ok) return ok;
-      // Fall back to a routed path from the old end to the pin's new position.
+      // Approach the pin from outside its symbol: route to a point just beyond it, then straight in.
+      const dir = pinDir(parts, to);
+      if (dir) {
+        const a: Pt = [to[0] + dir[0] * 10, to[1] + dir[1] * 10];
+        const via = endRoutes(pts, atStart, a).map(c => simplifyWire(atStart ? [to, ...c] : [...c, to]));
+        const ok2 = via.find(good);
+        if (ok2) return ok2;
+      }
+      // Then a routed path (kept only if it stays out of symbols), then any clash-free route.
       const end = atStart ? pts[0] : pts[pts.length - 1];
       const r = routeOrtho(end, to, parts, wires, new Set([w.id]));
-      if (!r) return cands[0];
-      return simplifyWire(atStart ? [...r.reverse(), ...pts.slice(1)] : [...pts.slice(0, -1), ...r]);
+      const routed = r && simplifyWire(atStart ? [...r.reverse(), ...pts.slice(1)] : [...pts.slice(0, -1), ...r]);
+      if (routed && !crossesBodies(parts, routed)) return routed;
+      return cands.find(c => !routeClashes(parts, wires, c, w.id)) ?? routed ?? cands[0];
     };
+    if (to0 && to1 && pts.length === 2) {
+      // Both ends of a straight wire move: route afresh between the new ends (approaching each pin from
+      // outside its symbol), rather than one end at a time through an awkward halfway state.
+      const good = (c: Pt[]) => !routeClashes(parts, wires, c, w.id) && !crossesBodies(parts, c);
+      const ell = (a: Pt, b: Pt): Pt[][] => (a[0] === b[0] || a[1] === b[1] ? [[a, b]] : [[a, [b[0], a[1]], b], [a, [a[0], b[1]], b]]);
+      const out = (p: Pt) => { const d = pinDir(parts, p); return d ? [p[0] + d[0] * 10, p[1] + d[1] * 10] as Pt : p; };
+      const a0 = out(to0), a1 = out(to1);
+      const cands = [...ell(to0, to1), ...ell(a0, a1).map(r => [to0, ...r, to1])].map(simplifyWire);
+      const ok = cands.find(good);
+      const r = ok ? null : routeOrtho(to0, to1, parts, wires, new Set([w.id]));
+      const pick = ok ?? (r && !crossesBodies(parts, r) ? simplifyWire(r) : null) ?? cands.find(c => !routeClashes(parts, wires, c, w.id)) ?? cands[0];
+      return { ...w, pts: pick };
+    }
     if (to0) pts = fix(true, to0);
-    if (to1) pts = fix(false, to1);
+    // Moving the first end may collapse a short wire onto its other end; keep it as a point to route from.
+    if (to1) { if (pts.length < 2) pts = [pts[0], pts[0]]; pts = fix(false, to1); }
     return { ...w, pts };
   }).filter(w => w.pts.length >= 2);
 }

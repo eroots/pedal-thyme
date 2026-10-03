@@ -119,6 +119,27 @@ class UF {
 }
 
 /**
+ * Wires split at every point lying on them (other wire ends, flags, pins), so all connections are at
+ * piece ends — minus the pieces that run under a part between two of its own pins, which LTspice ignores.
+ */
+export function ltPieces(wires: [LPt, LPt][], points: LPt[], pinGroups: LPt[][]): [LPt, LPt][] {
+  const pinGroup = new Map<string, Set<number>>();
+  pinGroups.forEach((g, i) => g.forEach(p => { const s = pinGroup.get(k(p)) ?? new Set(); s.add(i); pinGroup.set(k(p), s); }));
+  const pts = new Map<string, LPt>();
+  for (const p of [...wires.flat(), ...points, ...pinGroups.flat()]) pts.set(k(p), p);
+  const pieces: [LPt, LPt][] = [];
+  for (const [a, b] of wires) {
+    const on = [...pts.values()].filter(p => onSeg(p, a, b)).sort((p, q) => (Math.abs(p[0] - a[0]) + Math.abs(p[1] - a[1])) - (Math.abs(q[0] - a[0]) + Math.abs(q[1] - a[1])));
+    for (let i = 1; i < on.length; i++) {
+      const g0 = pinGroup.get(k(on[i - 1])), g1 = pinGroup.get(k(on[i]));
+      if (g0 && g1 && [...g0].some(g => g1.has(g))) continue;
+      pieces.push([on[i - 1], on[i]]);
+    }
+  }
+  return pieces;
+}
+
+/**
  * Nets of an LTspice drawing, following LTspice's netlister (checked against it):
  * - wire ends, pins and flags anywhere on a wire connect to it (T-junctions included);
  * - a part cuts the wire it sits on: the stretch of wire between two pins of the same part is ignored;
@@ -128,24 +149,8 @@ class UF {
 export function ltNets(wires: [LPt, LPt][], flags: { at: LPt; name: string }[], pins: LPt[][] | LPt[], shorts: [LPt, LPt][] = []): { netOf(p: LPt): string; nameOf(net: string): string | undefined } {
   const uf = new UF();
   const groups: LPt[][] = pins.length && typeof pins[0][0] === 'number' ? (pins as LPt[]).map(p => [p]) : pins as LPt[][];
-  const pinGroup = new Map<string, Set<number>>();
-  groups.forEach((g, i) => g.forEach(p => { const s = pinGroup.get(k(p)) ?? new Set(); s.add(i); pinGroup.set(k(p), s); }));
-  const pts = new Map<string, LPt>();
-  const add = (p: LPt) => pts.set(k(p), p);
-  for (const [a, b] of wires) { add(a); add(b); }
-  flags.forEach(f => add(f.at));
-  groups.flat().forEach(add);
-  // Split each wire at the points on it; drop pieces spanning two pins of one part.
-  const pieces: [LPt, LPt][] = [];
-  for (const [a, b] of wires) {
-    const on = [...pts.values()].filter(p => onSeg(p, a, b)).sort((p, q) => (Math.abs(p[0] - a[0]) + Math.abs(p[1] - a[1])) - (Math.abs(q[0] - a[0]) + Math.abs(q[1] - a[1])));
-    for (let i = 1; i < on.length; i++) {
-      const g0 = pinGroup.get(k(on[i - 1])), g1 = pinGroup.get(k(on[i]));
-      if (g0 && g1 && [...g0].some(g => g1.has(g))) continue;
-      pieces.push([on[i - 1], on[i]]);
-    }
-    if (on.length === 1) add(a);
-  }
+  const pieces = ltPieces(wires, flags.map(f => f.at), groups);
+  for (const p of [...wires.flat(), ...flags.map(f => f.at), ...groups.flat()]) uf.find(k(p));
   for (const [a, b] of pieces) uf.union(k(a), k(b));
   for (const [a, b] of shorts) uf.union(k(a), k(b));
   const byName = new Map<string, string>();

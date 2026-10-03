@@ -3,6 +3,7 @@
 import { dcOp, type DcOptions, type OpPoint } from './dc';
 import { Circuit } from './mna';
 import { isNonlinear, type Element, type Netlist } from './netlist';
+import { diodeModel } from './models';
 import { bjtModel, jfetModel, mosModel } from './semis';
 
 /** Diode/junction conductances below this are left open (they'd only add ~1e-12 S anyway). */
@@ -15,6 +16,7 @@ export function linearize(nl: Netlist, op: OpPoint): Netlist {
     if (!d) { if (!isNonlinear(e)) out.push(e); continue; }
     if (e.type === 'D' && d.type === 'D') {
       if (d.gd > G_OPEN) out.push({ type: 'R', name: `${e.name}.rd`, a: e.a, b: e.k, value: 1 / d.gd });
+      out.push({ type: 'C', name: `${e.name}.cj`, a: e.a, b: e.k, value: diodeModel(e.model).cj });
     } else if (e.type === 'Q' && d.type === 'Q') {
       const m = bjtModel(e.model);
       // Currents into c and b, linear in v(b,e) and v(b,c); the emitter takes the remainder.

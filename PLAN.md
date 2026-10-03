@@ -101,9 +101,32 @@ Not done: a Big Muff template; temperature effects; charge-storage (diffusion) c
 - **Trace overlay**: an image or PDF page (pdf.js) under the canvas, with opacity, rotate, page choice and a
   move/scale mode; saved with the project.
 
-## Phase 5 — Time domain (deferred)
-- Transient analysis (trapezoidal companion models, Newton per step), waveforms, clipping, harmonics,
-  audio through the circuit (Web Audio, in a worker).
+## Phase 5 — Time domain ✅ (2026-10-02, offline render)
+Done: `src/engine/transient.ts` uses the nodal DK method: trapezoidal companion models at the audio rate
+× oversampling (2/4/8×, windowed-sinc resampling), with everything linear folded into a few matrices once.
+Each step is a small Newton solve (junction limiting plus a backtracking line search) in the controls of
+the nonlinear parts only: diodes, BJTs, JFETs, MOSFETs and op-amps. Op-amps have a slew-limited input
+stage into a damped internal integrator, and an output that saturates softly at the supply rails minus each
+model's headroom (TL072 1.5 V, LM308 0.3 V/µs …). The run starts from the DC operating point. Diode
+junction capacitance was added to the models (AC too).
+The Builder's **Sound** panel offers:
+- signals: sine, plucked note, strummed chord or an audio file, at a pickup level;
+- rendering in a worker (inlined in the single-file build);
+- waveform and spectrum with THD and harmonics;
+- A/B playback (with matched loudness) and WAV download.
+Verified: RC filter vs theory; small-signal transient vs AC within 0.25 dB for every template; diode clipper,
+rail clipping and slew rate; and 1 kHz/100 mV transient vs LTspice `.four`:
+
+| Template | Fundamental | THD (this app / LTspice) | Notes |
+|---|---|---|---|
+| TS | same | 20.95 / 21.04 % | |
+| MOSFET booster | same | 0.26 / 0.28 % | |
+| Fuzz Face | within 0.2 % | 129 / 136 % | |
+| Zendrive | 1.4 dB apart | similar | |
+| RAT | 0.9 dB apart | | this app models the LM308's slew limit; the exported macromodel doesn't |
+| LPB-1 | | | BJT model difference, as in AC |
+
+Speed: about 1–2 s per second of audio at 4×. Not done: real-time live input (would come next if wanted).
 
 ## Verification
 - Closed-form oracles for every Playground topology.

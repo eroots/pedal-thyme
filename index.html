@@ -217,6 +217,55 @@
       </div>
       <p class="hint" id="bSimMsg"></p>
     </section>
+    <section class="card b-sound" id="bSound">
+      <div class="plothead"><h2>Sound</h2><span class="hint">Time-domain simulation: clipping, distortion and how it sounds.</span></div>
+      <div class="sound-bar">
+        <label>Signal <select id="sdSource">
+          <option value="sine">Sine</option><option value="note">Plucked note</option>
+          <option value="chord" selected>Strummed chord</option><option value="file">Audio file…</option>
+        </select></label>
+        <label id="sdFreqL">Frequency <select id="sdFreq">
+          <option value="82.41">82 Hz (low E)</option><option value="110">110 Hz</option><option value="220">220 Hz</option>
+          <option value="440">440 Hz</option><option value="1000" selected>1 kHz</option><option value="2000">2 kHz</option>
+        </select></label>
+        <label id="sdNoteL">Note <select id="sdNote">
+          <option value="82.41">E2 (low E)</option><option value="110">A2</option><option value="146.83">D3</option>
+          <option value="196" selected>G3</option><option value="246.94">B3</option><option value="329.63">E4</option>
+        </select></label>
+        <span id="sdFileL"><button id="sdFileBtn">Choose file…</button> <span class="hint" id="sdFileName">A DI guitar recording works best.</span>
+          <input type="file" id="sdFile" accept="audio/*,.wav,.mp3,.flac,.ogg" hidden></span>
+        <label title="Peak voltage from the guitar: single coils give about 0.1–0.3 V, humbuckers 0.3–1 V">Level <select id="sdLevel">
+          <option value="0.05">50 mV</option><option value="0.1">100 mV</option><option value="0.2">200 mV (single coil)</option>
+          <option value="0.4" selected>400 mV (humbucker)</option><option value="1">1 V (hot)</option><option value="2">2 V</option>
+        </select></label>
+        <label>Length <select id="sdDur"><option value="0.5">0.5 s</option><option value="1">1 s</option><option value="2" selected>2 s</option><option value="4">4 s</option></select></label>
+        <label title="Oversampling: higher is cleaner (less aliasing from clipping) but slower">Quality <select id="sdOs">
+          <option value="2">2×</option><option value="4" selected>4×</option><option value="8">8×</option>
+        </select></label>
+        <button id="sdRender" class="primary">Render</button>
+        <progress id="sdProg" max="1" value="0" hidden></progress>
+      </div>
+      <div class="sound-plots">
+        <div>
+          <div class="sound-sub"><b>Waveform</b>
+            <label>Window <select id="sdWin"><option value="auto" selected>Auto</option><option value="0.005">5 ms</option><option value="0.02">20 ms</option><option value="0.1">100 ms</option><option value="all">All</option></select></label>
+            <input type="range" id="sdPos" min="0" max="1000" value="1000" aria-label="Waveform position" title="Position in the clip">
+          </div>
+          <canvas id="sdScope"></canvas>
+        </div>
+        <div>
+          <div class="sound-sub"><b>Spectrum</b> <span class="hint" id="sdThd"></span></div>
+          <canvas id="sdSpec"></canvas>
+        </div>
+      </div>
+      <div class="legend" id="sdLegend"></div>
+      <div class="btnrow sound-play">
+        <button id="sdPlayWet">▶ Pedal</button><button id="sdPlayDry">▶ Bypass</button><button id="sdStop">■ Stop</button>
+        <label class="chk" title="Play both at the same loudness, to compare tone rather than level"><input type="checkbox" id="sdMatch" checked> Match loudness</label>
+        <button id="sdDownload">Download WAV</button>
+      </div>
+      <p class="hint" id="sdMsg">Pick a signal and press Render.</p>
+    </section>
   </div>
   <aside class="b-side">
     <section class="card b-panel"><h2>Front panel</h2><div id="bKnobs"></div></section>

@@ -16,6 +16,8 @@ import { Editor, PART_KEYS, type DragMode, type Mode } from './editor';
 import { initFileBar } from './filebar';
 import { initFrontPanel } from './frontpanel';
 import { initSimPanel } from './simpanel';
+import { initSoundPanel } from './sound';
+import { termActive } from '../core/termination';
 import { initTrace } from './trace';
 import { SWEEPABLE_KINDS, biasOf } from './sim';
 
@@ -50,6 +52,7 @@ export function initBuilder(): BuilderApi {
   const editor = new Editor(document.querySelector<SVGSVGElement>('#bCanvas')!, $('#bCanvasWrap'), saved.doc, {
     change: (doc, committed) => {
       ex = extract(doc); renderErc(); sim.update(doc, ex, committed); panel.sync(doc); renderBias();
+      if (committed) sound.invalidate();
       if (committed) { save(); renderProps(); }
       updateToolbar();
     },
@@ -68,6 +71,10 @@ export function initBuilder(): BuilderApi {
   });
   if (saved.view) editor.setView(saved.view);
   const sim = initSimPanel();
+  const sound = initSoundPanel(() => {
+    const st = sim.settings();
+    return { ex, doc: editor.doc, term: termActive(st.term) ? st.term : null, name: (document.querySelector<HTMLInputElement>('#bName')?.value || '') };
+  });
   const panel = initFrontPanel($('#bKnobs'), editor);
   const trace = initTrace(editor, msg => { if (msg) $('#bHint').textContent = msg; else renderModes(editor.mode, null); });
   initFileBar(editor, sim, trace);
@@ -393,7 +400,7 @@ export function initBuilder(): BuilderApi {
 
   return {
     load: doc => { editor.load(JSON.parse(JSON.stringify(doc))); editor.selectIds([]); },
-    shown: () => { editor.render(); if (!saved.view) editor.fit(); sim.redraw(); },
+    shown: () => { editor.render(); if (!saved.view) editor.fit(); sim.redraw(); sound.redraw(); },
   };
 }
 

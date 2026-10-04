@@ -4,7 +4,8 @@
 // follows the cursor; click to drop, keep placing until Esc), 'wire' (click to start and bend,
 // ending on a pin or wire finishes it; double-click or right-click also finishes), 'delete' (each
 // click deletes the part or wire segment under the cursor, a dragged box deletes everything inside;
-// stays on until Esc or right-click, like LTspice).
+// stays on until Esc or right-click, like LTspice), 'copy' (click an item, or start with a selection,
+// and a copy follows the cursor; click to drop copies, right-click to pick something else, Esc to stop).
 import { renderSchematicBody } from '../schematic/render';
 import { traceTransform, type Trace } from './trace';
 import { pinsOf } from '../schematic/extract';
@@ -15,7 +16,7 @@ import {
   nearestAnchor, partBox, paste, rotateSelection, snapPt, wireSegmentAt, type Clip,
 } from './doc';
 
-export type Mode = 'select' | 'wire' | 'place' | 'delete' | 'text';
+export type Mode = 'select' | 'wire' | 'place' | 'delete' | 'text' | 'copy';
 /** Dragging either stretches attached wires (connections kept) or moves the selection on its own. */
 export type DragMode = 'stretch' | 'move';
 
@@ -53,6 +54,8 @@ export class Editor {
   private undoStack: string[] = [];
   private redoStack: string[] = [];
   private clip: Clip | null = null;
+  /** Copy mode: what's being carried, and the point of it that sits under the cursor. */
+  private carry: { clip: Clip; at: Pt } | null = null;
   private drag: null | { kind: 'move'; start: Pt; orig: Schematic; moved: boolean; stretch: boolean }
     | { kind: 'box'; start: Pt; now: Pt; add: boolean; del?: boolean }
     | { kind: 'pan'; sx: number; sy: number; vx: number; vy: number }
@@ -100,6 +103,9 @@ export class Editor {
   }
 
   setMode(mode: Mode, kind: PartKind | null = null): void {
+    // Entering copy mode with a selection picks the selection up straight away.
+    this.carry = mode === 'copy' && this.sel.size ? { clip: this.copySel(), at: this.selCorner() } : null;
+    if (this.carry) this.clip = this.carry.clip;
     this.mode = mode;
     this.draft = null;
     this.placing = mode === 'place' && kind ? { kind, rot: 0, mirror: false } : null;
@@ -165,7 +171,26 @@ export class Editor {
     this.commit(doc);
   }
 
-  copy(): void { if (this.sel.size) this.clip = copySelection(this.doc, this.selParts(), this.selWires(), this.selNotes()); }
+  copy(): void { if (this.sel.size) this.clip = this.copySel(); }
+
+  /** Ctrl+C / the Copy button: copy mode (carrying the selection, if there is one). */
+  copyMode(): void { this.setMode('copy'); }
+
+  private copySel(): Clip { return copySelection(this.doc, this.selParts(), this.selWires(), this.selNotes()); }
+
+  /** Top-left grid point of the selection, where the cursor holds a copy of it. */
+  private selCorner(): Pt {
+    const c = this.copySel();
+    const xs = [...c.parts.map(p => p.x), ...c.wires.flatMap(w => w.pts.map(p => p[0])), ...(c.notes ?? []).map(n => n.x)];
+    const ys = [...c.parts.map(p => p.y), ...c.wires.flatMap(w => w.pts.map(p => p[1])), ...(c.notes ?? []).map(n => n.y)];
+    return snapPt([Math.min(...xs), Math.min(...ys)]);
+  }
+
+  /** Where the carried copy would land with the cursor at p. */
+  private carryOffset(p: Pt): Pt {
+    const q = snapPt(p), at = this.carry!.at;
+    return [q[0] - at[0], q[1] - at[1]];
+  }
 
   /** Paste at the mouse cursor (top-left of the copied items lands there), or offset if the cursor is away. */
   pasteClip(): void {
@@ -359,6 +384,7 @@ export class Editor {
       e.preventDefault();
       if (this.mode === 'wire' && this.draft) this.finishWire();
       else if (this.mode === 'place') this.rotate();
+      else if (this.mode === 'copy' && this.carry) { this.carry = null; this.render(); }
       else if (this.mode !== 'select') this.setMode('select');
     });
     svg.addEventListener('wheel', e => {
@@ -416,6 +442,24 @@ export class Editor {
         const existing = this.doc.parts.find(q => q.kind === part.kind)!;
         this.commit({ ...this.doc, parts: this.doc.parts.map(q => (q === existing ? { ...q, x: part.x, y: part.y, rot: part.rot } : q)) });
       } else this.commit(cutWiresUnder(addPart(this.doc, part), new Set([part.id])));
+      return;
+    }
+
+    if (this.mode === 'copy') {
+      if (this.carry) {
+        // Drop a copy; keep carrying so more can be dropped.
+        const [dx, dy] = this.carryOffset(p);
+        const r = paste(this.doc, this.carry.clip, dx, dy);
+        this.commit(cutWiresUnder(r.doc, r.ids));
+        return;
+      }
+      const id = this.hitId(e.target as Element);
+      if (id) {
+        const one = new Set([id]);
+        this.carry = { clip: copySelection(this.doc, one, one, one), at: snapPt(p) };
+        this.clip = this.carry.clip;
+        this.render();
+      }
       return;
     }
 
@@ -527,7 +571,7 @@ export class Editor {
     const ctrl = e.ctrlKey || e.metaKey, k = e.key.toLowerCase();
     if (ctrl && k === 'z') { e.preventDefault(); if (e.shiftKey) this.redo(); else this.undo(); return; }
     if (ctrl && k === 'y') { e.preventDefault(); this.redo(); return; }
-    if (ctrl && k === 'c') { e.preventDefault(); this.copy(); return; }
+    if (ctrl && k === 'c') { e.preventDefault(); this.copyMode(); return; }
     if (ctrl && k === 'v') { e.preventDefault(); this.pasteClip(); return; }
     if (ctrl && k === 'd') { e.preventDefault(); this.duplicate(); return; }
     if (ctrl && k === 'r') { e.preventDefault(); this.rotate(); return; }
@@ -540,6 +584,7 @@ export class Editor {
       case 'Escape':
         if (this.traceAdjust) { this.setTraceAdjust(false); break; }
         if (this.draft) { this.draft = null; this.render(); }
+        else if (this.carry) { this.carry = null; this.render(); }
         else if (this.mode !== 'select') this.setMode('select');
         else { this.sel.clear(); this.on.select(this.sel); this.render(); }
         break;
@@ -589,6 +634,18 @@ export class Editor {
       const at = this.placing.kind === 'PROBE' ? this.wireTarget(this.cursor) : this.cursor;
       const ghost = makePart(this.doc, this.placing.kind, at[0], at[1], this.placing.rot, this.placing.mirror);
       over.push(`<g class="schem ghost">${renderSchematicBody({ version: 1, parts: [ghost], wires: [] }).body}</g>`);
+    }
+    if (this.carry) {
+      const [dx, dy] = this.carryOffset(this.cursor), c = this.carry.clip;
+      const ghost: Schematic = {
+        version: 1,
+        // Jacks are never duplicated by a paste, so don't show them as coming along.
+        parts: c.parts.filter(p => !((p.kind === 'IN' || p.kind === 'OUT') && this.doc.parts.some(q => q.kind === p.kind)))
+          .map(p => ({ ...p, x: p.x + dx, y: p.y + dy })),
+        wires: c.wires.map(w => ({ ...w, pts: w.pts.map(([x, y]) => [x + dx, y + dy] as Pt) })),
+        notes: (c.notes ?? []).map(n => ({ ...n, x: n.x + dx, y: n.y + dy })),
+      };
+      over.push(`<g class="schem ghost">${renderSchematicBody(ghost).body}</g>`);
     }
     if (this.mode === 'wire') {
       const at = this.hover || snapPt(this.cursor);

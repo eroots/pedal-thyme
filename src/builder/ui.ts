@@ -100,10 +100,12 @@ export function initBuilder(): BuilderApi {
     $('#bToolText').classList.toggle('active', mode === 'text');
     $('#bToolProbe').classList.toggle('active', mode === 'place' && kind === 'PROBE');
     $('#bDelete').classList.toggle('active', mode === 'delete');
+    $('#bCopy').classList.toggle('active', mode === 'copy');
     $('#bHint').textContent = mode === 'delete'
       ? 'Delete mode: click a part or wire segment to delete it, or drag a box to delete everything inside. Esc or right-click to stop.'
       : mode === 'wire'
       ? 'Click to start a wire, click to bend it; it finishes on a pin or another wire (or double-click / right-click). Esc cancels.'
+      : mode === 'copy' ? 'Copy mode: click a part, wire or note to pick up a copy, then click to drop it (as many times as you like). Right-click to pick something else, Esc to stop.'
       : mode === 'text' ? 'Click where the text note should go, then type it in Properties. Esc cancels.'
       : mode === 'place' ? `Click to place a ${PARTS[kind!].label.toLowerCase()}. Right-click or Ctrl+R rotates, Ctrl+E mirrors, Esc stops placing.`
         : 'Drag parts to stretch (wires follow) or move (detach): see the toolbar, or hold Alt to switch for one drag. Drag on empty space to box-select. Space+drag or middle-drag pans; wheel zooms.';
@@ -119,6 +121,7 @@ export function initBuilder(): BuilderApi {
     bRotate: () => editor.rotate(),
     bMirror: () => editor.mirror(),
     bDelete: () => editor.deleteOrMode(),
+    bCopy: () => editor.copyMode(),
     bUndo: () => editor.undo(),
     bRedo: () => editor.redo(),
     bFit: () => editor.fit(),
@@ -161,7 +164,7 @@ export function initBuilder(): BuilderApi {
         <tr><td>W</td><td>Wire tool</td></tr><tr><td>T</td><td>Text note</td></tr><tr><td>X</td><td>Probe (see a net on the Response plot)</td></tr><tr><td>V / Esc</td><td>Select tool</td></tr>
         <tr><td>S / M</td><td>Drag stretches / moves (Alt flips)</td></tr>
         <tr><td>Ctrl+R / Ctrl+E</td><td>Rotate / mirror</td></tr><tr><td>Del</td><td>Delete selection, or delete mode</td></tr>
-        <tr><td>Ctrl+Z / Y</td><td>Undo / redo</td></tr><tr><td>Ctrl+C / V / D</td><td>Copy / paste / duplicate</td></tr>
+        <tr><td>Ctrl+Z / Y</td><td>Undo / redo</td></tr><tr><td>Ctrl+C</td><td>Copy mode: click an item (or start with a selection), click to drop copies</td></tr><tr><td>Ctrl+V / D</td><td>Paste last copy / duplicate</td></tr>
         <tr><td>Arrows</td><td>Nudge</td></tr><tr><td>F</td><td>Fit to view</td></tr></table>`;
       return;
     }

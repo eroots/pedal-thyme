@@ -176,11 +176,12 @@ export function exportAsc(doc: Schematic, opt: AscExportOptions = {}): string {
         break;
       }
       case 'PROBE': break;
-      case 'SW': case 'SPDT': {
+      case 'SW': case 'SPDT': case 'ONOFFON': {
         // A closed switch joins its pins' nets, which our extraction already merged: flag both ends.
-        const pins = p.kind === 'SW' ? (p.props?.closed ? ['1', '2'] : []) : ['c', p.props?.pos === 'b' ? 'b' : 'a'];
+        const pos = p.props?.pos ?? 'a';
+        const pins = p.kind === 'SW' ? (p.props?.closed ? ['1', '2'] : []) : p.kind === 'ONOFFON' && pos === 'off' ? [] : ['c', pos === 'b' ? 'b' : 'a'];
         for (const pin of pins) { const t = tgt(p, pin); flag(t.at, t.net); }
-        knobs.push(`${p.ref || p.id}: ${p.kind === 'SW' ? (p.props?.closed ? 'closed' : 'open') : `to ${p.props?.pos ?? 'a'}`}`);
+        knobs.push(`${p.ref || p.id}: ${p.kind === 'SW' ? (p.props?.closed ? 'closed' : 'open') : pos === 'off' ? 'centre off' : `to ${pos}`}`);
         break;
       }
       case 'POT': {

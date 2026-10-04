@@ -3,7 +3,7 @@
 import type { TaperKey } from '../core/pots';
 
 export type PartKind =
-  | 'R' | 'C' | 'L' | 'POT' | 'RHEO' | 'D' | 'LED' | 'NPN' | 'PNP' | 'NJF' | 'PJF' | 'NMOS' | 'PMOS' | 'SW' | 'SPDT' | 'OA' | 'BUF'
+  | 'R' | 'C' | 'L' | 'POT' | 'RHEO' | 'D' | 'LED' | 'NPN' | 'PNP' | 'NJF' | 'PJF' | 'NMOS' | 'PMOS' | 'SW' | 'SPDT' | 'ONOFFON' | 'OA' | 'BUF'
   | 'GND' | 'SUPPLY' | 'LABEL' | 'IN' | 'OUT' | 'PROBE';
 
 /** Rotation in degrees, clockwise on screen. */
@@ -19,8 +19,8 @@ export interface PartProps {
   model?: string;
   /** SPST state. */
   closed?: boolean;
-  /** SPDT position. */
-  pos?: 'a' | 'b';
+  /** SPDT position (on-off-on switches also have a centre 'off'). */
+  pos?: 'a' | 'b' | 'off';
   /** Net name for LABEL and SUPPLY parts (e.g. "VREF", "9V"). */
   name?: string;
   /** Pots: lugs 1 and 3 swapped (variable resistor: lugs 2+3), so turning up moves the other way. */

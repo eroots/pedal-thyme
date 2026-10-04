@@ -30,7 +30,7 @@ const esc = (s: unknown): string =>
 
 const PALETTE: { group: string; kinds: PartKind[] }[] = [
   { group: 'Passive', kinds: ['R', 'C', 'L'] },
-  { group: 'Controls', kinds: ['POT', 'RHEO', 'SW', 'SPDT'] },
+  { group: 'Controls', kinds: ['POT', 'RHEO', 'SW', 'SPDT', 'ONOFFON'] },
   { group: 'Diodes', kinds: ['D', 'LED'] },
   { group: 'Transistors', kinds: ['NPN', 'PNP', 'NJF', 'PJF', 'NMOS', 'PMOS'] },
   { group: 'Active', kinds: ['OA', 'BUF'] },
@@ -84,7 +84,7 @@ export function initBuilder(): BuilderApi {
 
   /* ---------- Palette & toolbar ---------- */
   $('#bPalette').innerHTML = PALETTE.map(g => `<div class="group">${g.group}</div><div class="pal-grid">${g.kinds.map(k => {
-    const part: SchPart = { id: 'x', kind: k, x: 0, y: 0, rot: 0, props: k === 'POT' || k === 'RHEO' ? { turn: 0.5 } : k === 'SPDT' ? { pos: 'a' } : undefined };
+    const part: SchPart = { id: 'x', kind: k, x: 0, y: 0, rot: 0, props: k === 'POT' || k === 'RHEO' ? { turn: 0.5 } : k === 'SPDT' || k === 'ONOFFON' ? { pos: 'a' } : undefined };
     const hk = Object.entries(PART_KEYS).find(([, kind]) => kind === k)?.[0];
     return `<button class="pal" data-kind="${k}" title="${esc(PARTS[k].label)}${hk ? ` (${hk.toUpperCase()})` : ''}">${hk ? `<kbd>${hk.toUpperCase()}</kbd>` : ''}${renderSchematic({ version: 1, parts: [part], wires: [] }, { bare: true, title: PARTS[k].label })}<span>${esc(PARTS[k].label)}</span></button>`;
   }).join('')}</div>`).join('');
@@ -190,7 +190,7 @@ export function initBuilder(): BuilderApi {
       h += row(rev[0], `<span class="chk"><input type="checkbox" data-field="reverse" ${p.props?.reverse ? 'checked' : ''}> <span class="hint">${rev[1]}</span></span>`);
     }
     if (SWEEPABLE_KINDS.includes(p.kind)) {
-      h += row('Sweepable', `<span class="chk"><input type="checkbox" data-field="sweep" ${p.props?.sweep ? 'checked' : ''}> <span class="hint">offer ${p.kind === 'POT' || p.kind === 'RHEO' ? 'its rotation and value' : 'its value'} in the Sweep menu</span></span>`);
+      h += row('Sweepable', `<span class="chk"><input type="checkbox" data-field="sweep" ${p.props?.sweep ? 'checked' : ''}> <span class="hint">offer ${p.kind === 'POT' || p.kind === 'RHEO' ? 'its rotation and value' : ['SW', 'SPDT', 'ONOFFON'].includes(p.kind) ? 'its positions' : 'its value'} in the Sweep menu</span></span>`);
     }
     if (p.kind === 'OA') h += row('Model', `<select data-field="model">${Object.entries(OPAMP_MODELS).map(([k, m]) => `<option value="${k}" ${p.props?.model === k ? 'selected' : ''}>${esc(m.label)}</option>`).join('')}</select>`);
     const modelSelect = (models: Record<string, { label: string; approx?: boolean }>, filter: (m: any) => boolean = () => true) =>
@@ -201,7 +201,10 @@ export function initBuilder(): BuilderApi {
     if (p.kind === 'NMOS' || p.kind === 'PMOS') h += modelSelect(MOS_MODELS, m => m.pol === (p.kind === 'NMOS' ? 'n' : 'p'));
     if (['D', 'LED', 'NPN', 'PNP', 'NJF', 'PJF', 'NMOS', 'PMOS'].includes(p.kind)) h += '<div data-bias></div>';
     if (p.kind === 'SW') h += row('State', `<select data-field="closed"><option value="1" ${p.props?.closed ? 'selected' : ''}>Closed</option><option value="0" ${!p.props?.closed ? 'selected' : ''}>Open</option></select>`);
-    if (p.kind === 'SPDT') h += row('Position', `<select data-field="pos"><option value="a" ${p.props?.pos !== 'b' ? 'selected' : ''}>To A (upper)</option><option value="b" ${p.props?.pos === 'b' ? 'selected' : ''}>To B (lower)</option></select>`);
+    if (p.kind === 'SPDT' || p.kind === 'ONOFFON') {
+      const pos = p.props?.pos ?? 'a', opt = (v: string, label: string) => `<option value="${v}" ${pos === v ? 'selected' : ''}>${label}</option>`;
+      h += row('Position', `<select data-field="pos">${opt('a', 'To A (upper)')}${p.kind === 'ONOFFON' ? opt('off', 'Off (centre)') : ''}${opt('b', 'To B (lower)')}</select>`);
+    }
     if (p.kind === 'LABEL' || p.kind === 'SUPPLY') h += row('Net name', `<input type="text" data-field="name" value="${esc(p.props?.name || '')}" spellcheck="false">`);
     if (p.kind === 'SUPPLY') h += row('Voltage', `<span class="valrow"><input type="text" data-field="value" value="${esc(p.value ?? 9)}"><span class="unit">V</span></span>`);
     if (p.kind === 'NMOS' || p.kind === 'PMOS') h += '<p class="hint">Real thresholds vary a lot between samples (2N7000: about 0.8–3 V), so circuits use a trimmer or drain feedback. For a clipper, tie the gate to the drain: it then conducts above V<sub>th</sub>, and its body diode conducts the other way.</p>';
@@ -331,7 +334,7 @@ export function initBuilder(): BuilderApi {
     } else if (f === 'taper') patch = { props: { taper: el.value as 'A' | 'B' | 'C' } };
     else if (f === 'model') patch = { props: { model: el.value } };
     else if (f === 'closed') patch = { props: { closed: el.value === '1' } };
-    else if (f === 'pos') patch = { props: { pos: el.value as 'a' | 'b' } };
+    else if (f === 'pos') patch = { props: { pos: el.value as 'a' | 'b' | 'off' } };
     else if (f === 'name') patch = { props: { name: el.value.trim() } };
     else if (f === 'sweep') patch = { props: { sweep: el.checked || undefined } };
     else if (f === 'reverse') patch = { props: { reverse: el.checked || undefined } };

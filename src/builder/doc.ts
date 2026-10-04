@@ -27,6 +27,7 @@ export const PART_DEFAULTS: Record<PartKind, PartDefault> = {
   PMOS: { prefix: 'Q', props: { model: 'BS250' } },
   SW: { prefix: 'SW', props: { closed: true } },
   SPDT: { prefix: 'SW', props: { pos: 'a' } },
+  ONOFFON: { prefix: 'SW', props: { pos: 'a' } },
   OA: { prefix: 'U', props: { model: 'TL072' } },
   BUF: { prefix: 'B' },
   GND: {},

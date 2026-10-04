@@ -201,9 +201,13 @@ export function initSimPanel(): SimPanel {
     const items: string[] = st.showOut ? [`<span><span class="sw" style="background:${cssVar('--accent')}"></span>Output</span>`] : [];
     res.probes.forEach(p => items.push(`<span><span class="sw" style="background:${p.color}"></span>${esc(p.ref)}</span>`));
     if (ideal && st.showOut) items.push('<span><span class="sw" style="background:repeating-linear-gradient(90deg, var(--muted) 0 4px, transparent 4px 7px)"></span>Ideal source/load</span>');
-    if (sweep.length && st.showOut) items.push(`<span><span class="ramp" style="background:linear-gradient(90deg, ${sweepColor(0)}, ${sweepColor(1)})"></span>${esc(sweep[0].label)} → ${esc(sweep[sweep.length - 1].label)}</span>`);
+    // Switch positions are discrete: one swatch each. Values and rotations: a colour ramp.
+    if (sweep.length && st.showOut) {
+      if (st.sweep.startsWith('pos:')) sweep.forEach(s => items.push(`<span><span class="sw" style="background:${sweepColor(s.r)}"></span>${esc(s.label)}</span>`));
+      else items.push(`<span><span class="ramp" style="background:linear-gradient(90deg, ${sweepColor(0)}, ${sweepColor(1)})"></span>${esc(sweep[0].label)} → ${esc(sweep[sweep.length - 1].label)}</span>`);
+    }
     if (st.showTol && tolBand && st.showOut) items.push(`<span><span class="sw" style="background:var(--accent-soft);height:8px"></span>R ±${S.settings.rTol}% · C ±${S.settings.cTol}%</span>`);
-    if (!res.probes.length) items.push(st.showOut ? '<span class="hint">Add probes (Measure → Probe) to see other nets.</span>' : '<span class="hint">Output is hidden and there are no probes: add a probe or tick Output.</span>');
+    if (!res.probes.length) items.push(st.showOut ? '<span class="hint">Add probes (Probe in the toolbar, or X) to see other nets.</span>' : '<span class="hint">Output is hidden and there are no probes: add a probe or tick Output.</span>');
     $('#bLegend').innerHTML = items.join('');
   }
   for (const id of ['#bSimCanvas', '#bSimPhase']) {

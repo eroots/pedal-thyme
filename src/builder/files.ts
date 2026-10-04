@@ -82,7 +82,7 @@ export function projectSpice(name: string, doc: Schematic, term: Term | null, fm
 /* ---------- Parts list ---------- */
 export interface BomRow { qty: number; refs: string[]; part: string; value: string; notes: string }
 
-const COMPONENT_KINDS = new Set(['R', 'C', 'L', 'POT', 'RHEO', 'D', 'LED', 'NPN', 'PNP', 'NJF', 'PJF', 'NMOS', 'PMOS', 'SW', 'SPDT', 'OA']);
+const COMPONENT_KINDS = new Set(['R', 'C', 'L', 'POT', 'RHEO', 'D', 'LED', 'NPN', 'PNP', 'NJF', 'PJF', 'NMOS', 'PMOS', 'SW', 'SPDT', 'ONOFFON', 'OA']);
 
 function describe(p: SchPart): { part: string; value: string; notes: string } {
   switch (p.kind) {
@@ -106,7 +106,8 @@ function describe(p: SchPart): { part: string; value: string; notes: string } {
       return { part: 'Transistor (JFET)', value: m, notes: JFET_MODELS[m]?.label ?? '' };
     }
     case 'SW': return { part: 'Switch', value: 'SPST', notes: '' };
-    case 'SPDT': return { part: 'Switch', value: 'SPDT', notes: '' };
+    case 'SPDT': return { part: 'Switch', value: 'SPDT on-on', notes: '' };
+    case 'ONOFFON': return { part: 'Switch', value: 'SPDT on-off-on', notes: '' };
     case 'OA': {
       const m = p.props?.model ?? 'ideal';
       return { part: 'Op-amp', value: m === 'ideal' ? '(choose a part)' : m, notes: m === 'ideal' ? 'simulated as ideal' : OPAMP_MODELS[m]?.label ?? '' };

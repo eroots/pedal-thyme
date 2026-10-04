@@ -64,8 +64,16 @@ export function impedances(ex: Extraction, f: number, term?: Term | null): { zin
 export interface SweepTarget { id: string; label: string }
 export interface Variant { label: string; r: number; doc: Schematic }
 
-/** Parts whose value can be swept (and pots, whose rotation can). */
-export const SWEEPABLE_KINDS = ['R', 'C', 'L', 'POT', 'RHEO'];
+/** Parts that can be swept: values, pot rotation, and switch positions. */
+export const SWEEPABLE_KINDS = ['R', 'C', 'L', 'POT', 'RHEO', 'SW', 'SPDT', 'ONOFFON'];
+const SWITCHES = ['SW', 'SPDT', 'ONOFFON'];
+
+/** A switch's positions, in order, with the props for each and a short label. */
+export function switchPositions(kind: string): { label: string; props: SchPart['props'] }[] {
+  if (kind === 'SW') return [{ label: 'off', props: { closed: false } }, { label: 'on', props: { closed: true } }];
+  if (kind === 'ONOFFON') return [{ label: 'A', props: { pos: 'a' } }, { label: 'off', props: { pos: 'off' } }, { label: 'B', props: { pos: 'b' } }];
+  return [{ label: 'A', props: { pos: 'a' } }, { label: 'B', props: { pos: 'b' } }];
+}
 
 /**
  * Sweep options for parts marked Sweepable: pots sweep their rotation, and any marked R, C, L or
@@ -74,10 +82,12 @@ export const SWEEPABLE_KINDS = ['R', 'C', 'L', 'POT', 'RHEO'];
 export function sweepTargets(doc: Schematic): SweepTarget[] {
   const marked = doc.parts.filter(p => SWEEPABLE_KINDS.includes(p.kind) && p.ref && p.props?.sweep);
   const pots = marked.filter(p => p.kind === 'POT' || p.kind === 'RHEO');
-  const valued = marked.filter(p => (p.value ?? 0) > 0);
+  const valued = marked.filter(p => (p.value ?? 0) > 0 && !SWITCHES.includes(p.kind));
+  const switches = marked.filter(p => SWITCHES.includes(p.kind));
   return [
     ...pots.map(p => ({ id: `turn:${p.id}`, label: `${p.ref} rotation` })),
     ...valued.map(p => ({ id: `value:${p.id}`, label: `${p.ref} value (÷3 … ×3)` })),
+    ...switches.map(p => ({ id: `pos:${p.id}`, label: `${p.ref} position (${switchPositions(p.kind).map(s => s.label).join(' / ')})` })),
   ];
 }
 
@@ -88,6 +98,11 @@ export function sweepVariants(doc: Schematic, targetId: string, steps: number): 
   const [kind, id] = targetId.split(':');
   const part = doc.parts.find(p => p.id === id);
   if (!part) return [];
+  if (kind === 'pos') {
+    // One curve per switch position (the Steps setting doesn't apply).
+    const pos = switchPositions(part.kind);
+    return pos.map((s, i) => ({ label: `${part.ref} ${s.label}`, r: pos.length > 1 ? i / (pos.length - 1) : 0, doc: withPart(doc, id, p => ({ ...p, props: { ...p.props, ...s.props } })) }));
+  }
   const n = Math.max(2, Math.min(15, Math.round(steps)));
   return Array.from({ length: n }, (_, i) => {
     const r = i / (n - 1);
@@ -137,7 +152,7 @@ export function band(docs: Schematic[], freqs: number[], term?: Term | null): { 
 
 /** Front-panel controls in a document: pots and switches, in reading order. */
 export function controlsOf(doc: Schematic): SchPart[] {
-  return doc.parts.filter(p => ['POT', 'RHEO', 'SW', 'SPDT'].includes(p.kind))
+  return doc.parts.filter(p => ['POT', 'RHEO', 'SW', 'SPDT', 'ONOFFON'].includes(p.kind))
     .sort((a, b) => (a.ref || '').localeCompare(b.ref || '', undefined, { numeric: true }));
 }
 

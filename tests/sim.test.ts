@@ -91,3 +91,35 @@ describe('front panel', () => {
     expect(controlsOf(doc).map(p => p.ref)).toEqual(['RB', 'RM', 'RT', 'SW1']);
   });
 });
+
+describe('switches', () => {
+  // A divider whose lower leg is chosen by an on-off-on switch: A = 1k, centre off, B = 100k.
+  const selector = (pos: 'a' | 'off' | 'b', sweep = false) => sch().IN(0, 0).wire([0, 0], [10, 0]).R('R1', 40, 0, 0, 10e3).wire([70, 0], [100, 0]).OUT(100, 0)
+    .part('ONOFFON', 'SW1', 130, 0, 0, undefined, { props: { pos, ...(sweep ? { sweep: true } : {}) } })
+    .R('R2', 190, -20, 0, 1e3).GND(220, -20).R('R3', 190, 20, 0, 100e3).GND(220, 20).build();
+  const gain = (doc: ReturnType<typeof selector>) => simulate(extract(doc), [], [1000]).out.mag[0];
+
+  it('an on-off-on switch connects A, nothing, or B', () => {
+    expect(gain(selector('a'))).toBeCloseTo(db(1 / 11), 3);
+    expect(gain(selector('off'))).toBeCloseTo(0, 3);
+    expect(gain(selector('b'))).toBeCloseTo(db(100 / 110), 3);
+  });
+
+  it('switch positions can be swept (one curve per position)', () => {
+    const doc = selector('a', true);
+    const t = sweepTargets(doc).find(x => x.id === 'pos:SW1')!;
+    expect(t.label).toBe('SW1 position (A / off / B)');
+    const v = sweepVariants(doc, t.id, 5);
+    expect(v.map(x => x.label)).toEqual(['SW1 A', 'SW1 off', 'SW1 B']);
+    expect(v.map(x => x.r)).toEqual([0, 0.5, 1]);
+    expect(v.map(x => gain(x.doc))).toEqual([gain(selector('a')), gain(selector('off')), gain(selector('b'))]);
+    // Unmarked switches aren't offered.
+    expect(sweepTargets(selector('a')).some(x => x.id === 'pos:SW1')).toBe(false);
+  });
+
+  it('SPST and on-on switches sweep their two positions', () => {
+    const spst = sch().IN(0, 0).part('SW', 'SW2', 30, 0, 0, undefined, { props: { closed: true, sweep: true } }).OUT(60, 0).build();
+    expect(sweepVariants(spst, 'pos:SW2', 7).map(v => v.label)).toEqual(['SW2 off', 'SW2 on']);
+    expect(controlsOf(selector('a')).map(p => p.ref)).toEqual(['SW1']);
+  });
+});

@@ -26,7 +26,7 @@ export function initFrontPanel(root: HTMLElement, editor: Editor): FrontPanel {
   let signature = '';
 
   const knobInfo = (p: SchPart) => `${((p.props?.turn ?? 0.5) * 10).toFixed(1)} · ${fmtEng(p.value, 'Ω')} ${p.props?.taper ?? 'B'}`;
-  const switchInfo = (p: SchPart) => (p.kind === 'SW' ? (p.props?.closed ? 'On' : 'Off') : p.props?.pos === 'b' ? 'B' : 'A');
+  const switchInfo = (p: SchPart) => (p.kind === 'SW' ? (p.props?.closed ? 'On' : 'Off') : p.props?.pos === 'b' ? 'B' : p.props?.pos === 'off' ? 'Off' : 'A');
 
   function build(doc: Schematic): void {
     const controls = controlsOf(doc);
@@ -56,11 +56,11 @@ export function initFrontPanel(root: HTMLElement, editor: Editor): FrontPanel {
       const p = doc.parts.find(q => q.id === el.dataset.id);
       if (!p) continue;
       if (el.classList.contains('switch')) {
-        const on = p.kind === 'SW' ? !!p.props?.closed : p.props?.pos !== 'b';
+        const on = p.kind === 'SW' ? !!p.props?.closed : p.props?.pos === 'a' || (p.kind === 'SPDT' && p.props?.pos !== 'b');
         const btn = el.querySelector<HTMLButtonElement>('.toggle')!;
         btn.classList.toggle('on', on);
         btn.textContent = switchInfo(p);
-        el.querySelector('.kval')!.textContent = p.kind === 'SW' ? 'SPST' : 'SPDT';
+        el.querySelector('.kval')!.textContent = p.kind === 'SW' ? 'on-off' : p.kind === 'SPDT' ? 'on-on' : 'on-off-on';
         continue;
       }
       const turn = p.props?.turn ?? 0.5, a = angle(turn);
@@ -120,7 +120,9 @@ export function initFrontPanel(root: HTMLElement, editor: Editor): FrontPanel {
     if (!btn) return;
     const id = btn.closest<HTMLElement>('.knob')!.dataset.id!, p = editor.doc.parts.find(q => q.id === id);
     if (!p) return;
-    editor.commit(updatePart(editor.doc, id, { props: p.kind === 'SW' ? { closed: !p.props?.closed } : { pos: p.props?.pos === 'b' ? 'a' : 'b' } }));
+    // Click cycles through the positions (on-off-on: A → off → B → A).
+    const next = p.kind === 'ONOFFON' ? ({ a: 'off', off: 'b', b: 'a' } as const)[p.props?.pos ?? 'a'] : p.props?.pos === 'b' ? 'a' : 'b';
+    editor.commit(updatePart(editor.doc, id, { props: p.kind === 'SW' ? { closed: !p.props?.closed } : { pos: next } }));
   });
 
   return { sync };

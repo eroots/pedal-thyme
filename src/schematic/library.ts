@@ -175,20 +175,32 @@ export const PARTS: Record<PartKind, PartSpec> = {
     elements: (p, n) => [{ type: 'M', name: p.ref || p.id, d: n('d'), g: n('g'), s: n('s'), model: p.props?.model ?? 'BS250' }],
   },
   SW: {
-    label: 'Switch (SPST)', pins: TWO, box: [-30, -12, 30, 3],
+    label: 'Switch (on-off, SPST)', pins: TWO, box: [-30, -12, 30, 3],
     draw: p => line(-30, 0, -12, 0) + line(12, 0, 30, 0) + `<circle class="contact" cx="-12" cy="0" r="2"/><circle class="contact" cx="12" cy="0" r="2"/>`
       + (p.props?.closed ? line(-12, 0, 12, -2) : line(-12, 0, 10, -11)),
     valueText: p => (p.props?.closed ? 'closed' : 'open'),
     elements: (p, n) => [{ type: 'SW', name: p.ref || p.id, a: n('1'), b: n('2'), closed: !!p.props?.closed }],
   },
   SPDT: {
-    label: 'Switch (SPDT)', box: [-30, -22, 30, 22],
+    label: 'Switch (on-on, SPDT)', box: [-30, -22, 30, 22],
     pins: [{ name: 'c', at: [-30, 0] }, { name: 'a', at: [30, -20] }, { name: 'b', at: [30, 20] }],
     draw: p => line(-30, 0, -12, 0) + line(12, -20, 30, -20) + line(12, 20, 30, 20)
       + `<circle class="contact" cx="-12" cy="0" r="2"/><circle class="contact" cx="12" cy="-20" r="2"/><circle class="contact" cx="12" cy="20" r="2"/>`
       + (p.props?.pos === 'b' ? line(-12, 0, 11, 17) : line(-12, 0, 11, -17)),
     valueText: p => `to ${p.props?.pos ?? 'a'}`,
-    elements: (p, n) => [{ type: 'SPDT', name: p.ref || p.id, com: n('c'), a: n('a'), b: n('b'), pos: p.props?.pos ?? 'a' }],
+    elements: (p, n) => [{ type: 'SPDT', name: p.ref || p.id, com: n('c'), a: n('a'), b: n('b'), pos: p.props?.pos === 'b' ? 'b' : 'a' }],
+  },
+  ONOFFON: {
+    // SPDT with a centre-off position: common to A, to nothing, or to B.
+    label: 'Switch (on-off-on)', box: [-30, -22, 30, 22],
+    pins: [{ name: 'c', at: [-30, 0] }, { name: 'a', at: [30, -20] }, { name: 'b', at: [30, 20] }],
+    draw: p => line(-30, 0, -12, 0) + line(12, -20, 30, -20) + line(12, 20, 30, 20)
+      + `<circle class="contact" cx="-12" cy="0" r="2"/><circle class="contact" cx="12" cy="-20" r="2"/><circle class="contact" cx="12" cy="20" r="2"/>`
+      + (p.props?.pos === 'b' ? line(-12, 0, 11, 17) : p.props?.pos === 'a' ? line(-12, 0, 11, -17) : line(-12, 0, 9, 0)),
+    valueText: p => (p.props?.pos === 'a' || p.props?.pos === 'b' ? `to ${p.props.pos}` : 'off'),
+    elements: (p, n) => (p.props?.pos === 'a' || p.props?.pos === 'b'
+      ? [{ type: 'SPDT', name: p.ref || p.id, com: n('c'), a: n('a'), b: n('b'), pos: p.props.pos }]
+      : []),
   },
   OA: {
     label: 'Op-amp', box: [-40, -40, 40, 40], avoid: [0, 1],

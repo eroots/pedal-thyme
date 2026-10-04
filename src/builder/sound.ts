@@ -17,7 +17,11 @@ const FS = 48000;
 const $ = <T extends HTMLElement = HTMLSelectElement>(s: string) => document.querySelector(s) as T;
 const esc = (s: unknown): string => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!));
 
-export interface SoundContext { ex: Extraction; doc: Schematic; term: Term | null; name: string }
+export interface SoundContext {
+  ex: Extraction; doc: Schematic; term: Term | null; name: string;
+  /** Extra nets to show (default: the document's probes). */
+  probes?: { ref: string; color: string; net: Node }[];
+}
 
 interface Result {
   input: Float64Array;
@@ -41,7 +45,8 @@ export interface SoundPanel {
   restore(s: SoundState | null): void;
 }
 
-export function initSoundPanel(ctx: () => SoundContext): SoundPanel {
+/** `P` prefixes the element ids (the Builder's panel uses "sd", the Pedalboard's a copy with its own). */
+export function initSoundPanel(ctx: () => SoundContext, P = 'sd'): SoundPanel {
   let res: Result | null = null;
   let stale = false;
   let worker: Worker | null = null;
@@ -49,19 +54,19 @@ export function initSoundPanel(ctx: () => SoundContext): SoundPanel {
   let audio: AudioContext | null = null;
   let playing: AudioBufferSourceNode | null = null;
 
-  const msg = (html: string) => { $('#sdMsg').innerHTML = html; };
+  const msg = (html: string) => { $(`#${P}Msg`).innerHTML = html; };
   const syncSource = () => {
-    const s = $('#sdSource').value;
-    $('#sdFreqL').hidden = s !== 'sine';
-    $('#sdNoteL').hidden = s !== 'note';
-    $('#sdFileL').hidden = s !== 'file';
+    const s = $(`#${P}Source`).value;
+    $(`#${P}FreqL`).hidden = s !== 'sine';
+    $(`#${P}NoteL`).hidden = s !== 'note';
+    $(`#${P}FileL`).hidden = s !== 'file';
   };
-  $('#sdSource').addEventListener('change', syncSource);
+  $(`#${P}Source`).addEventListener('change', syncSource);
   syncSource();
 
   // Audio files: decoded with Web Audio, mixed to mono and resampled to 48 kHz.
-  $('#sdFileBtn').addEventListener('click', () => $<HTMLInputElement>('#sdFile').click());
-  $<HTMLInputElement>('#sdFile').addEventListener('change', async e => {
+  $(`#${P}FileBtn`).addEventListener('click', () => $<HTMLInputElement>(`#${P}File`).click());
+  $<HTMLInputElement>(`#${P}File`).addEventListener('change', async e => {
     const f = (e.target as HTMLInputElement).files?.[0];
     (e.target as HTMLInputElement).value = '';
     if (!f) return;
@@ -73,39 +78,39 @@ export function initSoundPanel(ctx: () => SoundContext): SoundPanel {
       src.buffer = decoded; src.connect(off.destination); src.start();
       const mono = await off.startRendering();
       fileSignal = { name: f.name, x: Float64Array.from(mono.getChannelData(0)) };
-      $('#sdFileName').textContent = `${f.name} (${decoded.duration.toFixed(1)} s)`;
+      $(`#${P}FileName`).textContent = `${f.name} (${decoded.duration.toFixed(1)} s)`;
     } catch (err) {
       alert(`Couldn’t read ${f.name} as audio: ${(err as Error).message}`);
     }
   });
 
   function makeInput(): { x: Float64Array; sineHz: number | null; label: string } | null {
-    const level = +$('#sdLevel').value, dur = +$('#sdDur').value, src = $('#sdSource').value;
-    if (src === 'sine') { const f = +$('#sdFreq').value; return { x: sine(f, level, dur, FS), sineHz: f, label: `${f} Hz sine` }; }
-    if (src === 'note') { const f = +$('#sdNote').value; return { x: pluck([f], level, dur, FS), sineHz: null, label: `plucked ${$('#sdNote').selectedOptions[0].text}` }; }
+    const level = +$(`#${P}Level`).value, dur = +$(`#${P}Dur`).value, src = $(`#${P}Source`).value;
+    if (src === 'sine') { const f = +$(`#${P}Freq`).value; return { x: sine(f, level, dur, FS), sineHz: f, label: `${f} Hz sine` }; }
+    if (src === 'note') { const f = +$(`#${P}Note`).value; return { x: pluck([f], level, dur, FS), sineHz: null, label: `plucked ${$(`#${P}Note`).selectedOptions[0].text}` }; }
     if (src === 'chord') return { x: pluck(E_MAJOR, level, dur, FS), sineHz: null, label: 'strummed E chord' };
     if (!fileSignal) { msg('Choose an audio file first (a DI guitar recording works best).'); return null; }
     return { x: normalize(fileSignal.x.slice(0, Math.round(dur * FS)), level), sineHz: null, label: fileSignal.name };
   }
 
-  $('#sdRender').addEventListener('click', () => {
+  $(`#${P}Render`).addEventListener('click', () => {
     const c = ctx();
     if (c.ex.issues.some(i => i.severity === 'error')) { msg('Fix the errors listed under Checks first.'); return; }
     const inp = makeInput();
     if (!inp) return;
     worker?.terminate();
     worker = new RenderWorker();
-    const probes = probesOf(c.doc, c.ex);
-    const req: RenderRequest = { netlist: c.ex.netlist, input: inp.x, fs: FS, oversample: +$('#sdOs').value, term: c.term, probes: probes.map(p => p.net) };
-    const prog = $<HTMLProgressElement>('#sdProg');
+    const probes = c.probes ?? probesOf(c.doc, c.ex);
+    const req: RenderRequest = { netlist: c.ex.netlist, input: inp.x, fs: FS, oversample: +$(`#${P}Os`).value, term: c.term, probes: probes.map(p => p.net) };
+    const prog = $<HTMLProgressElement>(`#${P}Prog`);
     prog.hidden = false; prog.value = 0;
-    $<HTMLButtonElement>('#sdRender').disabled = true;
+    $<HTMLButtonElement>(`#${P}Render`).disabled = true;
     msg('Simulating…');
     worker.onmessage = (e: MessageEvent<RenderMessage>) => {
       const m = e.data;
       if (m.type === 'progress') { prog.value = m.fraction; return; }
       prog.hidden = true;
-      $<HTMLButtonElement>('#sdRender').disabled = false;
+      $<HTMLButtonElement>(`#${P}Render`).disabled = false;
       worker?.terminate(); worker = null;
       if (m.type === 'error') { msg(`The simulation failed: ${esc(m.message)}`); return; }
       const out = new Map<Node, Float64Array>(m.out);
@@ -121,21 +126,21 @@ export function initSoundPanel(ctx: () => SoundContext): SoundPanel {
   });
 
   /* ---------- Drawing ---------- */
-  $('#sdWin').addEventListener('change', () => draw());
-  $<HTMLInputElement>('#sdPos').addEventListener('input', () => draw());
+  $(`#${P}Win`).addEventListener('change', () => draw());
+  $<HTMLInputElement>(`#${P}Pos`).addEventListener('input', () => draw());
   function draw(): void {
-    const scope = $<HTMLCanvasElement>('#sdScope'), spec = $<HTMLCanvasElement>('#sdSpec');
+    const scope = $<HTMLCanvasElement>(`#${P}Scope`), spec = $<HTMLCanvasElement>(`#${P}Spec`);
     if (!res) {
       for (const cv of [scope, spec]) cv.getContext('2d')?.clearRect(0, 0, cv.width, cv.height);
-      $('#sdThd').textContent = ''; $('#sdLegend').innerHTML = '';
+      $(`#${P}Thd`).textContent = ''; $(`#${P}Legend`).innerHTML = '';
       return;
     }
     const r = res, n = r.out.length;
     // Waveform window: a few cycles of a sine at the end (steady state), otherwise a slice chosen by the slider.
-    const win = $('#sdWin').value;
+    const win = $(`#${P}Win`).value;
     let count = win === 'auto' ? (r.sineHz ? Math.round((3 * FS) / r.sineHz) : Math.round(0.02 * FS)) : win === 'all' ? n : Math.round(+win * FS);
     count = Math.max(16, Math.min(n, count));
-    const pos = +$<HTMLInputElement>('#sdPos').value / 1000;
+    const pos = +$<HTMLInputElement>(`#${P}Pos`).value / 1000;
     const start = Math.max(0, Math.min(n - count, Math.round(pos * (n - count))));
     const accent = cssVar('--accent'), muted = cssVar('--muted');
     const traces: ScopeTrace[] = [
@@ -158,8 +163,8 @@ export function initSoundPanel(ctx: () => SoundContext): SoundPanel {
       thd = `THD ${h.thd < 0.1 ? h.thd.toFixed(3) : h.thd.toFixed(1)} % · H2 ${rel(2).toFixed(0)} dB · H3 ${rel(3).toFixed(0)} dB · gain ${gain >= 0 ? '+' : ''}${gain.toFixed(1)} dB`;
     }
     drawPlot(spec, { freqs: so.freqs, fr: [20, 20000], y0: top - 120, y1: top, step: 20, unit: '', series, markers });
-    $('#sdThd').textContent = thd;
-    $('#sdLegend').innerHTML = traces.slice().reverse().map(t => `<span><span class="sw" style="background:${t.color}"></span>${esc(t.label)}</span>`).join('');
+    $(`#${P}Thd`).textContent = thd;
+    $(`#${P}Legend`).innerHTML = traces.slice().reverse().map(t => `<span><span class="sw" style="background:${t.color}"></span>${esc(t.label)}</span>`).join('');
     // Swing and DC level over the second half (after any start-up settling).
     let lo = Infinity, hi = -Infinity, sum = 0;
     for (let i = Math.floor(n / 2); i < n; i++) { lo = Math.min(lo, r.out[i]); hi = Math.max(hi, r.out[i]); sum += r.out[i]; }
@@ -173,7 +178,7 @@ export function initSoundPanel(ctx: () => SoundContext): SoundPanel {
   /* ---------- Playback and download ---------- */
   /** Scale for listening: both at the same loudness, or both by one factor (so the pedal's gain is audible). */
   const scales = (r: Result): [number, number] => {
-    if ($<HTMLInputElement>('#sdMatch').checked) {
+    if ($<HTMLInputElement>(`#${P}Match`).checked) {
       const target = 0.12;
       return [Math.min(target / Math.max(rmsOf(r.input), 1e-9), 0.95 / Math.max(peakOf(r.input), 1e-9)), Math.min(target / Math.max(rmsOf(r.out), 1e-9), 0.95 / Math.max(peakOf(r.out), 1e-9))];
     }
@@ -196,10 +201,10 @@ export function initSoundPanel(ctx: () => SoundContext): SoundPanel {
     playing.buffer = buf; playing.connect(audio.destination); playing.start();
   };
   const stop = () => { try { playing?.stop(); } catch { /* already stopped */ } playing = null; };
-  $('#sdPlayWet').addEventListener('click', () => play(true));
-  $('#sdPlayDry').addEventListener('click', () => play(false));
-  $('#sdStop').addEventListener('click', stop);
-  $('#sdDownload').addEventListener('click', () => {
+  $(`#${P}PlayWet`).addEventListener('click', () => play(true));
+  $(`#${P}PlayDry`).addEventListener('click', () => play(false));
+  $(`#${P}Stop`).addEventListener('click', stop);
+  $(`#${P}Download`).addEventListener('click', () => {
     if (!res) return;
     const k = 0.9 / Math.max(peakOf(res.out), 1e-9);
     let mean = 0;
@@ -217,8 +222,8 @@ export function initSoundPanel(ctx: () => SoundContext): SoundPanel {
       stop();
       if (worker) {
         worker.terminate(); worker = null;
-        $<HTMLProgressElement>('#sdProg').hidden = true;
-        $<HTMLButtonElement>('#sdRender').disabled = false;
+        $<HTMLProgressElement>(`#${P}Prog`).hidden = true;
+        $<HTMLButtonElement>(`#${P}Render`).disabled = false;
       }
       res = (s?.res as Result | null) ?? null;
       stale = s?.stale ?? false;

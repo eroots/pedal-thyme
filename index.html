@@ -11,6 +11,7 @@
   <nav class="sections" aria-label="Sections">
     <button data-section="playground">Playground</button>
     <button data-section="builder">Pedal Builder</button>
+    <button data-section="board">Pedalboard</button>
   </nav>
   <div class="settings">
     <label>Resistors <select id="rSeries"></select></label>
@@ -281,6 +282,31 @@
     <section class="card" id="bProps"></section>
     <section class="card"><h2>Checks</h2><div id="bErc"></div></section>
   </aside>
+</div>
+
+<div class="pboard" id="board" hidden>
+  <section class="card b-toolbar pb-head">
+    <input type="text" id="pbName" placeholder="Untitled pedalboard" aria-label="Pedalboard name" spellcheck="false">
+    <button id="pbNew" title="Start an empty pedalboard">New</button>
+    <label class="btn" title="Open a pedalboard file (.pfl-board.json); its pedals open as tabs in the Builder">Open<input type="file" id="pbOpen" accept=".json,application/json" hidden></label>
+    <button id="pbSave" title="Save the pedalboard: the list of its pedals' files, in order, with their on/off state (each pedal is saved on its own, from the Builder)">Save</button>
+    <button id="pbSaveAs" title="Save the pedalboard under a new name">Save as…</button>
+    <span class="b-save-state" id="pbSaveState"></span>
+    <span class="sep"></span>
+    <select id="pbAdd" aria-label="Add a pedal"></select>
+  </section>
+  <div class="b-notice card" id="pbNote" hidden></div>
+  <section class="card pb-chain">
+    <div class="pb-strip" id="pbStrip"></div>
+    <p class="hint" id="pbEmpty">The pedals are the schematics open in the Builder (one per tab). Add them here in signal order, then switch each one on or off: the guitar only goes through the ones that are on. Turning knobs here edits that pedal.</p>
+  </section>
+  <section class="card pb-sim">
+    <div class="plothead"><h2>Response</h2><label title="Also show the signal after each pedal (dashed)"><input type="checkbox" id="pbStages" checked> After each pedal</label></div>
+    <canvas id="pbPlot"></canvas>
+    <div class="legend" id="pbLegend"></div>
+    <p class="hint" id="pbMsg"></p>
+  </section>
+  <div id="pbSoundSlot"></div>
 </div>
 
 <footer>

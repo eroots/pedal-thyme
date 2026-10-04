@@ -19,6 +19,9 @@ import { canWriteFolders, idbGet, idbSet } from './folder';
 import { fileKey, isBlank, loadSession, newTab, renderStrip, saveSession, tabTitle, traceKey, upstreamOf, type Tab } from './tabs';
 import { joinChain } from '../engine/chain';
 import type { Upstream } from './simpanel';
+import { initBoard, type BoardUi } from './boardui';
+import { makeProject } from './files';
+import type { DocHost } from './frontpanel';
 import { initFrontPanel } from './frontpanel';
 import { initSimPanel } from './simpanel';
 import { initSoundPanel } from './sound';
@@ -48,9 +51,11 @@ export interface BuilderApi {
   load(doc: Schematic): void;
   /** Called when the Builder section becomes visible (sizes the canvas). */
   shown(): void;
+  /** Called when the Pedalboard section becomes visible. */
+  boardShown(): void;
 }
 
-export function initBuilder(): BuilderApi {
+export function initBuilder(nav: { showBoard(): void; showBuilder(): void }): BuilderApi {
   const sim = initSimPanel();
   const session = loadSession(sim.settings());
   const tabs: Tab[] = session.tabs;
@@ -60,6 +65,8 @@ export function initBuilder(): BuilderApi {
   /** Trace pictures and file handles are still being read back from IndexedDB. */
   let restoring = true;
   let ready = false;
+  /** The Pedalboard section (set up once the Builder is). */
+  let board: BoardUi | null = null;
   let ex: Extraction = extract(active.state.doc);
 
   const editor = new Editor(document.querySelector<SVGSVGElement>('#bCanvas')!, $('#bCanvasWrap'), active.state.doc, {
@@ -68,6 +75,7 @@ export function initBuilder(): BuilderApi {
       if (committed && !switching) { sound.invalidate(); files.changed(); }
       if (committed) { persist(); renderProps(); }
       updateToolbar();
+      board?.changed(active.id);
     },
     select: () => renderProps(),
     mode: (mode, kind) => renderModes(mode, kind),
@@ -109,8 +117,12 @@ export function initBuilder(): BuilderApi {
       if (!isBlank({ ...active, file: active.file ?? null })) addTab();
       return true;
     },
+    openBoard: async (text, handle) => {
+      try { await board!.open(text, handle); } catch (err) { alert(`Couldn’t open the pedalboard: ${(err as Error).message}`); }
+    },
     meta: () => {
       if (!ready) return;
+      board?.changed();
       const f = files.state();
       if (!restoring && f.file !== (active.file ?? null)) { active.file = f.file; void idbSet(fileKey(active.id), f.file ?? undefined); }
       active.name = f.name; active.dirty = f.dirty;
@@ -248,6 +260,7 @@ export function initBuilder(): BuilderApi {
     if (t === active) switchTo(tabs[Math.min(i, tabs.length - 1)]);
     else { renderTabs(); persist(); }
     sim.refreshCompare();
+    board?.changed();
   }
 
   $('#bTabs').addEventListener('click', e => {
@@ -673,6 +686,71 @@ export function initBuilder(): BuilderApi {
   renderBias();
   panel.sync(editor.doc);
 
+  /* ---------- Pedalboard (its pedals are the tabs) ---------- */
+  /** Knob edits on a pedal: through the editor when it is the shown tab, else into that tab's own history. */
+  const hostCache = new Map<string, DocHost>();
+  function docHost(id: string): DocHost {
+    let h = hostCache.get(id);
+    if (h) return h;
+    let base: Schematic | null = null;
+    const tab = () => tabs.find(t => t.id === id);
+    h = {
+      get doc() { const t = tab(); return t ? docOf(t) : { version: 1 as const, parts: [], wires: [] }; },
+      preview: d => {
+        const t = tab();
+        if (!t) return;
+        if (t === active) { editor.preview(d); return; }
+        base ??= t.state.doc;
+        t.state = { ...t.state, doc: d };
+        board?.changed(id);
+      },
+      commit: d => {
+        const t = tab();
+        if (!t) return;
+        if (t === active) { editor.commit(d); return; }
+        const prev = base ?? t.state.doc;
+        base = null;
+        if (d !== prev) {
+          t.state = { ...t.state, doc: d, undo: [...t.state.undo, JSON.stringify(prev)].slice(-200), redo: [] };
+          t.dirty = true;
+          t.sound = null;
+        } else t.state = { ...t.state, doc: d };
+        renderTabs(); persist(); board?.changed(id);
+      },
+    };
+    hostCache.set(id, h!);
+    return h!;
+  }
+  const fileOf = (t: Tab) => (t === active ? files.state().file : t.file ?? null);
+  board = initBoard({
+    tabs: () => tabs.map(t => ({ id: t.id, name: nameOf(t) })),
+    doc: id => { const t = tabs.find(x => x.id === id); return t ? docOf(t) : null; },
+    ex: id => { const t = tabs.find(x => x.id === id); return t ? exOf(docOf(t)) : null; },
+    docHost,
+    edit: id => { const t = tabs.find(x => x.id === id); if (t) { switchTo(t); nav.showBuilder(); } },
+    openPedal: ({ project, handle, fileName }) => {
+      const open = tabs.find(t => (fileName ? fileOf(t)?.name === fileName : !fileOf(t) && nameOf(t) === project.name));
+      if (open) return open.id;
+      const t = newTab(project.sim ?? sim.settings(), project.schematic);
+      if (project.sim) t.sim = JSON.parse(JSON.stringify(project.sim));
+      t.name = project.name;
+      t.file = handle;
+      t.trace = project.trace ?? null;
+      if (project.view) { t.state.view = project.view; t.needsFit = false; }
+      tabs.push(t);
+      if (handle) void idbSet(fileKey(t.id), handle);
+      if (t.trace) void idbSet(traceKey(t.id), t.trace);
+      renderTabs(); persist(); sim.refreshCompare();
+      return t.id;
+    },
+    pedalFile: id => {
+      const t = tabs.find(x => x.id === id)!;
+      const sims = t === active ? sim.settings() : t.sim;
+      return { file: fileOf(t)?.name ?? null, project: makeProject(nameOf(t), docOf(t), sims, t === active ? editor.getView() : t.state.view) };
+    },
+    folder: files.folder,
+  }, nav.showBoard);
+
   ready = true;
   renderTabs();
   persist();
@@ -682,6 +760,7 @@ export function initBuilder(): BuilderApi {
     load: doc => {
       void host.beforeOpen(null).then(() => { editor.load(JSON.parse(JSON.stringify(doc))); editor.selectIds([]); });
     },
+    boardShown: () => board?.shown(),
     shown: () => {
       editor.render();
       if (active.needsFit) { editor.fit(); active.needsFit = false; }

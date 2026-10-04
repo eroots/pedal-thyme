@@ -10,6 +10,7 @@ import { bomCsv, makeProject, parseProject, projectSpice, safeFileName, schemati
 import type { TraceMenu } from './trace';
 import type { SimPanel } from './simpanel';
 import { TEMPLATES } from './templates';
+import { isBoardText } from './board';
 import { ProjectFolder, allowed, canSaveAs, canWriteFolders, saveAsDialog, writeHandle, type FolderEntry } from './folder';
 
 const $ = <T extends HTMLElement = HTMLInputElement>(sel: string): T => document.querySelector(sel) as T;
@@ -34,6 +35,8 @@ export interface FileHost {
   beforeOpen(file: FileSystemFileHandle | null): Promise<boolean>;
   /** The name, file or saved state changed. */
   meta(): void;
+  /** A pedalboard file was opened (rather than a schematic). */
+  openBoard(text: string, handle: FileSystemFileHandle | null): Promise<void>;
 }
 
 export interface FileBar {
@@ -42,6 +45,8 @@ export interface FileBar {
   state(): FileState;
   /** Show another tab's file details. */
   setState(s: FileState): void;
+  /** The project folder (shared with the Pedalboard). */
+  folder: ProjectFolder;
 }
 
 export function initFileBar(editor: Editor, sim: SimPanel, trace: TraceMenu, host: FileHost): FileBar {
@@ -94,6 +99,8 @@ export function initFileBar(editor: Editor, sim: SimPanel, trace: TraceMenu, hos
 
   /** Open a schematic file: a project (.pfl.json/.json) or an LTspice .asc (with any .asy symbols). */
   async function openFile(file: File, handle: FileSystemFileHandle | null, symbols: { name: string; text: string }[] = []): Promise<void> {
+    const text = /\.asc$/i.test(file.name) ? '' : await file.text();
+    if (text && isBoardText(text)) { await host.openBoard(text, handle); return; }
     if (!(await host.beforeOpen(handle))) return;
     if (/\.asc$/i.test(file.name)) {
       const asy = Object.fromEntries(symbols.map(s => [s.name, s.text]));
@@ -105,7 +112,7 @@ export function initFileBar(editor: Editor, sim: SimPanel, trace: TraceMenu, hos
       await folder.setCurrent(null);
       dirty = true;
     } else {
-      const p = parseProject(await file.text());
+      const p = parseProject(text);
       editor.load(p.schematic);
       if (p.view) editor.setView(p.view);
       if (p.sim) sim.apply(p.sim);
@@ -254,6 +261,7 @@ export function initFileBar(editor: Editor, sim: SimPanel, trace: TraceMenu, hos
   return {
     changed: () => { if (!dirty) { dirty = true; showState(); } },
     state: () => ({ name: nameEl.value.trim(), file: folder.current, dirty }),
+    folder,
     setState: s => {
       nameEl.value = s.name;
       folder.current = s.file;

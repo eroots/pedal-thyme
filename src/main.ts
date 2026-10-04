@@ -2,10 +2,11 @@ import './styles.css';
 import { initBuilder } from './builder/ui';
 import { initPlayground } from './playground/ui';
 
-type Section = 'playground' | 'builder';
+type Section = 'playground' | 'builder' | 'board';
+const SECTIONS: Section[] = ['playground', 'builder', 'board'];
 const SECTION_KEY = 'pedal-filter-lab.section';
 
-const builder = initBuilder();
+const builder = initBuilder({ showBoard: () => show('board'), showBuilder: () => show('builder') });
 initPlayground({
   openInBuilder: doc => { builder.load(doc); show('builder'); },
 });
@@ -13,6 +14,7 @@ initPlayground({
 function show(section: Section): void {
   document.getElementById('playground')!.hidden = section !== 'playground';
   document.getElementById('builder')!.hidden = section !== 'builder';
+  document.getElementById('board')!.hidden = section !== 'board';
   document.body.dataset.section = section;
   document.querySelectorAll<HTMLButtonElement>('nav.sections button').forEach(b => {
     const on = b.dataset.section === section;
@@ -22,6 +24,7 @@ function show(section: Section): void {
   try { localStorage.setItem(SECTION_KEY, section); } catch { /* ignore */ }
   if (location.hash !== '#' + section) history.replaceState(null, '', '#' + section);
   if (section === 'builder') builder.shown();
+  else if (section === 'board') builder.boardShown();
   else window.dispatchEvent(new Event('resize'));
 }
 
@@ -32,10 +35,11 @@ document.querySelector('nav.sections')!.addEventListener('click', e => {
 
 window.addEventListener('hashchange', () => {
   const h = location.hash.slice(1);
-  if (h === 'builder' || h === 'playground') show(h);
+  if (SECTIONS.includes(h as Section)) show(h as Section);
 });
 
 const fromHash = location.hash.slice(1);
 let initial: Section = 'playground';
 try { initial = (localStorage.getItem(SECTION_KEY) as Section) || initial; } catch { /* ignore */ }
-show(fromHash === 'builder' || fromHash === 'playground' ? fromHash : initial);
+if (!SECTIONS.includes(initial)) initial = 'playground';
+show(SECTIONS.includes(fromHash as Section) ? (fromHash as Section) : initial);

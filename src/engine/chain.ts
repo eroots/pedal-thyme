@@ -24,18 +24,25 @@ function mapElement(e: Element, node: (n: Node) => Node, name: (n: string) => st
  * prefixed `u{k}:`; the last pedal's are left as they are. Op-amps keep their own pedal's rails.
  */
 export function joinChain(stages: Netlist[]): Netlist {
+  return joinStages(stages).netlist;
+}
+
+/** joinChain, also returning where each pedal's output is in the joined circuit (signal after each pedal). */
+export function joinStages(stages: Netlist[]): { netlist: Netlist; outputs: Node[] } {
   if (!stages.length) throw new Error('joinChain: no stages');
   const last = stages[stages.length - 1];
   const withRails = (nl: Netlist) => (e: Element): Element => (e.type === 'OA' && !e.rails ? { ...e, rails: supplyRails(nl) } : e);
-  if (stages.length === 1) return last;
+  if (stages.length === 1) return { netlist: last, outputs: [last.output] };
   const elements: Element[] = last.elements.map(withRails(last));
+  const outputs: Node[] = [last.output];
   // Work back from the last pedal: each upstream output node becomes the next pedal's input node.
   let next: Node = last.input;
   for (let k = stages.length - 2; k >= 0; k--) {
     const nl = stages[k], into = next;
     const node = (n: Node): Node => (n === GND ? GND : n === nl.output ? into : `u${k}:${n}`);
     elements.unshift(...nl.elements.map(withRails(nl)).map(e => mapElement(e, node, n => `u${k}:${n}`)));
+    outputs.unshift(into);
     next = node(nl.input);
   }
-  return { title: last.title, elements, input: next, output: last.output };
+  return { netlist: { title: last.title, elements, input: next, output: last.output }, outputs };
 }

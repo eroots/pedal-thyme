@@ -4,7 +4,6 @@
 import { clamp, fmtEng } from '../core/units';
 import type { SchPart, Schematic } from '../schematic/types';
 import { updatePart } from './doc';
-import type { Editor } from './editor';
 import { controlsOf } from './sim';
 
 const esc = (s: unknown): string =>
@@ -22,7 +21,16 @@ const arc = (from: number, to: number, r: number) => {
 
 export interface FrontPanel { sync(doc: Schematic): void }
 
-export function initFrontPanel(root: HTMLElement, editor: Editor): FrontPanel {
+/** Where the knobs read and write the document (the Editor, or a pedal on the Pedalboard). */
+export interface DocHost {
+  readonly doc: Schematic;
+  /** Live change while dragging (not recorded). */
+  preview(doc: Schematic): void;
+  /** Recorded change (one undo step). */
+  commit(doc: Schematic): void;
+}
+
+export function initFrontPanel(root: HTMLElement, editor: DocHost): FrontPanel {
   let signature = '';
 
   const knobInfo = (p: SchPart) => `${((p.props?.turn ?? 0.5) * 10).toFixed(1)} · ${fmtEng(p.value, 'Ω')} ${p.props?.taper ?? 'B'}`;

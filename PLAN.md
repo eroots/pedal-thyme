@@ -139,15 +139,15 @@ Speed: about 1–2 s per second of audio at 4×. Not done: real-time live input 
   - the response, sweeps, tolerance, DC bias and sound all run through the chain;
   - the first pedal's source drives the chain; this tab's load ends it.
 
-## Next: pedalboard (signal chain, part 2)
-- A pedalboard view: an ordered list of pedals (Guitar → … → Amp), with drag-to-reorder and an on/off switch
-  per pedal. The chain only runs through the pedals that are on.
-- Response per stage (output after each pedal), and all the pedals' knobs in one place.
-- Saving a pedalboard: each schematic stays its own file, and a pedalboard file just lists the schematics
-  (order, on/off) and opens them together as tabs.
-- Then split screen: two tabs side by side.
+## Pedalboard (signal chain, part 2) ✅ (2026-10-04)
+- A **Pedalboard** section: Guitar (source preset) → pedals → Amp (load preset). The pedals are open Builder
+  tabs. Each pedal has a footswitch (bypassed pedals are left out of the chain: true bypass), its knobs
+  (edits go into that tab's own history), reordering by dragging or with ‹ ›, Edit and Remove.
+- Response: the board output plus the signal after each pedal (dashed). Sound: the Builder's panel reused,
+  with its own element ids.
+- Board files () list each pedal's schematic file name, its order and on/off, plus a copy of
+  each schematic. Opening one opens the pedals as tabs, reusing tabs that are already open; a file not
+  found in the project folder falls back to the copy. Builder Open and Folder recognise board files.
 
-## Verification
-- Closed-form oracles for every Playground topology.
-- Netlist-extraction unit tests.
-- LTspice cross-checks: every template and Playground circuit, via .asc export (see above).
+## Next
+- Split screen: two tabs side by side.

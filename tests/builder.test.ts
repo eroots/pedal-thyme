@@ -172,3 +172,43 @@ describe('text notes', () => {
     expect(extract(d).netlist.elements).toEqual(extract(emptyDoc()).netlist.elements);
   });
 });
+
+describe('dropping a part onto a wire', () => {
+  it('inserts the part: the wire under it goes, so it is in series instead of shorted', async () => {
+    const { cutWiresUnder } = await import('../src/builder/doc');
+    // IN —wire— OUT with a 1k load; a 10k resistor dropped onto the middle of the wire.
+    let d = sch().IN(0, 0).wire([0, 0], [200, 0]).OUT(200, 0).R('RL', 200, 30, 90, 1e3).GND(200, 60).build();
+    d = addPart(d, { id: 'r9', kind: 'R', ref: 'R9', x: 100, y: 0, rot: 0, value: 10e3 });
+    // Before cutting, the wire shorts R9 (both pins sit on it).
+    expect(errorsOf(d)).toContain('Input and output are on the same net.');
+    const cut = cutWiresUnder(d, new Set(['r9']));
+    expect(cut.wires.map(w => w.pts)).toEqual([[[0, 0], [70, 0]], [[130, 0], [200, 0]]]);
+    expect(new Circuit(extract(cut).netlist).transfer(new Cx(0, TAU * 1000)).abs()).toBeCloseTo(1 / 11, 6);
+    expect(extract(cut).issues.filter(i => i.severity === 'error')).toEqual([]);
+  });
+
+  it('leaves wires alone when only one pin touches them, and cuts only the straight run under the part', async () => {
+    const { cutWiresUnder } = await import('../src/builder/doc');
+    const base = sch().IN(0, 0).wire([0, 0], [200, 0], [200, 100]).OUT(200, 100).build();
+    // Vertical resistor touching the wire with one pin: nothing to cut.
+    const one = addPart(base, { id: 'r1', kind: 'R', ref: 'R1', x: 100, y: 30, rot: 90, value: 1e3 });
+    expect(cutWiresUnder(one, new Set(['r1'])).wires).toEqual(one.wires);
+    // A resistor on the vertical leg of a bent wire: only that leg is cut.
+    const leg = addPart(base, { id: 'r2', kind: 'R', ref: 'R2', x: 200, y: 50, rot: 90, value: 1e3 });
+    expect(cutWiresUnder(leg, new Set(['r2'])).wires.map(w => w.pts)).toEqual([[[0, 0], [200, 0], [200, 20]], [[200, 80], [200, 100]]]);
+  });
+
+  it('cuts under pots too, even where the wire under them is two wires meeting at a junction', async () => {
+    const { cutWiresUnder } = await import('../src/builder/doc');
+    // IN —w1— (100,0) —w2— OUT: the joint sits under the pot's body.
+    const base = sch().IN(0, 0).wire([0, 0], [100, 0]).wire([100, 0], [200, 0]).OUT(200, 0).build();
+    const d = addPart(base, { id: 'p1', kind: 'POT', ref: 'VR1', x: 100, y: 0, rot: 0, value: 100e3 });
+    expect(cutWiresUnder(d, new Set(['p1'])).wires.map(w => w.pts)).toEqual([[[0, 0], [70, 0]], [[130, 0], [200, 0]]]);
+    // Vertical pot on a vertical wire.
+    const v = addPart(sch().wire([0, 0], [0, 200]).build(), { id: 'p2', kind: 'POT', ref: 'VR2', x: 0, y: 100, rot: 90, value: 100e3 });
+    expect(cutWiresUnder(v, new Set(['p2'])).wires.map(w => w.pts)).toEqual([[[0, 0], [0, 70]], [[0, 130], [0, 200]]]);
+    // A gap only partly covered by wire is left alone.
+    const part = addPart(sch().wire([0, 0], [100, 0]).build(), { id: 'p3', kind: 'POT', ref: 'VR3', x: 100, y: 0, rot: 0, value: 100e3 });
+    expect(cutWiresUnder(part, new Set(['p3'])).wires.map(w => w.pts)).toEqual([[[0, 0], [100, 0]]]);
+  });
+});

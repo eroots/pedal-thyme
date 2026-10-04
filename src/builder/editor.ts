@@ -11,7 +11,7 @@ import { pinsOf } from '../schematic/extract';
 import type { Pt } from '../schematic/geometry';
 import type { PartKind, Rot, Schematic } from '../schematic/types';
 import {
-  addNote, addPart, addWire, copySelection, deleteSelection, deleteWireSegment, isConnection, makePart, mirrorParts, moveNotes, moveSelection,
+  addNote, addPart, addWire, copySelection, cutWiresUnder, deleteSelection, deleteWireSegment, isConnection, makePart, mirrorParts, moveNotes, moveSelection,
   nearestAnchor, partBox, paste, rotateSelection, snapPt, wireSegmentAt, type Clip,
 } from './doc';
 
@@ -144,12 +144,12 @@ export class Editor {
 
   rotate(): void {
     if (this.placing) { this.placing.rot = ((this.placing.rot + 90) % 360) as Rot; this.render(); return; }
-    if (this.sel.size) this.commit(rotateSelection(this.doc, this.selParts(), this.selWires(), this.dragMode === 'stretch'));
+    if (this.sel.size) this.commit(cutWiresUnder(rotateSelection(this.doc, this.selParts(), this.selWires(), this.dragMode === 'stretch'), this.selParts()));
   }
 
   mirror(): void {
     if (this.placing) { this.placing.mirror = !this.placing.mirror; this.render(); return; }
-    if (this.selParts().size) this.commit(mirrorParts(this.doc, this.selParts(), this.dragMode === 'stretch'));
+    if (this.selParts().size) this.commit(cutWiresUnder(mirrorParts(this.doc, this.selParts(), this.dragMode === 'stretch'), this.selParts()));
   }
 
   /** Delete the selection, or (with nothing selected) enter delete mode. */
@@ -179,7 +179,7 @@ export class Editor {
     const inView = cx >= this.view.x && cx <= this.view.x + W && cy >= this.view.y && cy <= this.view.y + H;
     const [dx, dy] = inView ? [cx - x0, cy - y0] : [40, 40];
     const r = paste(this.doc, this.clip, dx, dy);
-    this.commit(r.doc);
+    this.commit(cutWiresUnder(r.doc, r.ids));
     this.selectIds(r.ids);
   }
 
@@ -415,7 +415,7 @@ export class Editor {
       if ((part.kind === 'IN' || part.kind === 'OUT') && this.doc.parts.some(q => q.kind === part.kind)) {
         const existing = this.doc.parts.find(q => q.kind === part.kind)!;
         this.commit({ ...this.doc, parts: this.doc.parts.map(q => (q === existing ? { ...q, x: part.x, y: part.y, rot: part.rot } : q)) });
-      } else this.commit(addPart(this.doc, part));
+      } else this.commit(cutWiresUnder(addPart(this.doc, part), new Set([part.id])));
       return;
     }
 
@@ -497,7 +497,8 @@ export class Editor {
     if (d?.kind === 'trace') {
       this.onTrace?.();
     } else if (d?.kind === 'move' && d.moved) {
-      this.commit(this.doc);
+      // A part dropped onto a wire is inserted into it (the wire under it goes).
+      this.commit(cutWiresUnder(this.doc, this.selParts()));
     } else if (d?.kind === 'box') {
       const [x0, x1] = [Math.min(d.start[0], d.now[0]), Math.max(d.start[0], d.now[0])];
       const [y0, y1] = [Math.min(d.start[1], d.now[1]), Math.max(d.start[1], d.now[1])];
@@ -556,7 +557,7 @@ export class Editor {
         if (!this.sel.size) return;
         e.preventDefault();
         const dx = e.key === 'ArrowLeft' ? -10 : e.key === 'ArrowRight' ? 10 : 0, dy = e.key === 'ArrowUp' ? -10 : e.key === 'ArrowDown' ? 10 : 0;
-        this.commit(moveNotes(moveSelection(this.doc, this.selParts(), this.selWires(), dx, dy, this.dragMode === 'stretch'), this.selNotes(), dx, dy));
+        this.commit(cutWiresUnder(moveNotes(moveSelection(this.doc, this.selParts(), this.selWires(), dx, dy, this.dragMode === 'stretch'), this.selNotes(), dx, dy), this.selParts()));
         break;
       }
       default: break;

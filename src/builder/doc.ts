@@ -254,6 +254,86 @@ export function splitAtTaps(doc: Schematic, keep: Set<string> = new Set()): { do
   return { doc: { ...doc, wires }, ids };
 }
 
+/**
+ * A part dropped onto a wire is inserted into it, as in LTspice: wherever the gap between two of one
+ * part's pins (in a straight line) is fully covered by wire, that wire (under the part) is removed.
+ * Without this the wire would short the part out, since a pin on a wire connects to it. The covering
+ * may be several wires, e.g. two meeting at a junction under the part's body.
+ */
+export function cutWiresUnder(doc: Schematic, partIds: Set<string>): Schematic {
+  let wires = doc.wires;
+  for (const part of doc.parts.filter(p => partIds.has(p.id))) {
+    const pins = pinsOf(part).map(r => r.at);
+    for (let i = 0; i < pins.length; i++) {
+      for (let j = i + 1; j < pins.length; j++) {
+        const p = pins[i], q = pins[j];
+        const k = Math.abs(p[1] - q[1]) < 1e-6 ? 0 : Math.abs(p[0] - q[0]) < 1e-6 ? 1 : null;
+        if (k === null || samePt(p, q)) continue; // only straight horizontal / vertical gaps
+        const gap: Gap = { k, c: p[1 - k], lo: Math.min(p[k], q[k]), hi: Math.max(p[k], q[k]) };
+        if (gapCovered(wires, gap)) wires = removeGap(doc, wires, gap);
+      }
+    }
+  }
+  return wires === doc.wires ? doc : { ...doc, wires };
+}
+
+/** The stretch lo..hi along axis k (0 = x, 1 = y) of the line where the other coordinate is c. */
+interface Gap { k: 0 | 1; c: number; lo: number; hi: number }
+
+const onGapLine = (g: Gap, a: Pt, b: Pt) => Math.abs(a[1 - g.k] - g.c) < 1e-6 && Math.abs(b[1 - g.k] - g.c) < 1e-6;
+
+/** Is the whole gap covered by wire segments lying on its line? */
+function gapCovered(wires: SchWire[], g: Gap): boolean {
+  const spans: [number, number][] = [];
+  for (const w of wires) {
+    for (let i = 1; i < w.pts.length; i++) {
+      const a = w.pts[i - 1], b = w.pts[i];
+      if (onGapLine(g, a, b)) spans.push([Math.min(a[g.k], b[g.k]), Math.max(a[g.k], b[g.k])]);
+    }
+  }
+  spans.sort((s, t) => s[0] - t[0]);
+  let reach = g.lo;
+  for (const [s, e] of spans) {
+    if (s > reach + 1e-6) break;
+    reach = Math.max(reach, e);
+    if (reach >= g.hi - 1e-6) return true;
+  }
+  return false;
+}
+
+/** Remove the wire lying inside the gap, splitting wires that run through it. */
+function removeGap(doc: Schematic, wires: SchWire[], g: Gap): SchWire[] {
+  const ends: Pt[] = [g.lo, g.hi].map(v => (g.k === 0 ? [v, g.c] : [g.c, v]) as Pt);
+  const inGap = (a: Pt, b: Pt) => {
+    const m = (a[g.k] + b[g.k]) / 2;
+    return onGapLine(g, a, b) && m > g.lo + 1e-6 && m < g.hi - 1e-6;
+  };
+  const out: SchWire[] = [];
+  for (const w of wires) {
+    // Split each segment at the gap's ends, then drop the pieces inside the gap.
+    const pieces: Pt[][] = [];
+    let cur: Pt[] = [w.pts[0]], cut = false;
+    for (let i = 1; i < w.pts.length; i++) {
+      const a = w.pts[i - 1], b = w.pts[i];
+      const d = (q: Pt) => Math.hypot(q[0] - a[0], q[1] - a[1]);
+      const stops = ends.filter(q => onSegment(q, a, b) && !samePt(q, a) && !samePt(q, b)).sort((p, q) => d(p) - d(q));
+      let s = a;
+      for (const e of [...stops, b]) {
+        if (inGap(s, e)) { cut = true; pieces.push(cur); cur = [e]; } else cur.push(e);
+        s = e;
+      }
+    }
+    pieces.push(cur);
+    if (!cut) { out.push(w); continue; }
+    let first = true;
+    for (const pts of pieces.map(simplifyWire).filter(pts => pts.length >= 2)) {
+      out.push({ id: first ? w.id : nextId({ ...doc, wires: [...wires, ...out] }, 'w'), pts });
+      first = false;
+    }
+  }
+  return out;
+}
+
 /** Single-pin markers that should travel with whatever they sit on. */
 const FOLLOWERS = new Set(['GND', 'SUPPLY', 'LABEL', 'PROBE']);
 

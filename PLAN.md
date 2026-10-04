@@ -145,7 +145,7 @@ Speed: about 1–2 s per second of audio at 4×. Not done: real-time live input 
   (edits go into that tab's own history), reordering by dragging or with ‹ ›, Edit and Remove.
 - Response: the board output plus the signal after each pedal (dashed). Sound: the Builder's panel reused,
   with its own element ids.
-- Board files () list each pedal's schematic file name, its order and on/off, plus a copy of
+- Board files (`.pfl-board.json`) list each pedal's schematic file name, its order and on/off, plus a copy of
   each schematic. Opening one opens the pedals as tabs, reusing tabs that are already open; a file not
   found in the project folder falls back to the copy. Builder Open and Folder recognise board files.
 

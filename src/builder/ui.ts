@@ -568,6 +568,35 @@ export function initBuilder(): BuilderApi {
     if (r.bottom < 0 || r.top > window.innerHeight) $('#bCanvasWrap').scrollIntoView({ behavior: 'smooth', block: 'center' });
   });
 
+  /* ---------- Schematic height (drag handle under the canvas) ---------- */
+  {
+    const wrap = $<HTMLElement>('#bCanvasWrap'), handle = $<HTMLElement>('#bResize');
+    const MIN = 160, MAX = 2400, KEY = LS_KEY + '.height';
+    const setHeight = (h: number | null, keep = true) => {
+      wrap.style.height = h === null ? '' : `${Math.round(Math.min(MAX, Math.max(MIN, h)))}px`;
+      if (keep) try { if (h === null) localStorage.removeItem(KEY); else localStorage.setItem(KEY, String(wrap.offsetHeight)); } catch { /* ignore */ }
+    };
+    try { const h = Number(localStorage.getItem(KEY)); if (h > 0) setHeight(h, false); } catch { /* ignore */ }
+    let drag: { y: number; h: number } | null = null;
+    handle.addEventListener('pointerdown', e => {
+      if (e.button !== 0) return;
+      e.preventDefault();
+      drag = { y: e.clientY, h: wrap.offsetHeight };
+      handle.setPointerCapture(e.pointerId);
+      handle.classList.add('dragging');
+    });
+    handle.addEventListener('pointermove', e => { if (drag) setHeight(drag.h + e.clientY - drag.y, false); });
+    const end = () => { if (!drag) return; drag = null; handle.classList.remove('dragging'); setHeight(wrap.offsetHeight); };
+    handle.addEventListener('pointerup', end);
+    handle.addEventListener('pointercancel', end);
+    handle.addEventListener('dblclick', () => setHeight(null));
+    handle.addEventListener('keydown', e => {
+      const step = e.shiftKey ? 100 : 20;
+      if (e.key === 'ArrowUp') { e.preventDefault(); setHeight(wrap.offsetHeight - step); }
+      if (e.key === 'ArrowDown') { e.preventDefault(); setHeight(wrap.offsetHeight + step); }
+    });
+  }
+
   let initialDrag: DragMode = 'stretch';
   try { if (localStorage.getItem(LS_KEY + '.drag') === 'move') initialDrag = 'move'; } catch { /* ignore */ }
   editor.setDragMode(initialDrag);

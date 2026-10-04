@@ -319,6 +319,10 @@ nav.sections button.active { background: var(--accent); color: var(--accent-ink)
 #bCanvas .pin-mark { fill: none; stroke: var(--accent); stroke-width: 1.2; opacity: .55; }
 #bCanvas .rubber { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 1; stroke-dasharray: 3 3; }
 .b-hint { margin: -4px 2px 0; min-height: 1.2em; }
+/* Grab handle under the canvas: drag to set the schematic's height (sits in the gap, so the layout doesn't move). */
+.b-resize { height: 14px; margin: -12px 0 -10px; cursor: ns-resize; touch-action: none; position: relative; outline: none; }
+.b-resize::after { content: ""; position: absolute; left: 50%; top: 5px; width: 44px; height: 4px; margin-left: -22px; border-radius: 2px; background: var(--grid-strong); transition: background .15s; }
+.b-resize:hover::after, .b-resize:focus-visible::after, .b-resize.dragging::after { background: var(--accent); }
 #bSimCanvas { height: 240px; }
 .b-sim h2 { margin-bottom: 6px; }
 .b-side { display: flex; flex-direction: column; gap: 16px; position: sticky; top: 70px; align-self: start; }

@@ -1,4 +1,5 @@
-// Pedal Builder UI: palette, toolbar, properties and ERC list; wires up the simulation panel and front panel.
+// Pedal Builder UI: palette, toolbar, properties and ERC list; wires up the simulation panel and front panel,
+// and the tabs (several schematics open at once; see tabs.ts).
 import { stepSeries } from '../core/eseries';
 import { TAPERS } from '../core/pots';
 import { fmtEng, parseEng } from '../core/units';
@@ -11,18 +12,21 @@ import { onSegment, samePt, type Pt } from '../schematic/geometry';
 import { renderSchematic, renderSchematicBody } from '../schematic/render';
 import type { PartKind, SchPart, Schematic } from '../schematic/types';
 import { S } from '../playground/state';
-import { emptyDoc, partBox, updateNote, updatePart } from './doc';
+import { partBox, updateNote, updatePart } from './doc';
 import { Editor, PART_KEYS, type DragMode, type Mode } from './editor';
-import { initFileBar } from './filebar';
+import { initFileBar, type FileBar, type FileHost } from './filebar';
+import { canWriteFolders, idbGet, idbSet } from './folder';
+import { fileKey, isBlank, loadSession, newTab, renderStrip, saveSession, tabTitle, traceKey, type Tab } from './tabs';
 import { initFrontPanel } from './frontpanel';
 import { initSimPanel } from './simpanel';
 import { initSoundPanel } from './sound';
 import { termActive } from '../core/termination';
-import { initTrace } from './trace';
+import { initTrace, takeLegacyTrace, type Trace } from './trace';
 import { SWEEPABLE_KINDS, biasOf } from './sim';
 
 /** Signed volts with two decimals (one above 10 V). */
 const fmtVolts = (x: number): string => `${Math.abs(x) < 0.005 ? "0.00" : Math.abs(x) < 10 ? x.toFixed(2) : x.toFixed(1)} V`;
+/** Prefix for the Builder's small UI preferences (drag mode, bias overlay). */
 const LS_KEY = 'pedal-filter-lab.builder.v1';
 const $ = <T extends HTMLElement = HTMLInputElement>(sel: string): T => document.querySelector(sel) as T;
 const esc = (s: unknown): string =>
@@ -45,14 +49,22 @@ export interface BuilderApi {
 }
 
 export function initBuilder(): BuilderApi {
-  const saved = loadSaved();
-  let ex: Extraction = extract(saved.doc);
+  const sim = initSimPanel();
+  const session = loadSession(sim.settings());
+  const tabs: Tab[] = session.tabs;
+  let active: Tab = tabs.find(t => t.id === session.active)!;
+  /** Showing another tab (its state is being loaded, not edited). */
+  let switching = false;
+  /** Trace pictures and file handles are still being read back from IndexedDB. */
+  let restoring = true;
+  let ready = false;
+  let ex: Extraction = extract(active.state.doc);
 
-  const editor = new Editor(document.querySelector<SVGSVGElement>('#bCanvas')!, $('#bCanvasWrap'), saved.doc, {
+  const editor = new Editor(document.querySelector<SVGSVGElement>('#bCanvas')!, $('#bCanvasWrap'), active.state.doc, {
     change: (doc, committed) => {
       ex = extract(doc); renderErc(); sim.update(doc, ex, committed); panel.sync(doc); renderBias();
-      if (committed) { sound.invalidate(); files.changed(); }
-      if (committed) { save(); renderProps(); }
+      if (committed && !switching) { sound.invalidate(); files.changed(); }
+      if (committed) { persist(); renderProps(); }
       updateToolbar();
     },
     select: () => renderProps(),
@@ -68,19 +80,174 @@ export function initBuilder(): BuilderApi {
       }, 0);
     },
   });
-  if (saved.view) editor.setView(saved.view);
-  const sim = initSimPanel();
+  if (!active.needsFit) editor.setView(active.state.view);
+  sim.setCompare(active.compare);
+  sim.apply(active.sim);
   const sound = initSoundPanel(() => {
     const st = sim.settings();
     return { ex, doc: editor.doc, term: termActive(st.term) ? st.term : null, name: (document.querySelector<HTMLInputElement>('#bName')?.value || '') };
   });
   const panel = initFrontPanel($('#bKnobs'), editor);
-  const trace = initTrace(editor, msg => { if (msg) $('#bHint').textContent = msg; else renderModes(editor.mode, null); });
-  const files = initFileBar(editor, sim, trace);
+  const trace = initTrace(editor, msg => { if (msg) $('#bHint').textContent = msg; else renderModes(editor.mode, null); }, t => {
+    active.trace = t;
+    void idbSet(traceKey(active.id), t ?? undefined);
+  });
 
-  function save(): void {
-    try { localStorage.setItem(LS_KEY, JSON.stringify({ doc: editor.doc, view: editor.getView() })); } catch { /* ignore */ }
+  /* ---------- Tabs ---------- */
+  const host: FileHost = {
+    beforeOpen: async file => {
+      // Already open? Show that tab instead of opening the file twice.
+      if (file) {
+        for (const t of tabs) {
+          const f = t === active ? files.state().file : t.file;
+          try { if (f && (await f.isSameEntry(file))) { switchTo(t); return false; } } catch { /* stale handle */ }
+        }
+      }
+      syncActive();
+      if (!isBlank({ ...active, file: active.file ?? null })) addTab();
+      return true;
+    },
+    meta: () => {
+      if (!ready) return;
+      const f = files.state();
+      if (!restoring && f.file !== (active.file ?? null)) { active.file = f.file; void idbSet(fileKey(active.id), f.file ?? undefined); }
+      active.name = f.name; active.dirty = f.dirty;
+      renderTabs();
+      sim.refreshCompare();
+      persistSoon();
+    },
+  };
+  const files: FileBar = initFileBar(editor, sim, trace, host);
+  files.setState({ name: active.name, file: null, dirty: active.dirty });
+
+  /** Copy the live (cheap) state of the shown tab into its record. */
+  function syncActive(): void {
+    const f = files.state();
+    active.name = f.name; active.dirty = f.dirty;
+    if (!restoring) active.file = f.file;
+    active.state = { ...active.state, doc: editor.doc, view: editor.getView() };
+    active.sim = sim.settings();
+    active.compare = sim.compare();
   }
+  let persistTimer: ReturnType<typeof setTimeout> | undefined;
+  function persist(): void {
+    if (!ready) return;
+    clearTimeout(persistTimer);
+    syncActive();
+    saveSession({ active: active.id, tabs });
+  }
+  const persistSoon = () => { clearTimeout(persistTimer); persistTimer = setTimeout(persist, 400); };
+
+  function renderTabs(): void {
+    const f = ready ? files.state() : active;
+    renderStrip($('#bTabs'), tabs.map(t => (t === active ? { id: t.id, name: f.name, dirty: f.dirty } : t)), active.id);
+  }
+
+  /** Show another tab: park the current one's state and load the other's. */
+  function switchTo(t: Tab): void {
+    if (t === active) return;
+    if (tabs.includes(active)) {
+      syncActive();
+      active.state = editor.snapshot();
+      active.sound = sound.state();
+      if (!restoring) active.trace = editor.trace;
+    }
+    active = t;
+    switching = true;
+    try {
+      files.setState({ name: t.name, file: t.file ?? null, dirty: t.dirty });
+      sim.setCompare(t.compare);
+      sim.apply(t.sim);
+      trace.show(t.trace ?? null);
+      sound.restore(t.sound ?? null);
+      editor.restoreState(t.state);
+    } finally {
+      switching = false;
+    }
+    if (t.needsFit) { editor.fit(); t.needsFit = false; }
+    renderTabs();
+    persist();
+  }
+
+  /** A new tab with an empty schematic, next to the current one. */
+  function addTab(): Tab {
+    syncActive();
+    const t = newTab(active.sim);
+    tabs.splice(tabs.indexOf(active) + 1, 0, t);
+    switchTo(t);
+    return t;
+  }
+
+  function closeTab(t: Tab): void {
+    if (t === active) syncActive();
+    if (t.dirty && !confirm(`Close “${tabTitle(t)}”? Its unsaved changes will be lost.`)) return;
+    void idbSet(traceKey(t.id), undefined);
+    void idbSet(fileKey(t.id), undefined);
+    const i = tabs.indexOf(t);
+    if (tabs.length === 1) tabs.push(newTab(t.sim));
+    tabs.splice(i, 1);
+    for (const o of tabs) if (o.compare === t.id) o.compare = '';
+    if (t === active) switchTo(tabs[Math.min(i, tabs.length - 1)]);
+    else { renderTabs(); persist(); }
+    sim.refreshCompare();
+  }
+
+  $('#bTabs').addEventListener('click', e => {
+    const el = e.target as HTMLElement;
+    const close = el.closest<HTMLElement>('[data-close]');
+    if (close) { const t = tabs.find(x => x.id === close.dataset.close); if (t) closeTab(t); return; }
+    if (el.closest('#bTabNew')) { addTab(); return; }
+    const tab = el.closest<HTMLElement>('[data-tab]');
+    const t = tab && tabs.find(x => x.id === tab.dataset.tab);
+    if (t) switchTo(t);
+  });
+  // Middle-click closes a tab; double-click renames it (in the name field).
+  $('#bTabs').addEventListener('auxclick', e => {
+    const tab = (e.target as HTMLElement).closest<HTMLElement>('[data-tab]');
+    const t = e.button === 1 && tab && tabs.find(x => x.id === tab.dataset.tab);
+    if (t) { e.preventDefault(); closeTab(t); }
+  });
+  $('#bTabs').addEventListener('mousedown', e => { if (e.button === 1) e.preventDefault(); });
+  $('#bTabs').addEventListener('dblclick', e => {
+    const el = e.target as HTMLElement;
+    if (!el.closest('[data-tab]') || el.closest('[data-close]')) return;
+    const n = $('#bName'); n.focus(); n.select();
+  });
+  // Alt+1…9 shows that tab.
+  document.addEventListener('keydown', e => {
+    if (!e.altKey || e.ctrlKey || e.metaKey || $<HTMLElement>('#builder').hidden || !/^[1-9]$/.test(e.key)) return;
+    const t = tabs[+e.key - 1];
+    if (t) { e.preventDefault(); switchTo(t); }
+  });
+
+  sim.setCompareSource({
+    list: () => tabs.filter(t => t !== active).map(t => ({ id: t.id, name: tabTitle(t) })),
+    get: id => {
+      const t = tabs.find(x => x.id === id && x !== active);
+      return t ? { doc: t.state.doc, sim: t.sim, name: tabTitle(t) } : null;
+    },
+  });
+
+  // Trace pictures and file handles live in IndexedDB; the pre-tabs ones are carried over.
+  void (async () => {
+    for (const t of tabs) {
+      if (t.legacy) {
+        t.trace = takeLegacyTrace();
+        t.file = canWriteFolders ? ((await idbGet<FileSystemFileHandle>('current')) ?? null) : null;
+        if (t.trace) void idbSet(traceKey(t.id), t.trace);
+        if (t.file) void idbSet(fileKey(t.id), t.file);
+        void idbSet('current', undefined);
+        delete t.legacy;
+      } else {
+        if (t.trace === undefined) t.trace = (await idbGet<Trace>(traceKey(t.id))) ?? null;
+        if (t.file === undefined) t.file = (await idbGet<FileSystemFileHandle>(fileKey(t.id))) ?? null;
+      }
+    }
+    restoring = false;
+    trace.show(active.trace ?? null);
+    files.setState({ ...files.state(), file: active.file ?? null });
+  })();
+
 
   /* ---------- Palette & toolbar ---------- */
   $('#bPalette').innerHTML = PALETTE.map(g => `<div class="group">${g.group}</div><div class="pal-grid">${g.kinds.map(k => {
@@ -165,7 +332,8 @@ export function initBuilder(): BuilderApi {
         <tr><td>S / M</td><td>Drag stretches / moves (Alt flips)</td></tr>
         <tr><td>Ctrl+R / Ctrl+E</td><td>Rotate / mirror</td></tr><tr><td>Del</td><td>Delete selection, or delete mode</td></tr>
         <tr><td>Ctrl+Z / Y</td><td>Undo / redo</td></tr><tr><td>Ctrl+C</td><td>Copy mode: click an item (or start with a selection), click to drop copies</td></tr><tr><td>Ctrl+V / D</td><td>Paste last copy / duplicate</td></tr>
-        <tr><td>Arrows</td><td>Nudge</td></tr><tr><td>F</td><td>Fit to view</td></tr></table>`;
+        <tr><td>Arrows</td><td>Nudge</td></tr><tr><td>F</td><td>Fit to view</td></tr>
+        <tr><td>Alt+1…9</td><td>Switch tab (middle-click closes one)</td></tr></table>`;
       return;
     }
     if (parts.length !== 1 || wires.length || notes.length) {
@@ -411,17 +579,20 @@ export function initBuilder(): BuilderApi {
   renderBias();
   panel.sync(editor.doc);
 
-  return {
-    load: doc => { editor.load(JSON.parse(JSON.stringify(doc))); editor.selectIds([]); },
-    shown: () => { editor.render(); if (!saved.view) editor.fit(); sim.redraw(); sound.redraw(); },
-  };
-}
+  ready = true;
+  renderTabs();
+  persist();
 
-function loadSaved(): { doc: Schematic; view?: { x: number; y: number; zoom: number } } {
-  try {
-    const s = JSON.parse(localStorage.getItem(LS_KEY) || 'null');
-    if (s && s.doc && Array.isArray(s.doc.parts) && Array.isArray(s.doc.wires)) return s;
-  } catch { /* ignore */ }
-  return { doc: emptyDoc() };
+  return {
+    // From the Playground: into a new tab (unless the current one is blank).
+    load: doc => {
+      void host.beforeOpen(null).then(() => { editor.load(JSON.parse(JSON.stringify(doc))); editor.selectIds([]); });
+    },
+    shown: () => {
+      editor.render();
+      if (active.needsFit) { editor.fit(); active.needsFit = false; }
+      sim.redraw(); sound.redraw();
+    },
+  };
 }
 

@@ -185,6 +185,7 @@
       </div></details>
     </div>
     <div class="b-notice card" id="bNotice" hidden></div>
+    <div class="b-tabs" id="bTabs" role="tablist" aria-label="Open schematics"></div>
     <div class="b-canvas-wrap" id="bCanvasWrap" tabindex="0" aria-label="Schematic editor">
       <svg id="bCanvas" xmlns="http://www.w3.org/2000/svg"></svg>
     </div>
@@ -199,6 +200,7 @@
       </div>
       <div class="sweepbar">
         <label>Sweep <select id="bSweep"></select></label>
+        <label title="Overlay the output of a schematic open in another tab (with that tab's source and load)">Compare with <select id="bCompare"></select></label>
         <label>Steps <select id="bSweepSteps"><option>3</option><option selected>5</option><option>7</option><option>9</option></select></label>
       </div>
       <canvas id="bSimCanvas"></canvas>

@@ -16,6 +16,7 @@ export interface Trace {
   name: string;
 }
 
+/** Where the single trace picture was kept before tabs (read once, to carry it over). */
 const LS_KEY = 'pedal-filter-lab.builder.trace';
 /** Longest side of a rendered PDF page, in pixels. */
 const PDF_PX = 2400;
@@ -25,19 +26,13 @@ export function isTrace(t: unknown): t is Trace {
   return !!x && typeof x.src === 'string' && /^data:image\//.test(x.src) && [x.w, x.h, x.x, x.y, x.scale, x.opacity].every(v => typeof v === 'number' && isFinite(v));
 }
 
-export function loadSavedTrace(): Trace | null {
-  try { const t = JSON.parse(localStorage.getItem(LS_KEY) || 'null'); return isTrace(t) ? t : null; } catch { return null; }
-}
-
-/** Keep the trace across reloads; returns false if it is too big for browser storage. */
-export function saveTrace(t: Trace | null): boolean {
+/** The pre-tabs trace picture, removed from localStorage once read. */
+export function takeLegacyTrace(): Trace | null {
   try {
-    if (t) localStorage.setItem(LS_KEY, JSON.stringify(t)); else localStorage.removeItem(LS_KEY);
-    return true;
-  } catch {
-    try { localStorage.removeItem(LS_KEY); } catch { /* ignore */ }
-    return false;
-  }
+    const t = JSON.parse(localStorage.getItem(LS_KEY) || 'null');
+    localStorage.removeItem(LS_KEY);
+    return isTrace(t) ? t : null;
+  } catch { return null; }
 }
 
 /** SVG transform for the picture: position, then rotation about its centre. */
@@ -83,11 +78,17 @@ export async function openPdf(data: ArrayBuffer): Promise<PdfSource> {
   };
 }
 
-/** The Trace ▾ menu: load, show/hide, opacity, page, adjust, rotate, remove. */
-export function initTrace(editor: Editor, hint: (msg: string | null) => void): { set(t: Trace | null): void } {
+export interface TraceMenu {
+  /** Replace the picture (e.g. from an opened project); it is stored. */
+  set(t: Trace | null): void;
+  /** Show a tab's picture (already stored). */
+  show(t: Trace | null): void;
+}
+
+/** The Trace ▾ menu: load, show/hide, opacity, page, adjust, rotate, remove. `store` keeps the picture with the tab. */
+export function initTrace(editor: Editor, hint: (msg: string | null) => void, store: (t: Trace | null) => void): TraceMenu {
   const $ = <T extends HTMLElement = HTMLInputElement>(s: string) => document.querySelector(s) as T;
   let pdf: PdfSource | null = null;
-  let warnedSize = false;
 
   const sync = () => {
     const t = editor.trace;
@@ -101,12 +102,7 @@ export function initTrace(editor: Editor, hint: (msg: string | null) => void): {
     $('#bTraceAdjust').classList.toggle('active', editor.traceAdjust);
     $('#bTraceAdjust').textContent = editor.traceAdjust ? 'Done adjusting' : 'Move / scale';
   };
-  const persist = () => {
-    if (!saveTrace(editor.trace) && !warnedSize) {
-      warnedSize = true;
-      hint('The trace picture is too large to keep after a reload; Save the pedal to keep it with the project.');
-    }
-  };
+  const persist = () => store(editor.trace);
   editor.onTrace = () => { persist(); sync(); };
   editor.onTraceAdjust = on => { hint(on ? 'Adjusting the trace picture: drag to move it, scroll to scale it. Esc or "Done adjusting" when it lines up.' : null); sync(); };
 
@@ -136,7 +132,6 @@ export function initTrace(editor: Editor, hint: (msg: string | null) => void): {
         const src = await readAsDataUrl(f);
         place({ src, ...(await imageSize(src)) }, f.name);
       }
-      warnedSize = false;
     } catch (err) {
       alert(`Couldn’t load ${f.name} as a trace picture: ${(err as Error).message}`);
     }
@@ -161,7 +156,9 @@ export function initTrace(editor: Editor, hint: (msg: string | null) => void): {
   });
   $('#bTraceRemove').addEventListener('click', () => { pdf = null; editor.setTraceAdjust(false); editor.setTrace(null); });
 
-  editor.setTrace(loadSavedTrace(), false);
   sync();
-  return { set: t => { pdf = null; editor.setTraceAdjust(false); editor.setTrace(t); } };
+  return {
+    set: t => { pdf = null; editor.setTraceAdjust(false); editor.setTrace(t); },
+    show: t => { pdf = null; editor.setTraceAdjust(false); editor.setTrace(t, false); sync(); },
+  };
 }

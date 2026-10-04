@@ -7,12 +7,11 @@ import { decodeLtspice } from '../ltspice/asc';
 import { exportAsc } from '../ltspice/export';
 import { importAsc } from '../ltspice/import';
 import { bomCsv, makeProject, parseProject, projectSpice, safeFileName, schematicSvg, svgToPng } from './files';
-import type { Trace } from './trace';
+import type { TraceMenu } from './trace';
 import type { SimPanel } from './simpanel';
 import { TEMPLATES } from './templates';
 import { ProjectFolder, allowed, canSaveAs, canWriteFolders, saveAsDialog, writeHandle, type FolderEntry } from './folder';
 
-const NAME_KEY = 'pedal-filter-lab.builder.name';
 const $ = <T extends HTMLElement = HTMLInputElement>(sel: string): T => document.querySelector(sel) as T;
 const esc = (s: unknown): string =>
   String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!));
@@ -23,16 +22,33 @@ function latin1(text: string): Uint8Array<ArrayBuffer> {
   return Uint8Array.from(t, c => (c.charCodeAt(0) < 256 ? c.charCodeAt(0) : 63));
 }
 
+/** The open document's file details (kept per tab). */
+export interface FileState { name: string; file: FileSystemFileHandle | null; dirty: boolean }
+
+/** What the file bar needs from the tabs around it. */
+export interface FileHost {
+  /**
+   * About to open or create a schematic: make room for it (a new tab, unless the current one is blank).
+   * Returns false when `file` is already open in a tab, which is then shown instead.
+   */
+  beforeOpen(file: FileSystemFileHandle | null): Promise<boolean>;
+  /** The name, file or saved state changed. */
+  meta(): void;
+}
+
 export interface FileBar {
   /** The document changed (marks unsaved changes). */
   changed(): void;
+  state(): FileState;
+  /** Show another tab's file details. */
+  setState(s: FileState): void;
 }
 
-export function initFileBar(editor: Editor, sim: SimPanel, trace: { set(t: Trace | null): void }): FileBar {
+export function initFileBar(editor: Editor, sim: SimPanel, trace: TraceMenu, host: FileHost): FileBar {
   const nameEl = $('#bName');
-  try { nameEl.value = localStorage.getItem(NAME_KEY) || ''; } catch { /* ignore */ }
   const name = () => nameEl.value.trim() || 'Untitled pedal';
-  const setName = (n: string) => { nameEl.value = n; try { localStorage.setItem(NAME_KEY, n); } catch { /* ignore */ } };
+  const setName = (n: string) => { nameEl.value = n; host.meta(); };
+  nameEl.addEventListener('input', () => host.meta());
   nameEl.addEventListener('change', () => setName(nameEl.value.trim()));
 
   const closeMenus = () => document.querySelectorAll<HTMLDetailsElement>('.b-filebar details[open]').forEach(d => { d.open = false; });
@@ -46,9 +62,13 @@ export function initFileBar(editor: Editor, sim: SimPanel, trace: { set(t: Trace
     if (!b) return;
     closeMenus();
     const t = TEMPLATES.find(x => x.id === b.dataset.template)!;
-    editor.load(t.build());
-    setName(t.id === 'empty' ? '' : t.name);
-    void folder.setCurrent(null).then(() => { dirty = true; showState(); });
+    void host.beforeOpen(null).then(async () => {
+      editor.load(t.build());
+      setName(t.id === 'empty' ? '' : t.name);
+      await folder.setCurrent(null);
+      dirty = t.id !== 'empty';
+      showState();
+    });
   });
 
   // Import notes (LTspice substitutions and the like).
@@ -69,10 +89,12 @@ export function initFileBar(editor: Editor, sim: SimPanel, trace: { set(t: Trace
     stateEl.textContent = dirty ? (file ? `${file} · unsaved changes` : 'Not saved') : file ? `Saved · ${file}` : '';
     stateEl.classList.toggle('dirty', dirty);
     stateEl.title = folder.name ? `Folder: ${folder.name}` : '';
+    host.meta();
   };
 
   /** Open a schematic file: a project (.pfl.json/.json) or an LTspice .asc (with any .asy symbols). */
   async function openFile(file: File, handle: FileSystemFileHandle | null, symbols: { name: string; text: string }[] = []): Promise<void> {
+    if (!(await host.beforeOpen(handle))) return;
     if (/\.asc$/i.test(file.name)) {
       const asy = Object.fromEntries(symbols.map(s => [s.name, s.text]));
       const r = importAsc(decodeLtspice(new Uint8Array(await file.arrayBuffer())), asy);
@@ -229,5 +251,15 @@ export function initFileBar(editor: Editor, sim: SimPanel, trace: { set(t: Trace
     }
   });
 
-  return { changed: () => { dirty = true; showState(); } };
+  return {
+    changed: () => { if (!dirty) { dirty = true; showState(); } },
+    state: () => ({ name: nameEl.value.trim(), file: folder.current, dirty }),
+    setState: s => {
+      nameEl.value = s.name;
+      folder.current = s.file;
+      dirty = s.dirty;
+      notice.hidden = true;
+      showState();
+    },
+  };
 }

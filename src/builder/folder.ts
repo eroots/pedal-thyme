@@ -23,7 +23,7 @@ function idb(): Promise<IDBDatabase> {
     r.onerror = () => rej(r.error);
   });
 }
-async function idbGet<T>(key: string): Promise<T | undefined> {
+export async function idbGet<T>(key: string): Promise<T | undefined> {
   try {
     const db = await idb();
     return await new Promise<T | undefined>((res, rej) => {
@@ -33,7 +33,8 @@ async function idbGet<T>(key: string): Promise<T | undefined> {
     });
   } catch { return undefined; }
 }
-async function idbSet(key: string, value: unknown): Promise<void> {
+/** Store a value (structured clone: file handles and big pictures are fine); undefined deletes it. */
+export async function idbSet(key: string, value: unknown): Promise<void> {
   try {
     const db = await idb();
     await new Promise<void>((res, rej) => {
@@ -60,16 +61,15 @@ export class ProjectFolder {
   dir: FileSystemDirectoryHandle | null = null;
   /** Fallback: files from a folder picked with a plain file input (read-only, this session only). */
   files: File[] | null = null;
-  /** File the current schematic was opened from or last saved to (folder access only). */
+  /** File the current schematic (tab) was opened from or last saved to (folder access only). */
   current: FileSystemFileHandle | null = null;
 
   get name(): string | null { return this.dir?.name ?? (this.files ? folderNameOf(this.files) : null); }
 
-  /** Restore the folder and current file remembered from the last session. */
+  /** Restore the folder remembered from the last session (each tab remembers its own file). */
   async restore(): Promise<void> {
     if (!canWriteFolders) return;
     this.dir = (await idbGet<FileSystemDirectoryHandle>('folder')) ?? null;
-    this.current = (await idbGet<FileSystemFileHandle>('current')) ?? null;
   }
 
   /** Ask the user for a folder (from a click). Returns false if they cancelled. */
@@ -88,7 +88,7 @@ export class ProjectFolder {
   /** Fallback folder (Firefox, Safari): files chosen with <input webkitdirectory>. */
   useFiles(files: File[]): void { this.files = files.filter(f => isSchematic(f.name) || /\.asy$/i.test(f.name)); }
 
-  async setCurrent(h: FileSystemFileHandle | null): Promise<void> { this.current = h; await idbSet('current', h ?? undefined); }
+  async setCurrent(h: FileSystemFileHandle | null): Promise<void> { this.current = h; }
 
   /** Whether the remembered folder still needs a click to grant access this session. */
   async needsPermission(): Promise<boolean> { return !!this.dir && !(await allowed(this.dir, 'readwrite', false)); }

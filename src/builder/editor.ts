@@ -19,6 +19,9 @@ import {
 export type Mode = 'select' | 'wire' | 'place' | 'delete' | 'text' | 'copy';
 /** Dragging either stretches attached wires (connections kept) or moves the selection on its own. */
 export type DragMode = 'stretch' | 'move';
+export interface View { x: number; y: number; zoom: number }
+/** A document's editing state, kept per tab. History entries are JSON snapshots. */
+export interface EditorState { doc: Schematic; view: View; undo: string[]; redo: string[] }
 
 /** Single-key shortcuts that start placing a part (as in LTspice). */
 export const PART_KEYS: Record<string, PartKind> = { r: 'R', c: 'C', l: 'L', d: 'D', g: 'GND', p: 'POT', o: 'OA', q: 'NPN', j: 'NJF', x: 'PROBE' };
@@ -147,6 +150,25 @@ export class Editor {
 
   canUndo(): boolean { return this.undoStack.length > 0; }
   canRedo(): boolean { return this.redoStack.length > 0; }
+
+  /** Everything that belongs to the open document (for tabs): drawing, view and undo history. */
+  snapshot(): EditorState {
+    return { doc: this.base ?? this.doc, view: this.getView(), undo: [...this.undoStack], redo: [...this.redoStack] };
+  }
+
+  /** Switch to another document (a tab) with its own view and history; tools reset to Select. */
+  restoreState(s: EditorState): void {
+    this.base = null;
+    this.drag = null;
+    this.undoStack = [...s.undo];
+    this.redoStack = [...s.redo];
+    this.doc = s.doc;
+    this.view = { ...s.view };
+    this.sel.clear();
+    if (this.traceAdjust) this.setTraceAdjust(false);
+    this.setMode('select');
+    this.afterHistory();
+  }
 
   rotate(): void {
     if (this.placing) { this.placing.rot = ((this.placing.rot + 90) % 360) as Rot; this.render(); return; }

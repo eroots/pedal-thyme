@@ -38,6 +38,12 @@ function loadSettings(): SimSettings {
   return JSON.parse(JSON.stringify(DEFAULTS));
 }
 
+/** Other open schematics whose response can be overlaid (the tabs). */
+export interface CompareSource {
+  list(): { id: string; name: string }[];
+  get(id: string): { doc: Schematic; sim: ProjectSim; name: string } | null;
+}
+
 export interface SimPanel {
   /** The document changed: recompute (cheap parts now, the tolerance band once things settle). */
   update(doc: Schematic, ex: Extraction, committed: boolean): void;
@@ -46,6 +52,12 @@ export interface SimPanel {
   settings(): ProjectSim;
   /** Apply settings loaded from a project. */
   apply(sim: ProjectSim): void;
+  /** The tab overlaid for comparison ('' for none). */
+  compare(): string;
+  setCompare(id: string): void;
+  setCompareSource(src: CompareSource): void;
+  /** Tabs were opened, closed or renamed. */
+  refreshCompare(): void;
 }
 
 export function initSimPanel(): SimPanel {
@@ -55,6 +67,8 @@ export function initSimPanel(): SimPanel {
   let sweep: { label: string; r: number; mag: number[]; ph: number[] }[] = [];
   let tolBand: { lo: number[]; hi: number[] } | null = null;
   let freqs: number[] = [];
+  let compareId = '', compareSrc: CompareSource | null = null;
+  let cmp: { label: string; mag: number[]; ph: number[] } | null = null;
   let hoverF: number | null = null;
   let locked: [number, number] | null = null;
   let rafId = 0, bandTimer: ReturnType<typeof setTimeout> | undefined;
@@ -120,10 +134,20 @@ export function initSimPanel(): SimPanel {
     $('#bSweep').innerHTML = `<option value="">${targets.length ? 'Off' : 'Off (mark parts Sweepable in Properties)'}</option>` + targets.map(t => `<option value="${t.id}" ${t.id === st.sweep ? 'selected' : ''}>${esc(t.label)}</option>`).join('');
   }
 
+  $('#bCompare').addEventListener('change', e => { compareId = (e.target as HTMLSelectElement).value; schedule(false); });
+  function renderCompareOptions(): void {
+    const list = compareSrc?.list() ?? [];
+    if (compareSrc && compareId && !list.some(t => t.id === compareId)) compareId = '';
+    const sel = $<HTMLSelectElement>('#bCompare');
+    sel.disabled = !list.length;
+    sel.innerHTML = `<option value="">${list.length ? 'None' : 'None (open another tab)'}</option>` + list.map(t => `<option value="${esc(t.id)}" ${t.id === compareId ? 'selected' : ''}>${esc(t.name)}</option>`).join('');
+  }
+
   /* ---------- Compute ---------- */
   function compute(): void {
     if (!doc || !ex) return;
     renderSweepOptions();
+    renderCompareOptions();
     const errs = ex.issues.filter(i => i.severity === 'error');
     const msg = $('#bSimMsg');
     if (errs.length) { res = null; msg.textContent = 'Fix the errors listed under Checks to see the response.'; draw(); return; }
@@ -137,6 +161,20 @@ export function initSimPanel(): SimPanel {
       const r = simulate(vx, [], freqs, t);
       return [{ label: v.label, r: v.r, mag: r.out.mag, ph: r.out.ph }];
     }) : [];
+    // Another tab's output, with its own source and load.
+    cmp = null;
+    let cmpNote = '';
+    const other = compareId ? compareSrc?.get(compareId) : null;
+    if (other) {
+      const ox = extract(other.doc);
+      if (ox.issues.some(i => i.severity === 'error')) cmpNote = ` <span class="warnc">${esc(other.name)} has errors (see its Checks), so it can't be compared.</span>`;
+      else {
+        const r = simulate(ox, [], freqs, termActive(other.sim.term) ? other.sim.term : null);
+        cmp = { label: other.name, mag: r.out.mag, ph: r.out.ph };
+        const c = (f: number) => cmp!.mag[nearest(f)];
+        cmpNote = ` <span class="cmpnote">${esc(other.name)}: ${fmtDb(c(100))} · ${fmtDb(c(1000))} · ${fmtDb(c(5000))}.</span>`;
+      }
+    }
     // Readouts.
     const at = (f: number) => res!.out.mag[nearest(f)];
     const z = impedances(ex, 1000, t);
@@ -144,7 +182,7 @@ export function initSimPanel(): SimPanel {
     msg.innerHTML = `Output: ${fmtDb(at(100))} @ 100 Hz · ${fmtDb(at(1000))} @ 1 kHz · ${fmtDb(at(5000))} @ 5 kHz.` +
       ` At 1 kHz: Zin ${zf(z.zin)}, Zout ${zf(z.zout)}.` +
       (t ? ' Includes the source and load (ideal shown dashed).' : ' Ideal source and no load.') +
-      biasNote(res.op);
+      biasNote(res.op) + cmpNote;
     draw();
   }
   /** Bias status: semiconductors are linearised at the DC operating point. */
@@ -181,6 +219,7 @@ export function initSimPanel(): SimPanel {
     if (st.showOut) sweep.forEach(s => out.push({ vals: s[kind], color: sweepColor(s.r), width: 1.4, label: s.label }));
     if (ideal && st.showOut) out.push({ vals: ideal.out[kind], color: cssVar('--muted'), width: 1.4, dash: [5, 4], label: 'Ideal source/load' });
     res.probes.forEach(p => out.push({ vals: p[kind], color: p.color, width: 1.8, label: p.ref }));
+    if (cmp) out.push({ vals: cmp[kind], color: cssVar('--compare'), width: 2.2, label: cmp.label });
     if (st.showOut) out.push({ vals: res.out[kind], color: cssVar('--accent'), width: 2.4, label: 'Output' });
     return out;
   }
@@ -199,6 +238,7 @@ export function initSimPanel(): SimPanel {
     drawPlot(mc, { freqs, fr: fRange(), y0, y1, step: (y1 - y0) > 48 ? 12 : 6, unit: '', hoverF, band: st.showTol && st.showOut ? tolBand : null, series: seriesList('mag') });
     if (st.showPhase) drawPlot(pc, { freqs, fr: fRange(), y0: -180, y1: 180, step: 90, unit: '°', wrap: true, hoverF, series: seriesList('ph') });
     const items: string[] = st.showOut ? [`<span><span class="sw" style="background:${cssVar('--accent')}"></span>Output</span>`] : [];
+    if (cmp) items.push(`<span><span class="sw" style="background:${cssVar('--compare')}"></span>${esc(cmp.label)} (other tab)</span>`);
     res.probes.forEach(p => items.push(`<span><span class="sw" style="background:${p.color}"></span>${esc(p.ref)}</span>`));
     if (ideal && st.showOut) items.push('<span><span class="sw" style="background:repeating-linear-gradient(90deg, var(--muted) 0 4px, transparent 4px 7px)"></span>Ideal source/load</span>');
     // Switch positions are discrete: one swatch each. Values and rotations: a colour ramp.
@@ -240,6 +280,10 @@ export function initSimPanel(): SimPanel {
       save(); syncControls(); schedule(true);
     },
     update: (d, x, committed) => { doc = d; ex = x; schedule(committed); },
+    compare: () => compareId,
+    setCompare: id => { compareId = id; renderCompareOptions(); schedule(false); },
+    setCompareSource: src => { compareSrc = src; },
+    refreshCompare: () => { renderCompareOptions(); schedule(false); },
     redraw: draw,
   };
 }

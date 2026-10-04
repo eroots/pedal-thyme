@@ -30,7 +30,18 @@ interface Result {
   ms: number;
 }
 
-export function initSoundPanel(ctx: () => SoundContext): { invalidate(): void; redraw(): void } {
+/** A tab's rendered sound (kept per tab, so each pedal can be listened to after switching). */
+export interface SoundState { res: unknown; stale: boolean }
+
+export interface SoundPanel {
+  invalidate(): void;
+  redraw(): void;
+  state(): SoundState;
+  /** Show another tab's render (cancelling one in progress). */
+  restore(s: SoundState | null): void;
+}
+
+export function initSoundPanel(ctx: () => SoundContext): SoundPanel {
   let res: Result | null = null;
   let stale = false;
   let worker: Worker | null = null;
@@ -201,5 +212,18 @@ export function initSoundPanel(ctx: () => SoundContext): { invalidate(): void; r
   return {
     invalidate: () => { if (res && !stale) { stale = true; draw(); } },
     redraw: draw,
+    state: () => ({ res, stale }),
+    restore: s => {
+      stop();
+      if (worker) {
+        worker.terminate(); worker = null;
+        $<HTMLProgressElement>('#sdProg').hidden = true;
+        $<HTMLButtonElement>('#sdRender').disabled = false;
+      }
+      res = (s?.res as Result | null) ?? null;
+      stale = s?.stale ?? false;
+      if (!res) msg('');
+      draw();
+    },
   };
 }

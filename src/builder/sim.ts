@@ -139,12 +139,12 @@ export function toleranceVariants(doc: Schematic, rTolPct: number, cTolPct: numb
 }
 
 /** Min/max envelope of the output magnitude across document variants. */
-export function band(docs: Schematic[], freqs: number[], term?: Term | null): { lo: number[]; hi: number[] } {
+export function band(docs: Schematic[], freqs: number[], term?: Term | null, wrap: (ex: Extraction) => Extraction = x => x): { lo: number[]; hi: number[] } {
   const lo = freqs.map(() => Infinity), hi = freqs.map(() => -Infinity);
   for (const d of docs) {
     const ex = extract(d);
     if (ex.issues.some(i => i.severity === 'error')) continue;
-    const { out } = simulate(ex, [], freqs, term);
+    const { out } = simulate(wrap(ex), [], freqs, term);
     out.mag.forEach((y, i) => { if (y < lo[i]) lo[i] = y; if (y > hi[i]) hi[i] = y; });
   }
   return { lo, hi };

@@ -17,6 +17,8 @@ export interface Tab {
   sim: ProjectSim;
   /** Tab whose response is overlaid on this tab's plot ('' for none). */
   compare: string;
+  /** Tab whose output feeds this tab's input, chaining the pedals ('' = the normal source). */
+  input: string;
   /** undefined until restored from IndexedDB. */
   trace?: Trace | null;
   file?: FileSystemFileHandle | null;
@@ -43,7 +45,7 @@ export const newTabId = (): string => `t${Date.now().toString(36)}${(counter++).
 
 export function newTab(sim: ProjectSim, doc: Schematic = emptyDoc()): Tab {
   return {
-    id: newTabId(), name: '', dirty: false, compare: '', trace: null, file: null, sound: null, needsFit: true,
+    id: newTabId(), name: '', dirty: false, compare: '', input: '', trace: null, file: null, sound: null, needsFit: true,
     state: { doc, view: { ...DEFAULT_VIEW }, undo: [], redo: [] },
     // A new tab keeps the source/load setup but starts without a sweep.
     sim: { ...JSON.parse(JSON.stringify(sim)), sweep: '' },
@@ -58,7 +60,7 @@ export function loadSession(defaultSim: ProjectSim): Session {
     const s = JSON.parse(localStorage.getItem(SESSION_KEY) || 'null');
     if (s && Array.isArray(s.tabs)) {
       const tabs: Tab[] = s.tabs.filter((t: { doc?: unknown }) => isDoc(t.doc)).map((t: Record<string, unknown>) => ({
-        id: String(t.id || newTabId()), name: String(t.name ?? ''), dirty: !!t.dirty, compare: String(t.compare ?? ''),
+        id: String(t.id || newTabId()), name: String(t.name ?? ''), dirty: !!t.dirty, compare: String(t.compare ?? ''), input: String(t.input ?? ''),
         state: { doc: t.doc as Schematic, view: (t.view as View) ?? { ...DEFAULT_VIEW }, undo: [], redo: [] },
         sim: (t.sim as ProjectSim) ?? defaultSim, needsFit: !t.view,
       }));
@@ -83,13 +85,30 @@ export function loadSession(defaultSim: ProjectSim): Session {
 export function saveSession(s: Session): void {
   const data = {
     active: s.active,
-    tabs: s.tabs.map(t => ({ id: t.id, name: t.name, dirty: t.dirty, compare: t.compare, doc: t.state.doc, view: t.state.view, sim: t.sim })),
+    tabs: s.tabs.map(t => ({ id: t.id, name: t.name, dirty: t.dirty, compare: t.compare, input: t.input, doc: t.state.doc, view: t.state.view, sim: t.sim })),
   };
   try {
     localStorage.setItem(SESSION_KEY, JSON.stringify(data));
     localStorage.removeItem(LEGACY_DOC_KEY);
     localStorage.removeItem(LEGACY_NAME_KEY);
   } catch { /* storage full or unavailable */ }
+}
+
+/**
+ * The tabs feeding `tab`, first pedal first (following each one's input), or null if they loop or a
+ * tab is missing.
+ */
+export function upstreamOf(tabs: Pick<Tab, 'id' | 'input'>[], tab: Pick<Tab, 'id' | 'input'>): Pick<Tab, 'id' | 'input'>[] | null {
+  const chain: Pick<Tab, 'id' | 'input'>[] = [];
+  const seen = new Set([tab.id]);
+  for (let id = tab.input; id; ) {
+    const t = tabs.find(x => x.id === id);
+    if (!t || seen.has(id)) return null;
+    seen.add(id);
+    chain.unshift(t);
+    id = t.input;
+  }
+  return chain;
 }
 
 /** A tab nobody has used yet (opening a file can take it over instead of adding a tab). */

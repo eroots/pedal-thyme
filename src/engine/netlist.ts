@@ -13,8 +13,11 @@ export type Element =
   | { type: 'V'; name: string; p: Node; n: Node; dc: number; ac?: number }
   /** Voltage-controlled voltage source: V(p) − V(n) = gain · (V(cp) − V(cn)). */
   | { type: 'E'; name: string; p: Node; n: Node; cp: Node; cn: Node; gain: number }
-  /** Op-amp; `model` is a key of OPAMP_MODELS ('ideal' = nullor). */
-  | { type: 'OA'; name: string; inP: Node; inN: Node; out: Node; model: string }
+  /**
+   * Op-amp; `model` is a key of OPAMP_MODELS ('ideal' = nullor). `rails` (transient only): the supply
+   * span it clips within, when it differs from the whole circuit's (pedals chained with different supplies).
+   */
+  | { type: 'OA'; name: string; inP: Node; inN: Node; out: Node; model: string; rails?: [number, number] }
   /**
    * Potentiometer. `a` = terminal 1 (CCW end), `w` = wiper, `b` = terminal 3 (CW end).
    * rot ∈ [0, 1] turns the wiper from a to b: R(a,w) = value · taper(rot).

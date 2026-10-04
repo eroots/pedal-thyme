@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { emptyDoc } from '../src/builder/doc';
 import type { ProjectSim } from '../src/builder/files';
-import { isBlank, loadSession, newTab, renderStrip, saveSession, tabTitle } from '../src/builder/tabs';
+import { isBlank, loadSession, newTab, renderStrip, saveSession, tabTitle, upstreamOf } from '../src/builder/tabs';
 
 /** A Map-backed localStorage (tests run in Node). */
 const store = new Map<string, string>();
@@ -66,5 +66,14 @@ describe('builder tabs', () => {
     expect(el.innerHTML).toMatch(/class="b-tab active"[^>]*data-tab="b"/);
     expect(el.innerHTML).toContain('id="bTabNew"');
     expect(tabTitle({ name: '  ' })).toBe('Untitled');
+  });
+
+  it('follows a signal chain back to its first pedal, and refuses loops', () => {
+    const tabs = [{ id: 'fuzz', input: '' }, { id: 'ts', input: 'fuzz' }, { id: 'rat', input: 'ts' }];
+    expect(upstreamOf(tabs, tabs[2])!.map(t => t.id)).toEqual(['fuzz', 'ts']);
+    expect(upstreamOf(tabs, tabs[0])).toEqual([]);
+    // Feeding the fuzz from the RAT would loop.
+    expect(upstreamOf(tabs, { id: 'fuzz', input: 'rat' })).toBeNull();
+    expect(upstreamOf(tabs, { id: 'x', input: 'gone' })).toBeNull();
   });
 });

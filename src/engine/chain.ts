@@ -1,0 +1,41 @@
+// Signal chains: several pedals' netlists joined into one, each pedal's output jack wired to the next
+// one's input jack, so loading between them (the next input impedance on the previous output) is real.
+// Ground is shared; everything else of an upstream pedal is prefixed, so its supplies, parts and nets
+// stay its own. The last pedal keeps its own names (probes and bias readouts refer to them).
+import { GND, type Element, type Netlist, type Node } from './netlist';
+
+/** Element fields that hold nodes (every other string field is a name, model or setting). */
+const NODE_KEYS = ['a', 'b', 'p', 'n', 'cp', 'cn', 'inP', 'inN', 'out', 'w', 'com', 'k', 'c', 'e', 'd', 'g', 's'] as const;
+
+/** The supply span of one pedal: its highest and lowest DC source, including ground. */
+export function supplyRails(nl: Netlist): [number, number] {
+  const dcs = nl.elements.filter((e): e is Extract<Element, { type: 'V' }> => e.type === 'V').map(e => e.dc);
+  return [Math.min(0, ...dcs), Math.max(0, ...dcs)];
+}
+
+function mapElement(e: Element, node: (n: Node) => Node, name: (n: string) => string): Element {
+  const out: Record<string, unknown> = { ...e, name: name(e.name) };
+  for (const k of NODE_KEYS) if (typeof out[k] === 'string' && k in e) out[k] = node(out[k] as Node);
+  return out as unknown as Element;
+}
+
+/**
+ * Join pedals in signal order (first one gets the source). Upstream pedal k's nodes and parts are
+ * prefixed `u{k}:`; the last pedal's are left as they are. Op-amps keep their own pedal's rails.
+ */
+export function joinChain(stages: Netlist[]): Netlist {
+  if (!stages.length) throw new Error('joinChain: no stages');
+  const last = stages[stages.length - 1];
+  const withRails = (nl: Netlist) => (e: Element): Element => (e.type === 'OA' && !e.rails ? { ...e, rails: supplyRails(nl) } : e);
+  if (stages.length === 1) return last;
+  const elements: Element[] = last.elements.map(withRails(last));
+  // Work back from the last pedal: each upstream output node becomes the next pedal's input node.
+  let next: Node = last.input;
+  for (let k = stages.length - 2; k >= 0; k--) {
+    const nl = stages[k], into = next;
+    const node = (n: Node): Node => (n === GND ? GND : n === nl.output ? into : `u${k}:${n}`);
+    elements.unshift(...nl.elements.map(withRails(nl)).map(e => mapElement(e, node, n => `u${k}:${n}`)));
+    next = node(nl.input);
+  }
+  return { title: last.title, elements, input: next, output: last.output };
+}

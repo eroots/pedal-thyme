@@ -41,7 +41,28 @@ function loadSettings(): SimSettings {
 /** Other open schematics whose response can be overlaid (the tabs). */
 export interface CompareSource {
   list(): { id: string; name: string }[];
-  get(id: string): { doc: Schematic; sim: ProjectSim; name: string } | null;
+  /** That tab's circuit as it simulates (with its own chain) and its source/load, or why it can't. */
+  get(id: string): { ex: Extraction; term: Term | null; name: string } | { error: string; name: string } | null;
+}
+
+/** The pedals feeding this one, when its input is another tab's output. */
+export interface Upstream {
+  /** Pedal names, first in the chain first. */
+  names: string[];
+  /** The first pedal's source (guitar, cable…), which now feeds the chain. */
+  src: Term['src'];
+  /** This pedal's circuit with the upstream pedals joined in front of it. */
+  wrap(ex: Extraction): Extraction;
+  /** Set when an upstream pedal can't be simulated. */
+  error?: string;
+}
+
+/** Tabs that can feed this one (the signal chain). */
+export interface ChainHost {
+  options(): { id: string; name: string }[];
+  resolve(id: string): Upstream | null;
+  /** The chain setting changed. */
+  changed(): void;
 }
 
 export interface SimPanel {
@@ -58,6 +79,14 @@ export interface SimPanel {
   setCompareSource(src: CompareSource): void;
   /** Tabs were opened, closed or renamed. */
   refreshCompare(): void;
+  /** Tab feeding this one's input ('' for the normal source). */
+  chain(): string;
+  setChain(id: string): void;
+  setChainHost(h: ChainHost): void;
+  /** The pedals in front of this one (null when its input is the normal source). */
+  upstream(): Upstream | null;
+  /** Source and load as simulated (with a chain: the first pedal's source). */
+  activeTerm(): Term | null;
 }
 
 export function initSimPanel(): SimPanel {
@@ -74,7 +103,14 @@ export function initSimPanel(): SimPanel {
   let rafId = 0, bandTimer: ReturnType<typeof setTimeout> | undefined;
 
   const save = () => { try { localStorage.setItem(LS_KEY, JSON.stringify(st)); } catch { /* ignore */ } };
-  const term = (): Term | null => (termActive(st.term) ? st.term : null);
+  let chainFrom = '', chainHost: ChainHost | null = null;
+  const upstream = (): Upstream | null => (chainFrom && chainHost ? chainHost.resolve(chainFrom) : null);
+  /** With a chain, the source is the first pedal's (this pedal's input sees the one before it). */
+  const termOf = (up: Upstream | null): Term | null => {
+    const t = up ? { src: up.src, load: st.term.load } : st.term;
+    return termActive(t) ? t : null;
+  };
+  const term = (): Term | null => termOf(upstream());
 
   /* ---------- Source & load controls ---------- */
   const fill = (sel: string, first: [string, string], presets: Record<string, { label: string }>, val: string) => {
@@ -83,14 +119,29 @@ export function initSimPanel(): SimPanel {
   };
   function renderTerm(): void {
     fill('#bSrc', ['ideal', 'Ideal (0 Ω)'], SRC_PRESETS, st.term.src.on ? st.term.src.preset : 'ideal');
+    // Other tabs can feed this pedal (a signal chain).
+    const chainOpts = chainHost?.options() ?? [];
+    if (chainHost && chainFrom && !chainOpts.some(o => o.id === chainFrom)) chainFrom = '';
+    if (chainOpts.length) {
+      $('#bSrc').insertAdjacentHTML('beforeend', `<optgroup label="Signal chain">${chainOpts.map(o => `<option value="chain:${esc(o.id)}">Output of ${esc(o.name)}</option>`).join('')}</optgroup>`);
+    }
+    if (chainFrom) $<HTMLSelectElement>('#bSrc').value = `chain:${chainFrom}`;
+    $('#bSrc').title = chainFrom ? 'This pedal is fed by the output of another tab (whose own source drives the chain)' : '';
     fill('#bLoad', ['none', 'None (open)'], LOAD_PRESETS, st.term.load.on ? st.term.load.preset : 'none');
-    $('#bSrcFields').hidden = !st.term.src.on;
+    $('#bSrcFields').hidden = !st.term.src.on || !!chainFrom;
     $('#bLoadFields').hidden = !st.term.load.on;
     $('#bSrcR').value = fmtEng(st.term.src.R); $('#bSrcL').value = fmtEng(st.term.src.L); $('#bSrcC').value = fmtEng(st.term.src.C);
     $('#bLoadR').value = fmtEng(st.term.load.R); $('#bLoadC').value = fmtEng(st.term.load.C);
   }
   $('.b-term').addEventListener('change', e => {
     const el = e.target as HTMLInputElement, id = el.id;
+    if (id === 'bSrc' && el.value.startsWith('chain:')) {
+      chainFrom = el.value.slice(6);
+      renderTerm(); schedule(true); chainHost?.changed();
+      return;
+    }
+    const wasChained = id === 'bSrc' && !!chainFrom;
+    if (id === 'bSrc') chainFrom = '';
     if (id === 'bSrc' || id === 'bLoad') {
       const box = id === 'bSrc' ? st.term.src : st.term.load;
       const pr = (id === 'bSrc' ? SRC_PRESETS : LOAD_PRESETS)[el.value];
@@ -111,6 +162,7 @@ export function initSimPanel(): SimPanel {
       box[m[2]] = v; box.preset = 'custom'; box.on = true;
     }
     save(); renderTerm(); schedule(true);
+    if (wasChained) chainHost?.changed();
   });
 
   /* ---------- Toggles & sweep ---------- */
@@ -151,14 +203,18 @@ export function initSimPanel(): SimPanel {
     const errs = ex.issues.filter(i => i.severity === 'error');
     const msg = $('#bSimMsg');
     if (errs.length) { res = null; msg.textContent = 'Fix the errors listed under Checks to see the response.'; draw(); return; }
+    const up = upstream();
+    if (up?.error) { res = null; msg.innerHTML = `<span class="warnc">${esc(up.error)}</span>`; draw(); return; }
+    const W = up ? up.wrap : (x: Extraction) => x;
+    const sx = W(ex);
     freqs = freqGrid(...fRange(), 300);
-    const probes = probesOf(doc, ex), t = term();
-    res = simulate(ex, probes, freqs, t);
-    ideal = t ? simulate(ex, [], freqs, null) : null;
+    const probes = probesOf(doc, ex), t = termOf(up);
+    res = simulate(sx, probes, freqs, t);
+    ideal = t ? simulate(sx, [], freqs, null) : null;
     sweep = st.sweep ? sweepVariants(doc, st.sweep, st.steps).flatMap(v => {
       const vx = extract(v.doc);
       if (vx.issues.some(i => i.severity === 'error')) return [];
-      const r = simulate(vx, [], freqs, t);
+      const r = simulate(W(vx), [], freqs, t);
       return [{ label: v.label, r: v.r, mag: r.out.mag, ph: r.out.ph }];
     }) : [];
     // Another tab's output, with its own source and load.
@@ -166,10 +222,9 @@ export function initSimPanel(): SimPanel {
     let cmpNote = '';
     const other = compareId ? compareSrc?.get(compareId) : null;
     if (other) {
-      const ox = extract(other.doc);
-      if (ox.issues.some(i => i.severity === 'error')) cmpNote = ` <span class="warnc">${esc(other.name)} has errors (see its Checks), so it can't be compared.</span>`;
+      if ('error' in other) cmpNote = ` <span class="warnc">${esc(other.error)}</span>`;
       else {
-        const r = simulate(ox, [], freqs, termActive(other.sim.term) ? other.sim.term : null);
+        const r = simulate(other.ex, [], freqs, other.term);
         cmp = { label: other.name, mag: r.out.mag, ph: r.out.ph };
         const c = (f: number) => cmp!.mag[nearest(f)];
         cmpNote = ` <span class="cmpnote">${esc(other.name)}: ${fmtDb(c(100))} · ${fmtDb(c(1000))} · ${fmtDb(c(5000))}.</span>`;
@@ -177,11 +232,11 @@ export function initSimPanel(): SimPanel {
     }
     // Readouts.
     const at = (f: number) => res!.out.mag[nearest(f)];
-    const z = impedances(ex, 1000, t);
+    const z = impedances(sx, 1000, t);
     const zf = (x: number) => (isFinite(x) && x < 1e11 ? fmtEng(x, 'Ω') : 'open');
-    msg.innerHTML = `Output: ${fmtDb(at(100))} @ 100 Hz · ${fmtDb(at(1000))} @ 1 kHz · ${fmtDb(at(5000))} @ 5 kHz.` +
+    msg.innerHTML = (up ? `Signal chain: ${up.names.map(esc).join(' → ')} → this pedal. ` : '') + `Output: ${fmtDb(at(100))} @ 100 Hz · ${fmtDb(at(1000))} @ 1 kHz · ${fmtDb(at(5000))} @ 5 kHz.` +
       ` At 1 kHz: Zin ${zf(z.zin)}, Zout ${zf(z.zout)}.` +
-      (t ? ' Includes the source and load (ideal shown dashed).' : ' Ideal source and no load.') +
+      (t ? ' Includes the source and load (ideal shown dashed).' : ' Ideal source and no load.') + (up ? ` Zin is the chain's (at ${esc(up.names[0])}).` : '') +
       biasNote(res.op) + cmpNote;
     draw();
   }
@@ -197,7 +252,8 @@ export function initSimPanel(): SimPanel {
     tolBand = null;
     if (!doc || !ex || !st.showTol || !res) { draw(); return; }
     const t0 = performance.now();
-    tolBand = band(toleranceVariants(doc, S.settings.rTol, S.settings.cTol), freqs, term());
+    const up = upstream();
+    tolBand = up?.error ? null : band(toleranceVariants(doc, S.settings.rTol, S.settings.cTol), freqs, term(), up ? up.wrap : undefined);
     const ms = performance.now() - t0;
     if (ms > 1500) console.info(`Tolerance band took ${ms.toFixed(0)} ms`);
     draw();
@@ -283,7 +339,12 @@ export function initSimPanel(): SimPanel {
     compare: () => compareId,
     setCompare: id => { compareId = id; renderCompareOptions(); schedule(false); },
     setCompareSource: src => { compareSrc = src; },
-    refreshCompare: () => { renderCompareOptions(); schedule(false); },
+    refreshCompare: () => { renderCompareOptions(); renderTerm(); schedule(false); },
+    chain: () => chainFrom,
+    setChain: id => { chainFrom = id; renderTerm(); schedule(true); },
+    setChainHost: h => { chainHost = h; },
+    upstream,
+    activeTerm: term,
     redraw: draw,
   };
 }

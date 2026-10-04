@@ -16,7 +16,9 @@ import { partBox, updateNote, updatePart } from './doc';
 import { Editor, PART_KEYS, type DragMode, type Mode } from './editor';
 import { initFileBar, type FileBar, type FileHost } from './filebar';
 import { canWriteFolders, idbGet, idbSet } from './folder';
-import { fileKey, isBlank, loadSession, newTab, renderStrip, saveSession, tabTitle, traceKey, type Tab } from './tabs';
+import { fileKey, isBlank, loadSession, newTab, renderStrip, saveSession, tabTitle, traceKey, upstreamOf, type Tab } from './tabs';
+import { joinChain } from '../engine/chain';
+import type { Upstream } from './simpanel';
 import { initFrontPanel } from './frontpanel';
 import { initSimPanel } from './simpanel';
 import { initSoundPanel } from './sound';
@@ -82,10 +84,10 @@ export function initBuilder(): BuilderApi {
   });
   if (!active.needsFit) editor.setView(active.state.view);
   sim.setCompare(active.compare);
+  sim.setChain(active.input);
   sim.apply(active.sim);
   const sound = initSoundPanel(() => {
-    const st = sim.settings();
-    return { ex, doc: editor.doc, term: termActive(st.term) ? st.term : null, name: (document.querySelector<HTMLInputElement>('#bName')?.value || '') };
+    return { ex: simEx(), doc: editor.doc, term: sim.activeTerm(), name: (document.querySelector<HTMLInputElement>('#bName')?.value || '') };
   });
   const panel = initFrontPanel($('#bKnobs'), editor);
   const trace = initTrace(editor, msg => { if (msg) $('#bHint').textContent = msg; else renderModes(editor.mode, null); }, t => {
@@ -120,6 +122,56 @@ export function initBuilder(): BuilderApi {
   const files: FileBar = initFileBar(editor, sim, trace, host);
   files.setState({ name: active.name, file: null, dirty: active.dirty });
 
+  /* ---------- Signal chain (a tab's input fed by another tab's output) ---------- */
+  const exCache = new WeakMap<Schematic, Extraction>();
+  const exOf = (d: Schematic): Extraction => { let x = exCache.get(d); if (!x) { x = extract(d); exCache.set(d, x); } return x; };
+  const docOf = (t: Tab): Schematic => (t === active ? editor.doc : t.state.doc);
+  const inputOf = (t: Tab): string => (t === active ? sim.chain() : t.input);
+  const nameOf = (t: Tab): string => (t === active ? files.state().name.trim() || 'Untitled' : tabTitle(t));
+  const hasErrors = (x: Extraction) => x.issues.some(i => i.severity === 'error');
+  /** Tabs feeding `tab` if its input were `from` (first pedal first); null if that loops. */
+  const feeding = (tab: Tab, from: string): Tab[] | null => {
+    const view = tabs.map(t => ({ id: t.id, input: t === tab ? from : inputOf(t) }));
+    const ids = upstreamOf(view, { id: tab.id, input: from });
+    return ids && ids.map(v => tabs.find(t => t.id === v.id)!);
+  };
+  let chainMemo: { key: unknown[]; up: Upstream | null } | null = null;
+  /** The pedals in front of `tab` when `from` feeds it (cached while nothing in the chain changes). */
+  function upstreamFor(tab: Tab, from: string): Upstream | null {
+    const chain = from ? feeding(tab, from) : null;
+    if (!chain?.length) return null;
+    const first = chain[0], src = (first === active ? sim.settings() : first.sim).term.src;
+    const key = [tab, src, ...chain.flatMap(t => [docOf(t), nameOf(t)])];
+    if (chainMemo && chainMemo.key.length === key.length && chainMemo.key.every((k, i) => k === key[i])) return chainMemo.up;
+    const names = chain.map(nameOf);
+    const bad = chain.find(t => hasErrors(exOf(docOf(t))));
+    let up: Upstream;
+    if (bad) up = { names, src, wrap: x => x, error: `${nameOf(bad)} (earlier in the signal chain) has errors, so the chain can't be simulated: see its Checks.` };
+    else {
+      const nets = chain.map(t => exOf(docOf(t)).netlist);
+      const joined = new WeakMap<Extraction, Extraction>();
+      up = {
+        names, src,
+        wrap: x => { let j = joined.get(x); if (!j) { j = { ...x, netlist: joinChain([...nets, x.netlist]) }; joined.set(x, j); } return j; },
+      };
+    }
+    chainMemo = { key, up };
+    return up;
+  }
+  /** The shown pedal as it simulates: with the pedals feeding it, if any. */
+  function simEx(): Extraction {
+    const up = sim.upstream();
+    if (!up) return ex;
+    if (up.error) return { ...ex, issues: [...ex.issues, { severity: 'error', message: up.error }] };
+    return up.wrap(ex);
+  }
+  sim.setChainHost({
+    // Any other tab, unless it is (or is fed by) this one.
+    options: () => tabs.filter(t => t !== active && feeding(active, t.id) !== null).map(t => ({ id: t.id, name: nameOf(t) })),
+    resolve: id => upstreamFor(active, id),
+    changed: () => { active.input = sim.chain(); renderBias(); sound.invalidate(); renderTabs(); persist(); },
+  });
+
   /** Copy the live (cheap) state of the shown tab into its record. */
   function syncActive(): void {
     const f = files.state();
@@ -128,6 +180,7 @@ export function initBuilder(): BuilderApi {
     active.state = { ...active.state, doc: editor.doc, view: editor.getView() };
     active.sim = sim.settings();
     active.compare = sim.compare();
+    active.input = sim.chain();
   }
   let persistTimer: ReturnType<typeof setTimeout> | undefined;
   function persist(): void {
@@ -157,6 +210,7 @@ export function initBuilder(): BuilderApi {
     try {
       files.setState({ name: t.name, file: t.file ?? null, dirty: t.dirty });
       sim.setCompare(t.compare);
+      sim.setChain(t.input);
       sim.apply(t.sim);
       trace.show(t.trace ?? null);
       sound.restore(t.sound ?? null);
@@ -186,7 +240,11 @@ export function initBuilder(): BuilderApi {
     const i = tabs.indexOf(t);
     if (tabs.length === 1) tabs.push(newTab(t.sim));
     tabs.splice(i, 1);
-    for (const o of tabs) if (o.compare === t.id) o.compare = '';
+    for (const o of tabs) {
+      if (o.compare === t.id) o.compare = '';
+      if (o.input === t.id) o.input = '';
+    }
+    if (t !== active && sim.chain() === t.id) sim.setChain('');
     if (t === active) switchTo(tabs[Math.min(i, tabs.length - 1)]);
     else { renderTabs(); persist(); }
     sim.refreshCompare();
@@ -221,10 +279,16 @@ export function initBuilder(): BuilderApi {
   });
 
   sim.setCompareSource({
-    list: () => tabs.filter(t => t !== active).map(t => ({ id: t.id, name: tabTitle(t) })),
+    list: () => tabs.filter(t => t !== active).map(t => ({ id: t.id, name: nameOf(t) })),
     get: id => {
       const t = tabs.find(x => x.id === id && x !== active);
-      return t ? { doc: t.state.doc, sim: t.sim, name: tabTitle(t) } : null;
+      if (!t) return null;
+      const name = nameOf(t), x = exOf(t.state.doc);
+      if (hasErrors(x)) return { error: `${name} has errors (see its Checks), so it can't be compared.`, name };
+      const up = upstreamFor(t, t.input);
+      if (up?.error) return { error: up.error, name };
+      const tt = up ? { src: up.src, load: t.sim.term.load } : t.sim.term;
+      return { ex: up ? up.wrap(x) : x, term: termActive(tt) ? tt : null, name };
     },
   });
 
@@ -394,14 +458,15 @@ export function initBuilder(): BuilderApi {
     try { localStorage.setItem(LS_KEY + '.bias', showBias ? '1' : '0'); } catch { /* ignore */ }
     renderBias();
   }
-  const opOf = (): OpPoint | null => (ex.issues.some(i => i.severity === 'error') ? null : biasOf(ex));
+  const opOf = (): OpPoint | null => { const sx = simEx(); return hasErrors(sx) ? null : biasOf(sx); };
   /** Node voltages on the canvas: one tag per net, on a wire where it clears the labels and symbols. */
   function renderBias(): void {
     $('#bBias').classList.toggle('active', showBias);
     fillDeviceOp();
-    if (!showBias || ex.issues.some(i => i.severity === 'error')) { editor.setAnnotations(''); return; }
+    const sx = simEx();
+    if (!showBias || hasErrors(sx)) { editor.setAnnotations(''); return; }
     // Linear circuits have no op from biasOf; solve them too so the overlay always works.
-    const pt = biasOf(ex) ?? dcOp(ex.netlist);
+    const pt = biasOf(sx) ?? dcOp(sx.netlist);
     const rank = (k: PartKind) => (['NPN', 'PNP', 'NJF', 'PJF', 'NMOS', 'PMOS'].includes(k) ? 0 : k === 'D' || k === 'LED' ? 1 : k === 'OA' ? 2 : ['IN', 'OUT', 'GND', 'SUPPLY', 'LABEL', 'PROBE'].includes(k) ? 9 : 3);
     type Box = [number, number, number, number];
     const taken: Box[] = [...renderSchematicBody(editor.doc).textBoxes, ...editor.doc.parts.map(partBox)];
@@ -411,7 +476,7 @@ export function initBuilder(): BuilderApi {
     const tags: string[] = [];
     for (const [net, members] of ex.nets) {
       // The input is tied to 0 V for the bias calculation, so its tag would say nothing.
-      if (net === '0' || net === ex.netlist.input || members.length < 2 || !pt.nodes.has(net)) continue;
+      if (net === '0' || net === sx.netlist.input || members.length < 2 || !pt.nodes.has(net)) continue;
       const txt = fmtVolts(pt.v(net)), w = txt.length * 5.9 + 6, h = 12;
       // Candidate spots along the net's wire segments, longest (and horizontal) first.
       const segs: { a: Pt; b: Pt; sc: number }[] = [];

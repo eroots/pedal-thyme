@@ -205,7 +205,7 @@ export class TransientSim {
           const m = opAmpModel(e.model), y = yNode.get(e)!;
           const a0 = isFinite(m.a0) ? m.a0 : 1e6, gbw = isFinite(m.gbw) ? m.gbw : 50e6, rout = Math.max(m.rout, 1e-2);
           const gm = a0 / RY, cy = gm / (2 * Math.PI * gbw), imax = isFinite(m.slew) ? m.slew * 1e6 * cy : Infinity;
-          const lo = this.rails[0] + m.headroom[0], hi = this.rails[1] - m.headroom[1];
+          const rails = e.rails ?? this.rails, lo = rails[0] + m.headroom[0], hi = rails[1] - m.headroom[1];
           cond(y, -1, 1 / RY);
           reactive(y, -1, 'C', cy, true);
           if (isFinite(m.rin)) cond(node(e.inP), node(e.inN), 1 / m.rin);

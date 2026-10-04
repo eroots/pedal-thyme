@@ -128,6 +128,25 @@ rail clipping and slew rate; and 1 kHz/100 mV transient vs LTspice `.four`:
 
 Speed: about 1–2 s per second of audio at 4×. Not done: real-time live input (would come next if wanted).
 
+## Tabs, comparison and signal chains ✅ (2026-10-04)
+- Builder tabs: each holds its own drawing, history, file, sim settings, trace and sound render; the session
+  survives reloads.
+- Response "Compare with": another tab's output overlaid.
+- Signal chain, part 1: Source → "Output of <tab>". `src/engine/chain.ts` joins the netlists:
+  - upstream pedals are prefixed `u{k}:`, and each output is wired to the next pedal's input, so inter-pedal
+    loading is real;
+  - each op-amp keeps its own pedal's rails;
+  - the response, sweeps, tolerance, DC bias and sound all run through the chain;
+  - the first pedal's source drives the chain; this tab's load ends it.
+
+## Next: pedalboard (signal chain, part 2)
+- A pedalboard view: an ordered list of pedals (Guitar → … → Amp), with drag-to-reorder and an on/off switch
+  per pedal. The chain only runs through the pedals that are on.
+- Response per stage (output after each pedal), and all the pedals' knobs in one place.
+- Saving a pedalboard: each schematic stays its own file, and a pedalboard file just lists the schematics
+  (order, on/off) and opens them together as tabs.
+- Then split screen: two tabs side by side.
+
 ## Verification
 - Closed-form oracles for every Playground topology.
 - Netlist-extraction unit tests.

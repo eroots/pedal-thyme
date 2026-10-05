@@ -8,11 +8,12 @@ import type { Extraction } from '../schematic/extract';
 import type { Schematic } from '../schematic/types';
 import { download } from '../ui/download';
 import { cssVar, drawPlot, magRange, PLOT_MARGIN, type PlotSeries } from '../ui/plot';
-import { BOARD_EXT, BYPASS, boardTerm, loadBoardSession, makeBoardFile, parseBoard, saveBoardSession, type Board, type BoardFile } from './board';
+import { fmtEng } from '../core/units';
+import { BOARD_EXT, BYPASS, boardTerm, loadBoardSession, loadingOf, loadingText, makeBoardFile, parseBoard, saveBoardSession, type Board, type BoardFile, type Loading } from './board';
 import { parseProject, safeFileName, type Project } from './files';
 import { allowed, canSaveAs, canWriteFolders, idbGet, idbSet, saveAsDialog, writeHandle, type ProjectFolder } from './folder';
 import { initFrontPanel, type DocHost, type FrontPanel } from './frontpanel';
-import { simulate } from './sim';
+import { impedances, simulate } from './sim';
 import { initSoundPanel } from './sound';
 
 const $ = <T extends HTMLElement = HTMLInputElement>(sel: string): T => document.querySelector(sel) as T;
@@ -279,14 +280,34 @@ export function initBoard(host: BoardHost, show: () => void): BoardUi {
     const c = chain(), msg = $('#pbMsg');
     if (c.error) { res = null; msg.innerHTML = `<span class="warnc">${esc(c.error)}</span>`; draw(); return; }
     freqs = freqGrid(...fRange(), 300);
-    res = simulate(c.ex, showStages() ? c.probes : [], freqs, term());
+    const full = simulate(c.ex, c.probes, freqs, term());
+    res = showStages() ? full : { ...full, probes: [] };
+    const loads = loadings(full.probes.map(p => p.mag));
     const k1 = (f: number) => { let k = 0; for (let i = 1; i < freqs.length; i++) if (Math.abs(Math.log(freqs[i] / f)) < Math.abs(Math.log(freqs[k] / f))) k = i; return k; };
     const at = (v: number[], f: number) => fmtDb(v[k1(f)]);
     const route = ['Guitar', ...(c.names.length ? c.names : ['(all pedals bypassed)']), 'Amp'].map(esc).join(' → ');
     msg.innerHTML = `${route}. Output: ${at(res.out.mag, 100)} @ 100 Hz · ${at(res.out.mag, 1000)} @ 1 kHz · ${at(res.out.mag, 5000)} @ 5 kHz.` +
       (res.probes.length ? ' ' + res.probes.map(p => `${esc(p.ref)}: ${at(p.mag, 1000)} @ 1 kHz.`).join(' ') : '') +
-      ' Small-signal (no clipping): render the Sound below to hear the drive.';
+      ' Small-signal (no clipping): render the Sound below to hear the drive.' +
+      loads.map(l => `<span class="pb-warn">⚠ ${esc(loadingText(l, x => fmtEng(x, 'Ω'), f => fmtEng(f, 'Hz')))}</span>`).join('');
     draw();
+  }
+  /**
+   * Pedals whose input drags down the previous pedal's output: the output after each pedal in the whole
+   * chain (`after`) against the same chain cut off after that pedal (nothing loading it).
+   */
+  function loadings(after: number[][]): Loading[] {
+    const on = onPedals(), out: Loading[] = [];
+    const t = term(), unloadedTerm = t ? { src: t.src, load: { ...t.load, on: false } } : null;
+    for (let k = 0; k + 1 < on.length; k++) {
+      const stages = on.slice(0, k + 1).map(p => host.ex(p.tab)!.netlist);
+      const { netlist } = joinStages(stages);
+      const unloaded = simulate({ netlist, pinNet: new Map(), nets: new Map(), issues: [] }, [], freqs, unloadedTerm).out.mag;
+      const from = host.ex(on[k].tab)!, to = host.ex(on[k + 1].tab)!;
+      const l = loadingOf(nameOf(on[k].tab), nameOf(on[k + 1].tab), freqs, after[k], unloaded, impedances(from, 1000).zout, impedances(to, 1000).zin);
+      if (l) out.push(l);
+    }
+    return out;
   }
   function draw(): void {
     const cv = $<HTMLCanvasElement>('#pbPlot');

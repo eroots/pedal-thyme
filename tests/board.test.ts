@@ -1,8 +1,9 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { BYPASS, boardTerm, emptyBoard, isBoardText, loadBoardSession, makeBoardFile, parseBoard, saveBoardSession } from '../src/builder/board';
+import { BYPASS, loadingOf, loadingText, boardTerm, emptyBoard, isBoardText, loadBoardSession, makeBoardFile, parseBoard, saveBoardSession } from '../src/builder/board';
 import { emptyDoc } from '../src/builder/doc';
 import { makeProject } from '../src/builder/files';
 import { joinStages } from '../src/engine/chain';
+import { simulate } from '../src/builder/sim';
 import type { Netlist } from '../src/engine/netlist';
 
 const store = new Map<string, string>();
@@ -49,5 +50,26 @@ describe('pedalboard', () => {
     expect(outputs).toEqual(['u1:in', 'in', 'out']);
     expect(netlist.output).toBe('out');
     expect(BYPASS.input).toBe(BYPASS.output);
+  });
+
+  it('points out a pedal whose input loads the one before it, and suggests an input buffer', () => {
+    const out10k: Netlist = { input: 'in', output: 'out', elements: [{ type: 'R', name: 'Ro', a: 'in', b: 'out', value: 10e3 }] };
+    const zin = (r: number): Netlist => ({ input: 'in', output: 'in', elements: [{ type: 'R', name: 'Ri', a: 'in', b: '0', value: r }] });
+    const freqs = [50, 100, 1000, 5000, 10000];
+    const fake = (netlist: Netlist) => ({ netlist, pinNet: new Map(), nets: new Map(), issues: [] });
+    const check = (r: number) => {
+      const { netlist, outputs } = joinStages([out10k, zin(r)]);
+      const after = simulate(fake(netlist), [{ ref: 'a', color: '', net: outputs[0] }], freqs).probes[0].mag;
+      const alone = simulate(fake(out10k), [], freqs).out.mag;
+      return loadingOf('Southland', 'GE-7', freqs, after, alone, 10e3, r);
+    };
+    const l = check(6.8e3)!;
+    expect(l.at1k).toBeCloseTo(20 * Math.log10(6.8 / 16.8), 3);
+    expect(l.spread).toBeCloseTo(0, 6);
+    const text = loadingText(l, x => `${x / 1e3} kΩ`, f => `${f} Hz`);
+    expect(text).toContain("GE-7's input (6.8 kΩ at 1 kHz) loads Southland's output (10 kΩ): −7.9 dB at 1 kHz.");
+    expect(text).toContain('add a Unity buffer');
+    expect(text).not.toContain('changes the tone');
+    expect(check(1e6)).toBeNull();
   });
 });

@@ -34,6 +34,48 @@ export function boardTerm(b: Pick<Board, 'src' | 'load'>, srcPresets: Record<str
 /** With every pedal off: a straight wire from guitar to amp. */
 export const BYPASS: Netlist = { input: 'in', output: 'in', elements: [{ type: 'R', name: 'Rleak', a: 'in', b: '0', value: 1e9 }] };
 
+/* ---------- Loading between pedals ---------- */
+/** A pedal's input dragging down the previous pedal's output: worth pointing out above this loss. */
+export const LOADING_DB = 1;
+
+export interface Loading {
+  /** The pedal whose output is loaded, and the pedal doing it. */
+  from: string; to: string;
+  /** |Zout| of `from` and |Zin| of `to`, at 1 kHz (Ω). */
+  zout: number; zin: number;
+  /** Change at `from`'s output caused by connecting `to` (dB): the worst over the band, and at 1 kHz. */
+  worst: number; at1k: number;
+  /** Frequency of the worst change, and the spread across the band (how much the tone changes, dB). */
+  worstF: number; spread: number;
+}
+
+/**
+ * How much connecting the next pedal changes a pedal's output, from the output after `from` in the
+ * whole chain (loaded) and in the chain cut off after `from` (unloaded). Null if under LOADING_DB.
+ */
+export function loadingOf(from: string, to: string, freqs: number[], loaded: number[], unloaded: number[], zout: number, zin: number): Loading | null {
+  let worst = 0, worstF = 1000, lo = Infinity, hi = -Infinity, at1k = 0, best1k = Infinity;
+  freqs.forEach((f, i) => {
+    if (f < 50 || f > 10e3) return;
+    const d = loaded[i] - unloaded[i];
+    if (Math.abs(d) > Math.abs(worst)) { worst = d; worstF = f; }
+    lo = Math.min(lo, d); hi = Math.max(hi, d);
+    if (Math.abs(Math.log(f / 1000)) < best1k) { best1k = Math.abs(Math.log(f / 1000)); at1k = d; }
+  });
+  if (Math.abs(worst) < LOADING_DB) return null;
+  return { from, to, zout, zin, worst, at1k, worstF, spread: hi - lo };
+}
+
+/** Plain-language explanation of a loading problem, with the usual fix. */
+export function loadingText(l: Loading, fmtOhm: (x: number) => string, fmtHz: (f: number) => string): string {
+  const db = (x: number) => `${x >= 0 ? '+' : '−'}${Math.abs(x).toFixed(1)} dB`;
+  const tone = l.spread >= LOADING_DB ? ` It also changes the tone: the loss varies by ${l.spread.toFixed(1)} dB across the band (worst ${db(l.worst)} at ${fmtHz(l.worstF)}).` : '';
+  return `${l.to}'s input (${fmtOhm(l.zin)} at 1 kHz) loads ${l.from}'s output (${fmtOhm(l.zout)}): ${db(l.at1k)} at 1 kHz.${tone} ` +
+    `Real pedals usually have an input buffer, which schematics often leave out. If ${l.to} should have one, add a Unity buffer ` +
+    `(Active parts) between its input jack and the rest of its circuit, with about 1 MΩ from the buffer's input to ground (or to its bias voltage). ` +
+    `Some pedals really do have a low input impedance (Fuzz Face-style fuzzes, for example); then this loss is part of how they behave.`;
+}
+
 /* ---------- Session (the board in use survives reloads) ---------- */
 const LS_KEY = 'pedal-filter-lab.board.v1';
 

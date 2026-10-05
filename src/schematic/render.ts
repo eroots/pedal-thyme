@@ -85,7 +85,7 @@ export function renderSchematicBody(sch: Schematic, opt: RenderOptions = {}): { 
     let g = `<g transform="${svgTransform(p)}">${hit}${spec.draw(p)}</g>`;
     // Upright text.
     if (p.kind === 'OA') {
-      for (const [sign, at] of [['−', [-31, -20]], ['+', [-31, 20]]] as [string, Pt][]) {
+      for (const [sign, at] of [['−', [-23, -16]], ['+', [-23, 16]]] as [string, Pt][]) {
         const [x, y] = toWorld(p, at);
         g += text(x + (p.rot === 180 ? -2 : 2), y + 4, sign, 'sign', 'middle');
       }
@@ -106,8 +106,8 @@ export function renderSchematicBody(sch: Schematic, opt: RenderOptions = {}): { 
     } else if (p.kind === 'OA') {
       // Op-amps: ref and model just above (or below) the triangle, right of centre.
       const below = p.labelSide === 'b', val = spec.valueText!(p);
-      if (p.ref) g += text(p.x + 12, p.y + (below ? 52 : -46), p.ref, 'pn', 'start');
-      if (val) g += text(p.x + 12, p.y + (below ? 65 : -33), val, 'pv', 'start');
+      if (p.ref) g += text(p.x + 8, p.y + (below ? 38 : -32), p.ref, 'pn', 'start');
+      if (val) g += text(p.x + 8, p.y + (below ? 51 : -19), val, 'pv', 'start');
     } else if (p.ref || spec.valueText) {
       const side = labelSide(p), L = LABEL_POS[side], pad = spec.labelPad || 0;
       const dx = L.dx + (side === 'r' ? pad : side === 'l' ? -pad : 0), dy = side === 't' ? -pad : side === 'b' ? pad : 0;

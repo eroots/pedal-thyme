@@ -234,11 +234,15 @@ export class Editor {
 
   /** Zoom and pan so the whole drawing is visible. */
   fit(): void {
-    const { bounds } = renderSchematicBody(this.doc);
+    this.fitBox(renderSchematicBody(this.doc).bounds);
+  }
+
+  /** Zoom and pan so a region (world units) fills the view. */
+  fitBox(b: { x0: number; y0: number; x1: number; y1: number }): void {
     const W = this.wrap.clientWidth || 800, H = this.wrap.clientHeight || 500;
-    const bw = bounds.x1 - bounds.x0 + 80, bh = bounds.y1 - bounds.y0 + 80;
-    const zoom = Math.max(0.3, Math.min(2.2, W / bw, H / bh));
-    this.view = { zoom, x: (bounds.x0 + bounds.x1) / 2 - W / zoom / 2, y: (bounds.y0 + bounds.y1) / 2 - H / zoom / 2 };
+    const bw = b.x1 - b.x0 + 80, bh = b.y1 - b.y0 + 80;
+    const zoom = Math.max(0.25, Math.min(2.2, W / bw, H / bh));
+    this.view = { zoom, x: (b.x0 + b.x1) / 2 - W / zoom / 2, y: (b.y0 + b.y1) / 2 - H / zoom / 2 };
     this.render();
   }
 

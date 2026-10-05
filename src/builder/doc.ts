@@ -42,7 +42,7 @@ export const emptyDoc = (): Schematic => ({
   version: 1,
   parts: [
     { id: 'in', kind: 'IN', x: 0, y: 0, rot: 0 },
-    { id: 'out', kind: 'OUT', x: 400, y: 0, rot: 0 },
+    { id: 'out', kind: 'OUT', x: 1000, y: 0, rot: 0 },
   ],
   wires: [],
 });

@@ -203,9 +203,10 @@ export const PARTS: Record<PartKind, PartSpec> = {
       : []),
   },
   OA: {
-    label: 'Op-amp', box: [-40, -40, 40, 40], avoid: [0, 1],
+    // Triangle 60 × 56 between the pins, with short leads out to them.
+    label: 'Op-amp', box: [-40, -28, 40, 28], avoid: [0, 1],
     pins: [{ name: '-', at: [-40, -20] }, { name: '+', at: [-40, 20] }, { name: 'out', at: [40, 0] }],
-    draw: () => polygon([[-40, -40], [-40, 40], [40, 0]]),
+    draw: () => line(-40, -20, -30, -20) + line(-40, 20, -30, 20) + polygon([[-30, -28], [-30, 28], [30, 0]]) + line(30, 0, 40, 0),
     valueText: p => (p.props?.model && p.props.model !== 'ideal' ? p.props.model : ''),
     elements: (p, n) => [{ type: 'OA', name: p.ref || p.id, inP: n('+'), inN: n('-'), out: n('out'), model: p.props?.model ?? 'ideal' }],
   },

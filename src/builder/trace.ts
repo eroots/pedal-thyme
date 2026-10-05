@@ -20,6 +20,12 @@ export interface Trace {
 const LS_KEY = 'pedal-filter-lab.builder.trace';
 /** Longest side of a rendered PDF page, in pixels. */
 const PDF_PX = 2400;
+/**
+ * A new picture's longer side, in world units: about a pedal schematic drawn at this app's part sizes
+ * (a resistor is 60 units long; the Tube Screamer template is about 1000 wide), so traced parts come out
+ * close to the size of the parts drawn over them. Move / scale fine-tunes it.
+ */
+const TRACE_SPAN = 1400;
 
 export function isTrace(t: unknown): t is Trace {
   const x = t as Trace;
@@ -106,16 +112,19 @@ export function initTrace(editor: Editor, hint: (msg: string | null) => void, st
   editor.onTrace = () => { persist(); sync(); };
   editor.onTraceAdjust = on => { hint(on ? 'Adjusting the trace picture: drag to move it, scroll to scale it. Esc or "Done adjusting" when it lines up.' : null); sync(); };
 
-  // Place a new picture so it fills most of the current view.
+  // Place a new picture at a typical schematic size, centred on the current view, and zoom to show it.
   const place = (img: { src: string; w: number; h: number }, name: string, keep?: Trace | null) => {
     const v = editor.getView(), wrap = $('#bCanvasWrap');
-    const W = wrap.clientWidth / v.zoom, H = wrap.clientHeight / v.zoom;
-    const scale = keep ? keep.scale * (keep.w / img.w) : Math.min((W * 0.9) / img.w, (H * 0.9) / img.h);
+    const cx = v.x + wrap.clientWidth / v.zoom / 2, cy = v.y + wrap.clientHeight / v.zoom / 2;
+    const scale = keep ? keep.scale * (keep.w / img.w) : TRACE_SPAN / Math.max(img.w, img.h);
     const t: Trace = keep
       ? { ...keep, src: img.src, w: img.w, h: img.h, scale, name }
-      : { src: img.src, w: img.w, h: img.h, x: v.x + (W - img.w * scale) / 2, y: v.y + (H - img.h * scale) / 2, scale, rot: 0, opacity: 0.45, visible: true, name };
+      : { src: img.src, w: img.w, h: img.h, x: cx - (img.w * scale) / 2, y: cy - (img.h * scale) / 2, scale, rot: 0, opacity: 0.45, visible: true, name };
     editor.setTrace(t);
-    if (!keep) editor.setTraceAdjust(true);
+    if (!keep) {
+      editor.fitBox({ x0: t.x, y0: t.y, x1: t.x + img.w * scale, y1: t.y + img.h * scale });
+      editor.setTraceAdjust(true);
+    }
   };
 
   $('#bTraceFile').addEventListener('change', async e => {

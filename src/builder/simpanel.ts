@@ -179,10 +179,14 @@ export function initSimPanel(): SimPanel {
   $('#bSweepSteps').value = String(st.steps);
   $('#bSweep').addEventListener('change', e => { st.sweep = (e.target as HTMLSelectElement).value; save(); schedule(true); });
   $('#bSweepSteps').addEventListener('change', e => { st.steps = +(e.target as HTMLSelectElement).value; save(); schedule(true); });
-  function renderSweepOptions(): void {
+  /**
+   * `prune`: forget a sweep whose part is gone. Only when computing: settings applied for another tab
+   * arrive just before that tab's schematic does, so `doc` may still be the previous tab's.
+   */
+  function renderSweepOptions(prune = false): void {
     if (!doc) return;
     const targets = sweepTargets(doc);
-    if (st.sweep && !targets.some(t => t.id === st.sweep)) st.sweep = '';
+    if (prune && st.sweep && !targets.some(t => t.id === st.sweep)) st.sweep = '';
     $('#bSweep').innerHTML = `<option value="">${targets.length ? 'Off' : 'Off (mark parts Sweepable in Properties)'}</option>` + targets.map(t => `<option value="${t.id}" ${t.id === st.sweep ? 'selected' : ''}>${esc(t.label)}</option>`).join('');
   }
 
@@ -198,7 +202,7 @@ export function initSimPanel(): SimPanel {
   /* ---------- Compute ---------- */
   function compute(): void {
     if (!doc || !ex) return;
-    renderSweepOptions();
+    renderSweepOptions(true);
     renderCompareOptions();
     const errs = ex.issues.filter(i => i.severity === 'error');
     const msg = $('#bSimMsg');

@@ -4,6 +4,7 @@
 // (too big, or not storable as JSON) in IndexedDB, keyed by tab id.
 import type { Schematic } from '../schematic/types';
 import { emptyDoc } from './doc';
+import { sanitizeSchematic } from '../schematic/sanitize';
 import type { EditorState, View } from './editor';
 import type { ProjectSim } from './files';
 import type { SoundState } from './sound';
@@ -59,9 +60,11 @@ export function loadSession(defaultSim: ProjectSim): Session {
   try {
     const s = JSON.parse(localStorage.getItem(SESSION_KEY) || 'null');
     if (s && Array.isArray(s.tabs)) {
-      const tabs: Tab[] = s.tabs.filter((t: { doc?: unknown }) => isDoc(t.doc)).map((t: Record<string, unknown>) => ({
+      // Rebuilt with checked types, like an opened file (a schematic opened earlier may have been hostile).
+      const safe = (d: unknown) => { try { return sanitizeSchematic(d); } catch { return null; } };
+      const tabs: Tab[] = s.tabs.filter((t: { doc?: unknown }) => safe(t.doc)).map((t: Record<string, unknown>) => ({
         id: String(t.id || newTabId()), name: String(t.name ?? ''), dirty: !!t.dirty, compare: String(t.compare ?? ''), input: String(t.input ?? ''),
-        state: { doc: t.doc as Schematic, view: (t.view as View) ?? { ...DEFAULT_VIEW }, undo: [], redo: [] },
+        state: { doc: safe(t.doc)!, view: (t.view as View) ?? { ...DEFAULT_VIEW }, undo: [], redo: [] },
         sim: (t.sim as ProjectSim) ?? defaultSim, needsFit: !t.view,
       }));
       if (tabs.length) return { active: tabs.some(t => t.id === s.active) ? s.active : tabs[0].id, tabs };
@@ -73,7 +76,7 @@ export function loadSession(defaultSim: ProjectSim): Session {
   try {
     const old = JSON.parse(localStorage.getItem(LEGACY_DOC_KEY) || 'null');
     if (old && isDoc(old.doc)) {
-      tab.state.doc = old.doc;
+      tab.state.doc = sanitizeSchematic(old.doc);
       if (old.view) { tab.state.view = old.view; tab.needsFit = false; }
     }
     tab.name = localStorage.getItem(LEGACY_NAME_KEY) || '';

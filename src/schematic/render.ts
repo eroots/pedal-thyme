@@ -64,7 +64,8 @@ export function renderSchematicBody(sch: Schematic, opt: RenderOptions = {}): { 
     grow([anchor === 'start' ? x : anchor === 'end' ? x : x - w / 2, y + 3]);
     const tx0 = anchor === 'start' ? x : anchor === 'end' ? x - w : x - w / 2;
     textBoxes.push([tx0, y - 10, tx0 + w, y + 3]);
-    return `<text class="${cls}" x="${x}" y="${y}" text-anchor="${anchor}">${esc(s)}</text>`;
+    const a = anchor === 'start' || anchor === 'end' ? anchor : 'middle';
+    return `<text class="${cls}" x="${+x}" y="${+y}" text-anchor="${a}">${esc(s)}</text>`;
   };
   const hl = new Set(opt.highlight || []), sel = opt.selected || new Set<string>();
 

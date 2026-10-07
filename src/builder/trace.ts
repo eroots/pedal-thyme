@@ -29,7 +29,8 @@ const TRACE_SPAN = 1400;
 
 export function isTrace(t: unknown): t is Trace {
   const x = t as Trace;
-  return !!x && typeof x.src === 'string' && /^data:image\//.test(x.src) && [x.w, x.h, x.x, x.y, x.scale, x.opacity].every(v => typeof v === 'number' && isFinite(v));
+  return !!x && typeof x.src === 'string' && /^data:image\//.test(x.src) && [x.w, x.h, x.x, x.y, x.scale, x.opacity].every(v => typeof v === 'number' && isFinite(v))
+    && [0, 90, 180, 270].includes(x.rot) && typeof x.visible === 'boolean' && typeof x.name === 'string';
 }
 
 /** The pre-tabs trace picture, removed from localStorage once read. */
@@ -66,7 +67,8 @@ export async function openPdf(data: ArrayBuffer): Promise<PdfSource> {
   // which keeps the single-file build working; rendering one page is quick enough.
   const [pdfjs, worker] = await Promise.all([import('pdfjs-dist'), import('pdfjs-dist/build/pdf.worker.min.mjs')]);
   (globalThis as unknown as { pdfjsWorker: unknown }).pdfjsWorker = worker;
-  const doc = await pdfjs.getDocument({ data: new Uint8Array(data) }).promise;
+  // No XFA forms, and no WebAssembly decoders (they would be fetched from a URL); this pdf.js never evaluates code from a PDF.
+  const doc = await pdfjs.getDocument({ data: new Uint8Array(data), enableXfa: false, useWasm: false }).promise;
   return {
     pages: doc.numPages,
     async render(n) {

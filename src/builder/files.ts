@@ -1,6 +1,7 @@
 // Builder files: project save/load (JSON), SPICE netlist, parts list (BOM CSV), schematic SVG/PNG.
 import type { Term } from '../core/termination';
 import { fmtEng } from '../core/units';
+import { sanitizeSchematic } from '../schematic/sanitize';
 import { DIODE_MODELS, OPAMP_MODELS } from '../engine/models';
 import { BJT_MODELS, JFET_MODELS, MOS_MODELS } from '../engine/semis';
 import { toSpice } from '../engine/spice';
@@ -43,22 +44,16 @@ export function parseProject(text: string): Project {
   let data: unknown;
   try { data = JSON.parse(text); } catch { throw new Error('This file is not valid JSON.'); }
   const d = data as Partial<Project> & Partial<Schematic>;
-  const sch = (d.kind === PROJECT_KIND ? d.schematic : d) as Schematic | undefined;
-  if (!sch || !Array.isArray(sch.parts) || !Array.isArray(sch.wires)) throw new Error('This file doesn’t contain a pedal schematic.');
-  for (const p of sch.parts) {
-    if (!p || typeof p.id !== 'string' || !(p.kind in PARTS) || typeof p.x !== 'number' || typeof p.y !== 'number') {
-      throw new Error(`Unrecognised part in file: ${JSON.stringify(p).slice(0, 80)}`);
-    }
-  }
-  for (const w of sch.wires) {
-    if (!w || typeof w.id !== 'string' || !Array.isArray(w.pts) || w.pts.some(pt => !Array.isArray(pt) || pt.length !== 2)) {
-      throw new Error('A wire in the file is malformed.');
-    }
-  }
-  const schematic: Schematic = { version: 1, parts: sch.parts, wires: sch.wires, ...(sch.notes ? { notes: sch.notes } : {}) };
-  return d.kind === PROJECT_KIND
-    ? { ...(d as Project), schematic, trace: isTrace(d.trace) ? d.trace : undefined }
-    : makeProject('Imported pedal', schematic);
+  // The schematic is rebuilt with checked types (a file is untrusted input).
+  const schematic = sanitizeSchematic(d.kind === PROJECT_KIND ? d.schematic : d);
+  if (d.kind !== PROJECT_KIND) return makeProject('Imported pedal', schematic);
+  const v = d.view as Project['view'] | undefined;
+  const view = v && [v.x, v.y, v.zoom].every(n => typeof n === 'number' && isFinite(n)) && v.zoom > 0 ? { x: v.x, y: v.y, zoom: v.zoom } : undefined;
+  const sim = d.sim && typeof d.sim === 'object' && d.sim.term && typeof d.sim.term === 'object' ? d.sim : undefined;
+  return {
+    kind: PROJECT_KIND, version: 1, name: typeof d.name === 'string' ? d.name : 'Untitled pedal', saved: String(d.saved ?? ''),
+    schematic, sim, view, trace: isTrace(d.trace) ? d.trace : undefined,
+  };
 }
 
 export const safeFileName = (name: string): string => (name || 'pedal').trim().replace(/[^\w\- ]+/g, '').replace(/\s+/g, '-').toLowerCase() || 'pedal';

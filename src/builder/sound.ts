@@ -7,6 +7,7 @@ import { fmtEng } from '../core/units';
 import { harmonics, peakOf, rmsOf, spectrum, wav } from '../audio/analysis';
 import RenderWorker from '../audio/render.worker?worker&inline';
 import type { RenderMessage, RenderRequest } from '../audio/render.worker';
+import { hitsRails, opAmpSwings } from '../audio/rails';
 import { E_MAJOR, fadingSine, normalize, pluck, sine } from '../audio/signals';
 import type { Netlist, Node } from '../engine/netlist';
 import { sweepColor } from '../playground/state';
@@ -40,6 +41,8 @@ interface Run {
   out: Float64Array;
   probes: { ref: string; color: string; y: Float64Array }[];
   unconverged: number;
+  /** Op-amps whose output reached their supply rails (over the steady part). */
+  railClip: string[];
 }
 
 interface Result {
@@ -149,14 +152,17 @@ export function initSoundPanel(ctx: () => SoundContext, P = 'sd'): SoundPanel {
     $<HTMLProgressElement>(`#${P}Prog`).hidden = true;
     $<HTMLButtonElement>(`#${P}Render`).disabled = false;
   }
-  async function renderJobs(jobs: Job[], term: Term | null, onProgress: (f: number) => void): Promise<{ runs: Run[]; rails: [number, number] }> {
+  async function renderJobs(jobs: Job[], term: Term | null, tail: number, onProgress: (f: number) => void): Promise<{ runs: Run[]; rails: [number, number] }> {
     const oversample = +$(`#${P}Os`).value, frac = jobs.map(() => 0);
     const runs: Run[] = new Array(jobs.length);
     let rails: [number, number] = [0, 0], next = 0;
     const one = (k: number) => new Promise<void>((resolve, reject) => {
       const j = jobs[k], w = new RenderWorker();
       workers.add(w);
-      const req: RenderRequest = { netlist: j.netlist, input: j.input, fs: FS, oversample, term, probes: j.probes.map(p => p.net) };
+      // Every op-amp's output is watched too, to point out rail clipping.
+      const swings = opAmpSwings(j.netlist);
+      const nets = [...new Set([...j.probes.map(p => p.net), ...swings.map(s => s.net)])];
+      const req: RenderRequest = { netlist: j.netlist, input: j.input, fs: FS, oversample, term, probes: nets };
       w.onmessage = (e: MessageEvent<RenderMessage>) => {
         const m = e.data;
         if (m.type === 'progress') { frac[k] = m.fraction; onProgress(frac.reduce((a, b) => a + b, 0) / jobs.length); return; }
@@ -166,6 +172,8 @@ export function initSoundPanel(ctx: () => SoundContext, P = 'sd'): SoundPanel {
         runs[k] = {
           label: j.label, r: j.r, input: j.input, out: out.get(j.netlist.output)!, unconverged: m.unconverged,
           probes: j.probes.map(p => ({ ref: p.ref, color: p.color, y: out.get(p.net)! })).filter(p => p.y),
+          railClip: swings.filter(s => { const y = out.get(s.net); return !!y && hitsRails(y, s, Math.max(0, y.length - tail)); })
+            .map(s => s.name.replace(/^u\d+:/, '')),
         };
         rails = [Math.min(rails[0], m.rails[0]), Math.max(rails[1], m.rails[1])];
         resolve();
@@ -209,7 +217,7 @@ export function initSoundPanel(ctx: () => SoundContext, P = 'sd'): SoundPanel {
     msg(jobs.length > 1 ? `Simulating ${jobs.length} versions…` : 'Simulating…');
     const t0 = performance.now();
     try {
-      const { runs, rails } = await renderJobs(jobs, c.term, f => { prog.value = f; });
+      const { runs, rails } = await renderJobs(jobs, c.term, base.tail, f => { prog.value = f; });
       if (!busy) return; // cancelled (e.g. switched tabs)
       res = { runs, sweep: sweepId, sineHz: base.sineHz, tail: base.tail, periodic: base.periodic, fading: base.fading, label: base.label, rails, ms: performance.now() - t0 };
       pick = runs.length - 1;
@@ -301,16 +309,21 @@ export function initSoundPanel(ctx: () => SoundContext, P = 'sd'): SoundPanel {
       : traces.slice().reverse().map(t => `<span><span class="sw" style="background:${t.color}"></span>${esc(t.label)}</span>`).join('');
     // A sweep: one row per step (click a row to show that step's spectrum and play it).
     $(`#${P}Table`).innerHTML = many
-      ? `<table class="sd-table"><tr><th></th><th>${r.sweep === 'level' ? 'Input' : 'Step'}</th><th>Output p-p</th><th>Gain</th><th>${r.sineHz ? 'THD' : ''}</th></tr>${r.runs.map((x, i) => {
+      ? `<table class="sd-table"><tr><th></th><th>${r.sweep === 'level' ? 'Input' : 'Step'}</th><th>Output p-p</th><th>Gain</th><th>${r.sineHz ? 'THD' : ''}</th><th>${r.runs.some(x => x.railClip?.length) ? 'At the rails' : ''}</th></tr>${r.runs.map((x, i) => {
           const s = stats(r, x);
-          return `<tr data-i="${i}" class="${x === run ? 'on' : ''}"><td><span class="sw" style="background:${sweepColor(x.r)}"></span></td><td>${esc(x.label)}</td><td>${s.pp.toFixed(2)} V</td><td>${s.gain >= 0 ? '+' : ''}${s.gain.toFixed(1)} dB</td><td>${s.h ? `${s.h.thd < 0.1 ? s.h.thd.toFixed(3) : s.h.thd.toFixed(1)} %` : ''}</td></tr>`;
+          return `<tr data-i="${i}" class="${x === run ? 'on' : ''}"><td><span class="sw" style="background:${sweepColor(x.r)}"></span></td><td>${esc(x.label)}</td><td>${s.pp.toFixed(2)} V</td><td>${s.gain >= 0 ? '+' : ''}${s.gain.toFixed(1)} dB</td><td>${s.h ? `${s.h.thd < 0.1 ? s.h.thd.toFixed(3) : s.h.thd.toFixed(1)} %` : ''}</td><td class="warnc">${esc((x.railClip ?? []).join(', '))}</td></tr>`;
         }).join('')}</table>`
       : '';
     const dcNote = Math.abs(st.dc) > 0.05 ? ` around ${st.dc.toFixed(2)} V DC (no output coupling capacitor?)` : '';
     const unconverged = r.runs.reduce((a, x) => a + x.unconverged, 0);
+    const clip = run.railClip ?? [];
+    const railNote = clip.length
+      ? `<span class="pb-warn">⚠ ${esc(clip.join(', '))} ${clip.length > 1 ? 'are' : 'is'} clipping at ${clip.length > 1 ? 'their' : 'its'} supply rails${many ? ` (${esc(run.label)})` : ''}: the op-amp squares the signal off, so any diode clipping after it only sees a squared-off wave and mostly sets the level. ` +
+        'For diode clipping to shape the sound, the op-amp needs headroom: lower the drive or input level, or check that stage’s gain (and its feedback resistors).</span>'
+      : '';
     const warn = unconverged ? ` <span class="warnc">${unconverged} steps didn't fully converge; treat the result as approximate.</span>` : '';
     msg(`${stale ? '<span class="warnc">The circuit has changed: Render again.</span> ' : ''}${esc(r.label)}${many ? ` (${esc(run.label)})` : ''}: output swings ${st.pp.toFixed(2)} V peak-to-peak${dcNote}. ` +
-      `Op-amps clip between ${r.rails[0].toFixed(1)} and ${r.rails[1].toFixed(1)} V less their headroom. Rendered in ${r.ms < 1000 ? `${Math.round(r.ms)} ms` : `${(r.ms / 1000).toFixed(1)} s`}.${warn}`);
+      `Op-amps clip between ${r.rails[0].toFixed(1)} and ${r.rails[1].toFixed(1)} V less their headroom. Rendered in ${r.ms < 1000 ? `${Math.round(r.ms)} ms` : `${(r.ms / 1000).toFixed(1)} s`}.${warn}${railNote}`);
   }
 
   /* ---------- Playback and download ---------- */

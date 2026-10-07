@@ -457,7 +457,7 @@ export function initBuilder(nav: { showBoard(): void; showBuilder(): void }): Bu
     if (p.kind === 'LABEL' || p.kind === 'SUPPLY') h += row('Net name', `<input type="text" data-field="name" value="${esc(p.props?.name || '')}" spellcheck="false">`);
     if (p.kind === 'SUPPLY') h += row('Voltage', `<span class="valrow"><input type="text" data-field="value" value="${esc(p.value ?? 9)}"><span class="unit">V</span></span>`);
     if (p.kind === 'NMOS' || p.kind === 'PMOS') h += '<p class="hint">Real thresholds vary a lot between samples (2N7000: about 0.8–3 V), so circuits use a trimmer or drain feedback. For a clipper, tie the gate to the drain: it then conducts above V<sub>th</sub>, and its body diode conducts the other way.</p>';
-    if (['D', 'LED', 'NPN', 'PNP', 'NJF', 'PJF', 'NMOS', 'PMOS'].includes(p.kind)) h += '<p class="hint">Linearised at its DC operating point for the frequency response (small-signal: no clipping yet). ≈ marks approximate models.</p>';
+    if (['D', 'LED', 'NPN', 'PNP', 'NJF', 'PJF', 'NMOS', 'PMOS'].includes(p.kind)) h += '<p class="hint">The Response plot linearises it at its DC operating point (small-signal, so no clipping there). The Sound panel simulates it fully, clipping included. ≈ marks approximate models.</p>';
     if (p.kind === 'SUPPLY') h += '<p class="hint">Supplies are AC ground in the frequency response.</p>';
     h += `<div class="btnrow"><button data-act="rotate" title="Ctrl+R">Rotate</button><button data-act="mirror" title="Ctrl+E">Mirror</button><button data-act="delete">Delete</button></div>`;
     el.innerHTML = h;

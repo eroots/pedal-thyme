@@ -1,9 +1,22 @@
 // Test signals for the time-domain simulation, in volts (a guitar pickup gives roughly 0.1–1 V peak).
 
 /** A sine of the given peak amplitude, with a short fade-in so the circuit isn't kicked by a step. */
-export function sine(f: number, peak: number, seconds: number, fs: number): Float64Array {
-  const n = Math.round(seconds * fs), fade = Math.min(n, Math.round(0.005 * fs));
+export function sine(f: number, peak: number, seconds: number, fs: number, fadeSeconds = 0.005): Float64Array {
+  const n = Math.round(seconds * fs), fade = Math.max(1, Math.min(n, Math.round(fadeSeconds * fs)));
   return Float64Array.from({ length: n }, (_, t) => peak * Math.sin((2 * Math.PI * f * t) / fs) * (t < fade ? t / fade : 1));
+}
+
+/**
+ * A sine that rings out like a plucked note: a quick attack, then an exponential decay to `floorDb`
+ * (relative to the peak) at the end, so clipping can be seen easing off as the level drops.
+ */
+export function fadingSine(f: number, peak: number, seconds: number, fs: number, floorDb = -40): Float64Array {
+  const n = Math.round(seconds * fs), attack = Math.min(n, Math.round(0.003 * fs));
+  const k = Math.log(10 ** (floorDb / 20)) / Math.max(1, n - attack);
+  return Float64Array.from({ length: n }, (_, t) => {
+    const env = t < attack ? t / attack : Math.exp(k * (t - attack));
+    return peak * env * Math.sin((2 * Math.PI * f * t) / fs);
+  });
 }
 
 /**

@@ -95,7 +95,8 @@ export function initBuilder(nav: { showBoard(): void; showBuilder(): void }): Bu
   sim.setChain(active.input);
   sim.apply(active.sim);
   const sound = initSoundPanel(() => {
-    return { ex: simEx(), doc: editor.doc, term: sim.activeTerm(), name: (document.querySelector<HTMLInputElement>('#bName')?.value || '') };
+    const up = sim.upstream();
+    return { ex: simEx(), doc: editor.doc, term: sim.activeTerm(), name: (document.querySelector<HTMLInputElement>('#bName')?.value || ''), wrap: up && !up.error ? up.wrap : undefined };
   });
   const panel = initFrontPanel($('#bKnobs'), editor);
   const trace = initTrace(editor, msg => { if (msg) $('#bHint').textContent = msg; else renderModes(editor.mode, null); }, t => {

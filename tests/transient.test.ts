@@ -113,6 +113,18 @@ describe('audio analysis and signals', () => {
     expect(lagOf(p)).toBeGreaterThan(lagOf(Math.round(p * 0.75)));
     expect(lagOf(p)).toBeGreaterThan(lagOf(Math.round(p * 1.25)));
   });
+  it('a fading sine rings out to its floor; a few cycles of sine measure cleanly', async () => {
+    const { fadingSine, sine: sig } = await import('../src/audio/signals');
+    const { harmonics } = await import('../src/audio/analysis');
+    const x = fadingSine(220, 0.5, 1, FS, -40);
+    const env = (from: number) => peak(x.subarray(from, from + Math.round(FS / 220) + 1));
+    expect(env(Math.round(0.004 * FS))[1]).toBeGreaterThan(0.48);
+    expect(env(x.length - Math.round(FS / 220) - 1)[1]).toBeCloseTo(0.005, 3); // −40 dB
+    // 10 shown cycles after a one-cycle fade-in: the shown part is a clean sine.
+    const f = 1000, s = sig(f, 1, 11 / f, FS, 1 / f), h = harmonics(s, f, FS, 10, 10 / f);
+    expect(h.levels[0]).toBeCloseTo(1, 6);
+    expect(h.thd).toBeLessThan(1e-6);
+  });
 });
 
 describe('hard transients through high-gain stages', () => {

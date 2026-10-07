@@ -231,7 +231,7 @@
       <div class="plothead"><h2>Sound</h2><span class="hint">Time-domain simulation: clipping, distortion and how it sounds.</span></div>
       <div class="sound-bar">
         <label>Signal <select id="sdSource">
-          <option value="sine">Sine</option><option value="note">Plucked note</option>
+          <option value="sine">Sine</option><option value="fade" title="A sine that rings out like a plucked note, to see the clipping ease off as the level drops">Fading sine</option><option value="note">Plucked note</option>
           <option value="chord" selected>Strummed chord</option><option value="file">Audio file…</option>
         </select></label>
         <label id="sdFreqL">Frequency <select id="sdFreq">
@@ -248,7 +248,10 @@
           <option value="0.05">50 mV</option><option value="0.1">100 mV</option><option value="0.2">200 mV (single coil)</option>
           <option value="0.4" selected>400 mV (humbucker)</option><option value="1">1 V (hot)</option><option value="2">2 V</option>
         </select></label>
-        <label>Length <select id="sdDur"><option value="0.5">0.5 s</option><option value="1">1 s</option><option value="2" selected>2 s</option><option value="4">4 s</option></select></label>
+        <label id="sdDurL">Length <select id="sdDur"><option value="0.5">0.5 s</option><option value="1">1 s</option><option value="2" selected>2 s</option><option value="4">4 s</option></select></label>
+        <label id="sdCyclesL" title="A steady sine only needs a few cycles to show the clipping (fast to render)">Length <select id="sdCycles"><option value="3">3 cycles</option><option value="5">5 cycles</option><option value="10" selected>10 cycles</option><option value="20">20 cycles</option><option value="50">50 cycles</option><option value="200">200 cycles</option></select></label>
+        <label title="Render several versions and overlay them: the input level, or a part marked Sweepable">Sweep <select id="sdSweep"></select></label>
+        <label id="sdStepsL">Steps <select id="sdSteps"><option>3</option><option selected>5</option><option>7</option><option>9</option></select></label>
         <label title="Oversampling: higher is cleaner (less aliasing from clipping) but slower">Quality <select id="sdOs">
           <option value="2">2×</option><option value="4" selected>4×</option><option value="8">8×</option>
         </select></label>
@@ -269,7 +272,9 @@
         </div>
       </div>
       <div class="legend" id="sdLegend"></div>
+      <div id="sdTable"></div>
       <div class="btnrow sound-play">
+        <label id="sdPickL" class="chk" hidden title="Which step of the sweep the spectrum and playback use">Show <select id="sdPick"></select></label>
         <button id="sdPlayWet">▶ Pedal</button><button id="sdPlayDry">▶ Bypass</button><button id="sdStop">■ Stop</button>
         <label class="chk" title="Play both at the same loudness, to compare tone rather than level"><input type="checkbox" id="sdMatch" checked> Match loudness</label>
         <button id="sdDownload">Download WAV</button>

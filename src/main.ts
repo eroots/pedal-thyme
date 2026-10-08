@@ -6,6 +6,10 @@ type Section = 'playground' | 'builder' | 'board';
 const SECTIONS: Section[] = ['playground', 'builder', 'board'];
 const SECTION_KEY = 'pedal-filter-lab.section';
 
+// Which release this is (the app never checks online, so people can compare it with the latest release).
+const versionEl = document.getElementById('appVersion');
+if (versionEl) versionEl.textContent = `v${__APP_VERSION__}`;
+
 const builder = initBuilder({ showBoard: () => show('board'), showBuilder: () => show('builder') });
 initPlayground({
   openInBuilder: doc => { builder.load(doc); show('builder'); },

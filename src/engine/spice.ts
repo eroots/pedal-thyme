@@ -31,8 +31,8 @@ export function toSpice(nl: Netlist, opt: SpiceOptions = {}): string {
   const nodeName = (n: Node) => (n === GND ? '0' : safe(n));
   const lines: string[] = [];
   const models = new Set<string>(), opamps = new Set<string>(), qmodels = new Set<string>(), jmodels = new Set<string>(), mmodels = new Set<string>();
-  lines.push(`* ${opt.title || nl.title || 'Pedal Filter Lab circuit'}`);
-  lines.push('* Exported from Pedal Filter Lab. Input node: ' + nodeName(nl.input) + ', output node: ' + nodeName(nl.output));
+  lines.push(`* ${opt.title || nl.title || 'Pedal Lab circuit'}`);
+  lines.push('* Exported from Pedal Lab. Input node: ' + nodeName(nl.input) + ', output node: ' + nodeName(nl.output));
   for (const n of opt.notes || []) lines.push('* ' + n);
   lines.push('');
 

@@ -1,0 +1,347 @@
+{
+  "kind": "pedal-filter-lab/builder-project",
+  "version": 1,
+  "name": "Fuzz Face",
+  "saved": "2026-10-08T14:18:50.903Z",
+  "schematic": {
+    "version": 1,
+    "parts": [
+      {
+        "id": "in1",
+        "kind": "IN",
+        "x": 0,
+        "y": 0,
+        "rot": 0
+      },
+      {
+        "id": "C1",
+        "kind": "C",
+        "ref": "C1",
+        "x": 40,
+        "y": 0,
+        "rot": 0,
+        "value": 0.0000022
+      },
+      {
+        "id": "Q1",
+        "kind": "NPN",
+        "ref": "Q1",
+        "x": 150,
+        "y": 0,
+        "rot": 0,
+        "labelSide": "r",
+        "props": {
+          "model": "2N3904"
+        }
+      },
+      {
+        "id": "gnd2",
+        "kind": "GND",
+        "x": 160,
+        "y": 30,
+        "rot": 0
+      },
+      {
+        "id": "Q2",
+        "kind": "NPN",
+        "ref": "Q2",
+        "x": 230,
+        "y": -30,
+        "rot": 0,
+        "labelSide": "r",
+        "props": {
+          "model": "2N3904"
+        }
+      },
+      {
+        "id": "supply3",
+        "kind": "SUPPLY",
+        "x": 160,
+        "y": -180,
+        "rot": 0,
+        "value": 9,
+        "props": {
+          "name": "9V"
+        }
+      },
+      {
+        "id": "R1",
+        "kind": "R",
+        "ref": "R1",
+        "x": 160,
+        "y": -150,
+        "rot": 90,
+        "value": 33000,
+        "labelSide": "l"
+      },
+      {
+        "id": "R3",
+        "kind": "R",
+        "ref": "R3",
+        "x": 240,
+        "y": -150,
+        "rot": 90,
+        "value": 8200,
+        "labelSide": "r"
+      },
+      {
+        "id": "R2",
+        "kind": "R",
+        "ref": "R2",
+        "x": 240,
+        "y": -90,
+        "rot": 90,
+        "value": 470,
+        "labelSide": "r"
+      },
+      {
+        "id": "VR1",
+        "kind": "POT",
+        "ref": "VR1",
+        "x": 240,
+        "y": 30,
+        "rot": 270,
+        "value": 1000,
+        "mirror": true,
+        "props": {
+          "sweep": true,
+          "turn": 0.8,
+          "taper": "B"
+        }
+      },
+      {
+        "id": "gnd4",
+        "kind": "GND",
+        "x": 240,
+        "y": 60,
+        "rot": 0
+      },
+      {
+        "id": "C2",
+        "kind": "C",
+        "ref": "C2",
+        "x": 290,
+        "y": 60,
+        "rot": 90,
+        "value": 0.000022,
+        "labelSide": "r"
+      },
+      {
+        "id": "gnd5",
+        "kind": "GND",
+        "x": 290,
+        "y": 90,
+        "rot": 0
+      },
+      {
+        "id": "R4",
+        "kind": "R",
+        "ref": "R4",
+        "x": 150,
+        "y": 110,
+        "rot": 0,
+        "value": 100000
+      },
+      {
+        "id": "C3",
+        "kind": "C",
+        "ref": "C3",
+        "x": 310,
+        "y": -120,
+        "rot": 0,
+        "value": 1e-8
+      },
+      {
+        "id": "VR2",
+        "kind": "POT",
+        "ref": "VR2",
+        "x": 360,
+        "y": -90,
+        "rot": 270,
+        "value": 500000,
+        "mirror": true,
+        "props": {
+          "sweep": true,
+          "turn": 0.7,
+          "taper": "A"
+        }
+      },
+      {
+        "id": "gnd6",
+        "kind": "GND",
+        "x": 360,
+        "y": -60,
+        "rot": 0
+      },
+      {
+        "id": "out7",
+        "kind": "OUT",
+        "x": 430,
+        "y": -90,
+        "rot": 0
+      }
+    ],
+    "wires": [
+      {
+        "id": "w1",
+        "pts": [
+          [
+            0,
+            0
+          ],
+          [
+            10,
+            0
+          ]
+        ]
+      },
+      {
+        "id": "w2",
+        "pts": [
+          [
+            70,
+            0
+          ],
+          [
+            120,
+            0
+          ]
+        ]
+      },
+      {
+        "id": "w3",
+        "pts": [
+          [
+            160,
+            -180
+          ],
+          [
+            240,
+            -180
+          ]
+        ]
+      },
+      {
+        "id": "w4",
+        "pts": [
+          [
+            160,
+            -120
+          ],
+          [
+            160,
+            -30
+          ]
+        ]
+      },
+      {
+        "id": "w5",
+        "pts": [
+          [
+            160,
+            -30
+          ],
+          [
+            200,
+            -30
+          ]
+        ]
+      },
+      {
+        "id": "w6",
+        "pts": [
+          [
+            270,
+            30
+          ],
+          [
+            290,
+            30
+          ]
+        ]
+      },
+      {
+        "id": "w7",
+        "pts": [
+          [
+            120,
+            0
+          ],
+          [
+            120,
+            110
+          ]
+        ]
+      },
+      {
+        "id": "w8",
+        "pts": [
+          [
+            180,
+            110
+          ],
+          [
+            220,
+            110
+          ],
+          [
+            220,
+            0
+          ],
+          [
+            240,
+            0
+          ]
+        ]
+      },
+      {
+        "id": "w9",
+        "pts": [
+          [
+            240,
+            -120
+          ],
+          [
+            280,
+            -120
+          ]
+        ]
+      },
+      {
+        "id": "w10",
+        "pts": [
+          [
+            340,
+            -120
+          ],
+          [
+            360,
+            -120
+          ]
+        ]
+      },
+      {
+        "id": "w11",
+        "pts": [
+          [
+            390,
+            -90
+          ],
+          [
+            430,
+            -90
+          ]
+        ]
+      }
+    ],
+    "notes": [
+      {
+        "id": "n1",
+        "x": 0,
+        "y": 160,
+        "text": "VR1 fuzz · VR2 volume. Silicon NPN version; the bias sets the character, so watch Q2 with DC bias (B).",
+        "anchor": "start"
+      }
+    ]
+  }
+}

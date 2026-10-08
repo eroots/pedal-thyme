@@ -1,4 +1,4 @@
-# Pedal Filter Lab — Roadmap
+# Pedal Lab — Roadmap
 
 Two sections on one shared engine:
 

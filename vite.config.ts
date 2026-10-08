@@ -1,5 +1,5 @@
 /// <reference types="vitest/config" />
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync, renameSync } from 'node:fs';
 import { defineConfig, type Plugin } from 'vite';
 import { viteSingleFile } from 'vite-plugin-singlefile';
 
@@ -41,9 +41,23 @@ const notices = (): Plugin => ({
   },
 });
 
-// The production build inlines everything into dist/index.html, so it opens by double-click (file://).
+/** The built app is one file named after the app (the source entry stays index.html). */
+const fileName = (): Plugin => ({
+  name: 'file-name',
+  apply: 'build',
+  enforce: 'post',
+  closeBundle() {
+    const from = new URL('./dist/index.html', import.meta.url);
+    if (existsSync(from)) renameSync(from, new URL('./dist/pedal-lab.html', import.meta.url));
+  },
+});
+
+const pkg = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8')) as { version: string };
+
+// The production build inlines everything into dist/pedal-lab.html, so it opens by double-click (file://).
 export default defineConfig({
-  plugins: [csp(), viteSingleFile(), notices()],
+  plugins: [csp(), viteSingleFile(), notices(), fileName()],
+  define: { __APP_VERSION__: JSON.stringify(pkg.version) },
   server: { port: 5173, strictPort: true },
   test: { include: ['tests/**/*.test.ts'] },
 });

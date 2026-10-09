@@ -501,3 +501,8 @@ details.menu[open] > summary { border-color: var(--accent); color: var(--accent)
 .sd-table tr[data-i]:hover td { color: var(--ink); background: var(--bg); }
 .sd-table tr.on td { font-weight: 600; }
 .sd-table .sw { display: inline-block; width: 12px; height: 3px; border-radius: 2px; vertical-align: middle; }
+
+.pb-mode { display: inline-flex; }
+.pb-issues { border: none; border-radius: 10px; padding: 1px 7px; font-size: 11px; font-weight: 700; cursor: pointer; white-space: nowrap; }
+.pb-issues.error { background: var(--bad); color: var(--panel); }
+.pb-issues.warn { background: var(--warn); color: var(--panel); }

@@ -1,5 +1,7 @@
 // Pedalboard section: the pedals (open Builder tabs) in signal order between a source and a load, each
-// with a footswitch and its knobs; the response after each pedal; and the board's sound.
+// with a footswitch, its knobs and its problems (if any); the response stacked (one pedal into the next,
+// with the signal after each) or compared (each pedal on its own); and the board's sound. Pedals can be
+// added from the open tabs or straight from the project folder (they open as background tabs).
 import { joinStages } from '../engine/chain';
 import type { Netlist, Node } from '../engine/netlist';
 import { freqGrid } from '../playground/analysis';
@@ -9,9 +11,11 @@ import type { Schematic } from '../schematic/types';
 import { download } from '../ui/download';
 import { cssVar, drawPlot, magRange, PLOT_MARGIN, type PlotSeries } from '../ui/plot';
 import { fmtEng } from '../core/units';
-import { BOARD_EXT, BYPASS, boardTerm, loadBoardSession, loadingOf, loadingText, makeBoardFile, parseBoard, saveBoardSession, type Board, type BoardFile, type Loading } from './board';
-import { parseProject, safeFileName, type Project } from './files';
-import { allowed, canSaveAs, canWriteFolders, idbGet, idbSet, saveAsDialog, writeHandle, type ProjectFolder } from './folder';
+import { BOARD_EXT, BYPASS, boardTerm, isBoardText, isSilent, loadBoardSession, loadingOf, loadingText, makeBoardFile, parseBoard, pedalIssues, saveBoardSession, type Board, type BoardFile, type BoardMode, type Loading } from './board';
+import { makeProject, parseProject, safeFileName, type Project } from './files';
+import { allowed, canSaveAs, canWriteFolders, idbGet, idbSet, saveAsDialog, writeHandle, type FolderEntry, type ProjectFolder } from './folder';
+import { decodeLtspice } from '../ltspice/asc';
+import { importAsc } from '../ltspice/import';
 import { initFrontPanel, type DocHost, type FrontPanel } from './frontpanel';
 import { impedances, simulate } from './sim';
 import { initSoundPanel } from './sound';
@@ -24,8 +28,8 @@ const FILE_KEY = 'board-file';
 
 /** What the board needs from the Builder (its tabs are the pedals). */
 export interface BoardHost {
-  /** Open tabs, in tab order. */
-  tabs(): { id: string; name: string }[];
+  /** Open tabs, in tab order, with the file each was opened from (if any). */
+  tabs(): { id: string; name: string; file: string | null }[];
   /** A tab's schematic and its extraction (null if the tab is gone). */
   doc(id: string): Schematic | null;
   ex(id: string): Extraction | null;
@@ -60,19 +64,31 @@ export function initBoard(host: BoardHost, show: () => void): BoardUi {
   $('#pbSoundSlot').outerHTML = $('#bSound').outerHTML.replace(/id="sd/g, 'id="pbsd').replace('id="bSound"', 'id="pbSound"')
     .replace('▶ Pedal', '▶ Board').replace('Time-domain simulation: clipping, distortion and how it sounds.', 'The guitar through every pedal that is on.');
   const sound = initSoundPanel(() => {
+    const name = board.name || 'pedalboard', doc = { version: 1 as const, parts: [], wires: [] };
+    if (board.mode === 'compare') {
+      const ok = comparable();
+      return {
+        ex: fake(BYPASS, ok.length ? undefined : 'No pedals to compare: switch some on (and fix any that have errors).'), doc, term: term(), name,
+        variants: ok.map(p => ({ label: nameOf(p.tab), netlist: host.ex(p.tab)!.netlist })),
+      };
+    }
     const c = chain();
-    return { ex: c.ex, doc: { version: 1, parts: [], wires: [] }, term: term(), name: board.name || 'pedalboard', probes: c.probes };
+    return { ex: c.ex, doc, term: term(), name, probes: c.probes };
   }, 'pbsd');
 
   /* ---------- The chain ---------- */
   const onPedals = () => board.pedals.filter(p => p.on && host.ex(p.tab));
+  const hasErrors = (id: string) => pedalIssues(host.ex(id)!).errors.length > 0;
+  /** Pedals that are on and give something to compare (no errors, and some signal gets through). */
+  const comparable = () => onPedals().filter(p => !hasErrors(p.tab) && !silentOf(p.tab));
+  const fake = (netlist: Netlist, error?: string): Extraction => ({ netlist, pinNet: new Map(), nets: new Map(), issues: error ? [{ severity: 'error', message: error }] : [] });
+  const listNames = (ns: string[]) => (ns.length > 1 ? `${ns.slice(0, -1).join(', ')} and ${ns[ns.length - 1]}` : ns[0] ?? '');
   /** The joined circuit of the pedals that are on, the outputs after each, and any error. */
   function chain(): { ex: Extraction; probes: { ref: string; color: string; net: Node }[]; names: string[]; error?: string } {
     const on = onPedals(), names = on.map(p => nameOf(p.tab));
-    const fake = (netlist: Netlist, error?: string): Extraction => ({ netlist, pinNet: new Map(), nets: new Map(), issues: error ? [{ severity: 'error', message: error }] : [] });
-    const bad = on.find(p => host.ex(p.tab)!.issues.some(i => i.severity === 'error'));
-    if (bad) {
-      const error = `${nameOf(bad.tab)} has errors, so the board can't be simulated: fix them in the Builder (its Checks), or switch it off.`;
+    const bad = on.filter(p => hasErrors(p.tab)).map(p => nameOf(p.tab));
+    if (bad.length) {
+      const error = `${listNames(bad)} ${bad.length > 1 ? 'have' : 'has'} errors, so the board can't be simulated: fix them in the Builder (click the red badge to open ${bad.length > 1 ? 'one' : 'it'}), or switch ${bad.length > 1 ? 'them' : 'it'} off.`;
       return { ex: fake(BYPASS, error), probes: [], names, error };
     }
     if (!on.length) return { ex: fake(BYPASS), probes: [], names };
@@ -146,7 +162,8 @@ export function initBoard(host: BoardHost, show: () => void): BoardUi {
       if (p.file && !h) copies.push(p.name);
       pedals.push({ tab: host.openPedal({ project, handle: h, fileName: p.file }), on: p.on });
     }
-    board = { name: f.name, src: f.src, load: f.load, dirty: false, pedals };
+    board = { name: f.name, src: f.src, load: f.load, mode: f.mode ?? 'stack', dirty: false, pedals };
+    renderMode();
     file = handle;
     void idbSet(FILE_KEY, file ?? undefined);
     nameEl.value = board.name;
@@ -188,7 +205,7 @@ export function initBoard(host: BoardHost, show: () => void): BoardUi {
     strip.innerHTML =
       `<div class="pb-end"><b>Guitar</b>${presetSelect('src')}</div>` +
       board.pedals.map((p, i) => `<div class="pb-pedal${p.on ? '' : ' off'}" data-i="${i}">
-          <div class="pb-top"><span class="pb-grip" draggable="true" title="Drag to move this pedal">⠿</span><b class="pb-name" title="${esc(nameOf(p.tab))}">${esc(nameOf(p.tab))}</b>
+          <div class="pb-top"><span class="pb-grip" draggable="true" title="Drag to move this pedal">⠿</span><b class="pb-name" title="${esc(nameOf(p.tab))}">${esc(nameOf(p.tab))}</b><button class="pb-issues" data-issues hidden></button>
             <button class="pb-mv" data-mv="-1" ${i ? '' : 'disabled'} aria-label="Move earlier" title="Earlier in the chain">‹</button><button class="pb-mv" data-mv="1" ${i < n - 1 ? '' : 'disabled'} aria-label="Move later" title="Later in the chain">›</button>
             <button class="pb-x" data-remove aria-label="Remove from the board" title="Remove from the board (the schematic stays open)">×</button></div>
           <div class="pb-knobs"></div>
@@ -203,18 +220,101 @@ export function initBoard(host: BoardHost, show: () => void): BoardUi {
       if (doc) panel.sync(doc);
       panels.set(p.tab, panel);
     });
-    const free = tabs.filter(t => !board.pedals.some(p => p.tab === t.id));
-    $('#pbAdd').innerHTML = `<option value="">${free.length ? 'Add a pedal…' : tabs.length ? 'All open schematics are on the board' : 'Open schematics in the Builder to add them'}</option>` +
-      free.map(t => `<option value="${esc(t.id)}">${esc(t.name)}</option>`).join('');
-    $<HTMLSelectElement>('#pbAdd').disabled = !free.length;
+    renderAdd();
+    updateBadges();
     $<HTMLElement>('#pbEmpty').hidden = n > 0;
   }
-  $('#pbAdd').addEventListener('change', e => {
-    const id = (e.target as HTMLSelectElement).value;
-    if (!id) return;
-    board.pedals.push({ tab: id, on: true });
+
+  /* ---------- Adding pedals: open tabs, or schematics in the project folder ---------- */
+  let folderList: FolderEntry[] = [], folderSymbols: FolderEntry[] = [], folderAsk = false;
+  /** Schematics in the project folder (asks for access only when `ask`, i.e. from a click). */
+  async function refreshFolder(ask = false): Promise<void> {
+    const f = host.folder;
+    folderAsk = false;
+    if (!f.dir && !f.files) { folderList = []; renderAdd(); return; }
+    if (f.dir && !ask && (await f.needsPermission())) { folderList = []; folderAsk = true; renderAdd(); return; }
+    const { schematics, symbols } = await f.list(ask);
+    folderList = schematics.filter(e => !e.name.toLowerCase().endsWith(BOARD_EXT));
+    folderSymbols = symbols;
+    renderAdd();
+  }
+  function renderAdd(): void {
+    const tabs = host.tabs();
+    const free = tabs.filter(t => !board.pedals.some(p => p.tab === t.id));
+    const openFiles = new Set(tabs.map(t => t.file).filter(Boolean));
+    const files = folderList.map((e, i) => ({ e, i })).filter(({ e }) => !openFiles.has(e.name));
+    const folderName = host.folder.name ?? 'the folder';
+    let opts = '';
+    if (free.length) opts += `<optgroup label="Open in the Builder">${free.map(t => `<option value="tab:${esc(t.id)}">${esc(t.name)}</option>`).join('')}</optgroup>`;
+    if (files.length) opts += `<optgroup label="In “${esc(folderName)}”">${files.map(({ e, i }) => `<option value="file:${i}">${esc(e.name)}</option>`).join('')}</optgroup>`;
+    if (folderAsk) opts += `<option value="folder:allow">Show the schematics in “${esc(folderName)}”… (asks for access)</option>`;
+    const sel = $<HTMLSelectElement>('#pbAdd');
+    sel.innerHTML = `<option value="">${opts ? 'Add a pedal…' : 'Open schematics in the Builder, or choose your folder there (Folder ▾), to add pedals'}</option>` + opts;
+    sel.disabled = !opts;
+  }
+  /** Open a schematic from the folder as a background tab (a pedal needs one: knob edits, undo and Save live there). */
+  async function openEntry(e: FolderEntry): Promise<string> {
+    const file = await e.read();
+    if (/\.asc$/i.test(e.name)) {
+      const asy = Object.fromEntries(await Promise.all(folderSymbols.map(async s => [s.name, decodeLtspice(new Uint8Array(await (await s.read()).arrayBuffer()))])));
+      const r = importAsc(decodeLtspice(new Uint8Array(await file.arrayBuffer())), asy);
+      // An imported .asc gets saved as a new .pfl.json, so the tab isn't linked to the .asc file.
+      return host.openPedal({ project: makeProject(e.name.replace(/\.asc$/i, ''), r.schematic), handle: null, fileName: null });
+    }
+    const text = await file.text();
+    if (isBoardText(text)) throw new Error('that file is a pedalboard, not a pedal (open it with Open).');
+    return host.openPedal({ project: parseProject(text), handle: e.handle ?? null, fileName: e.name });
+  }
+  $('#pbAdd').addEventListener('change', async e => {
+    const sel = e.target as HTMLSelectElement, v = sel.value;
+    sel.value = '';
+    if (!v) return;
+    if (v === 'folder:allow') { await refreshFolder(true); return; }
+    if (v.startsWith('file:')) {
+      const entry = folderList[+v.slice(5)];
+      try { board.pedals.push({ tab: await openEntry(entry), on: true }); touched(); }
+      catch (err) { alert(`Couldn’t add ${entry.name}: ${(err as Error).message}`); }
+      return;
+    }
+    board.pedals.push({ tab: v.slice(4), on: true });
     touched();
   });
+  $('#pbAdd').addEventListener('focus', () => void refreshFolder());
+
+  /* ---------- Is each pedal complete? (badge on its card) ---------- */
+  const SILENT_GRID = freqGrid(20, 20000, 40);
+  const silentCache = new WeakMap<Extraction, boolean>();
+  /** Nothing gets from its input jack to its output jack (only checked when it has no errors). */
+  function silentOf(id: string): boolean {
+    const ex = host.ex(id);
+    if (!ex || hasErrors(id)) return false;
+    let s = silentCache.get(ex);
+    if (s === undefined) { s = isSilent(simulate(ex, [], SILENT_GRID, null).out.mag); silentCache.set(ex, s); }
+    return s;
+  }
+  const SILENT_TEXT = 'No signal gets from its input jack to its output jack: are both jacks connected to the circuit?';
+  function updateBadges(): void {
+    board.pedals.forEach((p, i) => {
+      const b = strip.querySelector<HTMLButtonElement>(`.pb-pedal[data-i="${i}"] [data-issues]`), ex = host.ex(p.tab);
+      if (!b || !ex) return;
+      const { errors, warnings } = pedalIssues(ex), silent = silentOf(p.tab);
+      const list = [...errors.map(m => `✕ ${m}`), ...(silent ? [`✕ ${SILENT_TEXT}`] : []), ...warnings.map(m => `! ${m}`)];
+      b.hidden = !list.length;
+      b.className = `pb-issues ${errors.length || silent ? 'error' : 'warn'}`;
+      b.textContent = errors.length ? `✕ ${errors.length}` : silent ? '✕ no signal' : `! ${warnings.length}`;
+      b.title = `${list.join('\n')}\n\nClick to open it in the Builder (see its Checks).`;
+      b.setAttribute('aria-label', `${nameOf(p.tab)}: ${list.length} problem${list.length > 1 ? 's' : ''}`);
+    });
+  }
+  /** Readout notes for pedals that aren't complete. */
+  function incompleteNotes(pedals: { tab: string }[]): string {
+    return pedals.map(p => {
+      const name = nameOf(p.tab), { warnings } = pedalIssues(host.ex(p.tab)!);
+      if (silentOf(p.tab)) return `<span class="pb-warn">⚠ No signal gets through ${esc(name)}: nothing connects its input jack to its output jack (click its red badge to open it and see its Checks).</span>`;
+      if (warnings.length) return `<span class="pb-warn">⚠ ${esc(name)} may not be complete: ${esc(warnings.slice(0, 3).join(' '))}${warnings.length > 3 ? ` (and ${warnings.length - 3} more)` : ''}</span>`;
+      return '';
+    }).join('');
+  }
   strip.addEventListener('change', e => {
     const el = e.target as HTMLSelectElement;
     if (el.dataset.term === 'src' || el.dataset.term === 'load') { board[el.dataset.term] = el.value; touched(false); }
@@ -225,7 +325,7 @@ export function initBoard(host: BoardHost, show: () => void): BoardUi {
     const i = +card.dataset.i!, p = board.pedals[i];
     if (el.closest('[data-switch]')) { p.on = !p.on; touched(); }
     else if (el.closest('[data-remove]')) { board.pedals.splice(i, 1); touched(); }
-    else if (el.closest('[data-edit]')) host.edit(p.tab);
+    else if (el.closest('[data-edit]') || el.closest('[data-issues]')) host.edit(p.tab);
     else if (el.closest('[data-mv]')) move(i, i + +el.closest<HTMLElement>('[data-mv]')!.dataset.mv!);
   });
   function move(from: number, to: number): void {
@@ -276,19 +376,46 @@ export function initBoard(host: BoardHost, show: () => void): BoardUi {
   const schedule = () => { if (!visible()) return; cancelAnimationFrame(rafId); rafId = requestAnimationFrame(compute); };
   const showStages = () => $('#pbStages').checked;
   $('#pbStages').addEventListener('change', () => schedule());
+  /** Compare mode: each pedal's own response. */
+  let cmp: { label: string; color: string; mag: number[] }[] | null = null;
+  function renderMode(): void {
+    $('#pbStack').classList.toggle('active', board.mode === 'stack');
+    $('#pbCompare').classList.toggle('active', board.mode === 'compare');
+    $<HTMLElement>('#pbStagesL').hidden = board.mode === 'compare';
+    const hint = document.querySelector('#pbSound .plothead .hint');
+    if (hint) hint.textContent = board.mode === 'compare' ? 'Each pedal that is on, rendered on its own (one version per pedal).' : 'The guitar through every pedal that is on.';
+  }
+  const setMode = (m: BoardMode) => { if (board.mode !== m) { board.mode = m; renderMode(); touched(false); } };
+  $('#pbStack').addEventListener('click', () => setMode('stack'));
+  $('#pbCompare').addEventListener('click', () => setMode('compare'));
+  const k1 = (f: number) => { let k = 0; for (let i = 1; i < freqs.length; i++) if (Math.abs(Math.log(freqs[i] / f)) < Math.abs(Math.log(freqs[k] / f))) k = i; return k; };
+  const at = (v: number[], f: number) => fmtDb(v[k1(f)]);
+  function computeCompare(): void {
+    const msg = $('#pbMsg'), on = onPedals(), ok = comparable();
+    freqs = freqGrid(...fRange(), 300);
+    res = null;
+    cmp = ok.map((p, i) => ({ label: nameOf(p.tab), color: stageColor(i, ok.length), mag: simulate(host.ex(p.tab)!, [], freqs, term()).out.mag }));
+    const bad = on.filter(p => hasErrors(p.tab)).map(p => nameOf(p.tab)), off = board.pedals.length - on.length;
+    msg.innerHTML = (cmp.length ? `Each pedal on its own (guitar → pedal → amp): ${cmp.map(c => `${esc(c.label)} ${at(c.mag, 1000)} @ 1 kHz`).join(' · ')}.` : 'No pedals to compare: switch some on.') +
+      (off ? ` ${off} switched-off pedal${off > 1 ? 's aren’t' : ' isn’t'} plotted.` : '') +
+      (bad.length ? ` <span class="warnc">${esc(listNames(bad))} ${bad.length > 1 ? 'have' : 'has'} errors, so ${bad.length > 1 ? 'they aren’t' : 'it isn’t'} plotted.</span>` : '') +
+      incompleteNotes(on.filter(p => !hasErrors(p.tab)));
+    draw();
+  }
   function compute(): void {
+    if (board.mode === 'compare') { computeCompare(); return; }
+    cmp = null;
     const c = chain(), msg = $('#pbMsg');
     if (c.error) { res = null; msg.innerHTML = `<span class="warnc">${esc(c.error)}</span>`; draw(); return; }
     freqs = freqGrid(...fRange(), 300);
     const full = simulate(c.ex, c.probes, freqs, term());
     res = showStages() ? full : { ...full, probes: [] };
     const loads = loadings(full.probes.map(p => p.mag));
-    const k1 = (f: number) => { let k = 0; for (let i = 1; i < freqs.length; i++) if (Math.abs(Math.log(freqs[i] / f)) < Math.abs(Math.log(freqs[k] / f))) k = i; return k; };
-    const at = (v: number[], f: number) => fmtDb(v[k1(f)]);
     const route = ['Guitar', ...(c.names.length ? c.names : ['(all pedals bypassed)']), 'Amp'].map(esc).join(' → ');
     msg.innerHTML = `${route}. Output: ${at(res.out.mag, 100)} @ 100 Hz · ${at(res.out.mag, 1000)} @ 1 kHz · ${at(res.out.mag, 5000)} @ 5 kHz.` +
       (res.probes.length ? ' ' + res.probes.map(p => `${esc(p.ref)}: ${at(p.mag, 1000)} @ 1 kHz.`).join(' ') : '') +
       ' Small-signal (no clipping): render the Sound below to hear the drive.' +
+      incompleteNotes(onPedals()) +
       loads.map(l => `<span class="pb-warn">⚠ ${esc(loadingText(l, x => fmtEng(x, 'Ω'), f => fmtEng(f, 'Hz')))}</span>`).join('');
     draw();
   }
@@ -311,6 +438,14 @@ export function initBoard(host: BoardHost, show: () => void): BoardUi {
   }
   function draw(): void {
     const cv = $<HTMLCanvasElement>('#pbPlot');
+    if (cmp) {
+      if (!cmp.length) { cv.getContext('2d')?.clearRect(0, 0, cv.width, cv.height); $('#pbLegend').innerHTML = ''; return; }
+      const series: PlotSeries[] = cmp.map(c => ({ vals: c.mag, color: c.color, width: 2, label: c.label }));
+      const [y0, y1] = magRange(series.map(s => s.vals));
+      drawPlot(cv, { freqs, fr: fRange(), y0, y1, step: (y1 - y0) > 48 ? 12 : 6, unit: '', hoverF, series });
+      $('#pbLegend').innerHTML = cmp.map(c => `<span><span class="sw" style="background:${c.color}"></span>${esc(c.label)}</span>`).join('');
+      return;
+    }
     if (!res) { cv.getContext('2d')?.clearRect(0, 0, cv.width, cv.height); $('#pbLegend').innerHTML = ''; return; }
     const series: PlotSeries[] = [
       ...res.probes.map(p => ({ vals: p.mag, color: p.color, width: 1.6, dash: [5, 3], label: p.ref })),
@@ -333,14 +468,15 @@ export function initBoard(host: BoardHost, show: () => void): BoardUi {
   for (const id of ['#range']) document.querySelector(id)?.addEventListener('change', () => schedule());
 
   showState();
+  renderMode();
   renderStrip();
 
   return {
-    shown: () => { renderStrip(); schedule(); sound.redraw(); },
+    shown: () => { renderStrip(); schedule(); sound.redraw(); void refreshFolder(); },
     changed: id => {
       if (!visible()) { sound.invalidate(); return; }
       const doc = id ? host.doc(id) : null;
-      if (id && doc && panels.has(id)) panels.get(id)!.sync(doc);
+      if (id && doc && panels.has(id)) { panels.get(id)!.sync(doc); updateBadges(); }
       else renderStrip();
       if (!id || board.pedals.some(p => p.tab === id)) { sound.invalidate(); schedule(); }
     },

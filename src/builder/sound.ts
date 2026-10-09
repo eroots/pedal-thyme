@@ -28,6 +28,11 @@ export interface SoundContext {
   ex: Extraction; doc: Schematic; term: Term | null; name: string;
   /** Extra nets to show (default: the document's probes). */
   probes?: { ref: string; color: string; net: Node }[];
+  /**
+   * Separate circuits to render side by side instead of one (the Pedalboard's Compare mode: each pedal
+   * on its own). They are overlaid and tabulated like a sweep.
+   */
+  variants?: { label: string; netlist: Netlist }[];
   /** How a swept version of `doc` is simulated (e.g. with the pedals feeding it); default: on its own. */
   wrap?: (ex: Extraction) => Extraction;
 }
@@ -192,8 +197,11 @@ export function initSoundPanel(ctx: () => SoundContext, P = 'sd'): SoundPanel {
     const base = makeInput(level);
     if (!base) return;
     const probes = c.probes ?? probesOf(c.doc, c.ex);
-    let jobs: Job[];
-    if (sweepId === 'level') {
+    let jobs: Job[], kind = sweepId;
+    if (c.variants?.length) {
+      kind = 'pedals';
+      jobs = c.variants.map((v, i, all) => ({ label: v.label, r: all.length > 1 ? i / (all.length - 1) : 0, netlist: v.netlist, input: base.x, probes: [] }));
+    } else if (sweepId === 'level') {
       jobs = Array.from({ length: steps }, (_, i) => {
         const r = steps > 1 ? i / (steps - 1) : 0, v = LEVEL_SWEEP[0] * (LEVEL_SWEEP[1] / LEVEL_SWEEP[0]) ** r;
         return { label: `${fmtEng(v, 'V')} in`, r, netlist: c.ex.netlist, input: makeInput(v)!.x, probes };
@@ -219,7 +227,7 @@ export function initSoundPanel(ctx: () => SoundContext, P = 'sd'): SoundPanel {
     try {
       const { runs, rails } = await renderJobs(jobs, c.term, base.tail, f => { prog.value = f; });
       if (!busy) return; // cancelled (e.g. switched tabs)
-      res = { runs, sweep: sweepId, sineHz: base.sineHz, tail: base.tail, periodic: base.periodic, fading: base.fading, label: base.label, rails, ms: performance.now() - t0 };
+      res = { runs, sweep: kind, sineHz: base.sineHz, tail: base.tail, periodic: base.periodic, fading: base.fading, label: base.label, rails, ms: performance.now() - t0 };
       pick = runs.length - 1;
       stale = false;
       renderPick();
@@ -309,7 +317,7 @@ export function initSoundPanel(ctx: () => SoundContext, P = 'sd'): SoundPanel {
       : traces.slice().reverse().map(t => `<span><span class="sw" style="background:${t.color}"></span>${esc(t.label)}</span>`).join('');
     // A sweep: one row per step (click a row to show that step's spectrum and play it).
     $(`#${P}Table`).innerHTML = many
-      ? `<table class="sd-table"><tr><th></th><th>${r.sweep === 'level' ? 'Input' : 'Step'}</th><th>Output p-p</th><th>Gain</th><th>${r.sineHz ? 'THD' : ''}</th><th>${r.runs.some(x => x.railClip?.length) ? 'At the rails' : ''}</th></tr>${r.runs.map((x, i) => {
+      ? `<table class="sd-table"><tr><th></th><th>${r.sweep === 'level' ? 'Input' : r.sweep === 'pedals' ? 'Pedal' : 'Step'}</th><th>Output p-p</th><th>Gain</th><th>${r.sineHz ? 'THD' : ''}</th><th>${r.runs.some(x => x.railClip?.length) ? 'At the rails' : ''}</th></tr>${r.runs.map((x, i) => {
           const s = stats(r, x);
           return `<tr data-i="${i}" class="${x === run ? 'on' : ''}"><td><span class="sw" style="background:${sweepColor(x.r)}"></span></td><td>${esc(x.label)}</td><td>${s.pp.toFixed(2)} V</td><td>${s.gain >= 0 ? '+' : ''}${s.gain.toFixed(1)} dB</td><td>${s.h ? `${s.h.thd < 0.1 ? s.h.thd.toFixed(3) : s.h.thd.toFixed(1)} %` : ''}</td><td class="warnc">${esc((x.railClip ?? []).join(', '))}</td></tr>`;
         }).join('')}</table>`

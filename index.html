@@ -306,7 +306,12 @@
     <p class="hint" id="pbEmpty">The pedals are the schematics open in the Builder (one per tab). Add them here in signal order, then switch each one on or off: the guitar only goes through the ones that are on. Turning knobs here edits that pedal.</p>
   </section>
   <section class="card pb-sim">
-    <div class="plothead"><h2>Response</h2><label title="Also show the signal after each pedal (dashed)"><input type="checkbox" id="pbStages" checked> After each pedal</label></div>
+    <div class="plothead"><h2>Response</h2>
+      <span class="seg pb-mode" role="group" aria-label="How the pedals are simulated">
+        <button id="pbStack" title="Stack: the guitar through every pedal that is on, one into the next">Stack</button>
+        <button id="pbCompare" title="Compare: each pedal that is on, on its own (guitar → that pedal → amp), plotted side by side">Compare</button>
+      </span>
+      <label id="pbStagesL" title="Also show the signal after each pedal (dashed)"><input type="checkbox" id="pbStages" checked> After each pedal</label></div>
     <canvas id="pbPlot"></canvas>
     <div class="legend" id="pbLegend"></div>
     <p class="hint" id="pbMsg"></p>

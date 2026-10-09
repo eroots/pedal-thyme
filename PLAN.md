@@ -149,5 +149,10 @@ Speed: about 1–2 s per second of audio at 4×. Not done: real-time live input 
   each schematic. Opening one opens the pedals as tabs, reusing tabs that are already open; a file not
   found in the project folder falls back to the copy. Builder Open and Folder recognise board files.
 
+- Stack / Compare (2026-10-09): Compare plots (and renders) each pedal that is on by itself; the mode is
+  saved with the board. Pedals can be added straight from the project folder (they open as background
+  tabs). Each pedal card shows its problems (errors, warnings, or "no signal" when nothing gets from its
+  input jack to its output jack), and the readout explains them.
+
 ## Next
 - Split screen: two tabs side by side.

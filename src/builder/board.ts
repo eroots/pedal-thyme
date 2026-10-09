@@ -4,9 +4,13 @@
 // can't be found), so the schematics stay separate files.
 import { termActive, type Term } from '../core/termination';
 import type { Netlist } from '../engine/netlist';
+import type { Extraction } from '../schematic/extract';
 import { parseProject, type Project } from './files';
 
 export interface BoardPedal { tab: string; on: boolean }
+
+/** Stack: the guitar through every pedal that is on, in order. Compare: each pedal on its own, side by side. */
+export type BoardMode = 'stack' | 'compare';
 
 export interface Board {
   name: string;
@@ -14,10 +18,26 @@ export interface Board {
   /** Source and load presets (keys of SRC_PRESETS / LOAD_PRESETS, or 'ideal' / 'none'). */
   src: string;
   load: string;
+  mode: BoardMode;
   dirty: boolean;
 }
 
-export const emptyBoard = (): Board => ({ name: '', pedals: [], src: 'single', load: 'amp', dirty: false });
+export const emptyBoard = (): Board => ({ name: '', pedals: [], src: 'single', load: 'amp', mode: 'stack', dirty: false });
+const modeOf = (m: unknown): BoardMode => (m === 'compare' ? 'compare' : 'stack');
+
+/* ---------- Is each pedal complete? ---------- */
+/** A pedal's problems from its Checks: errors stop it being simulated; warnings usually mean something isn't wired. */
+export function pedalIssues(ex: Extraction): { errors: string[]; warnings: string[] } {
+  return {
+    errors: ex.issues.filter(i => i.severity === 'error').map(i => i.message),
+    warnings: ex.issues.filter(i => i.severity !== 'error').map(i => i.message),
+  };
+}
+
+/** Below this the output is effectively nothing: no path from the input jack to the output jack. */
+export const SILENT_DB = -100;
+/** No signal gets through at any frequency (e.g. the jacks aren't connected to the circuit). */
+export const isSilent = (mags: number[]): boolean => !mags.some(m => m > SILENT_DB);
 
 type Preset = { R?: number; L?: number; C?: number };
 
@@ -84,7 +104,7 @@ export function loadBoardSession(): Board {
     const b = JSON.parse(localStorage.getItem(LS_KEY) || 'null');
     if (b && Array.isArray(b.pedals)) {
       return {
-        name: String(b.name ?? ''), src: String(b.src ?? 'single'), load: String(b.load ?? 'amp'), dirty: !!b.dirty,
+        name: String(b.name ?? ''), src: String(b.src ?? 'single'), load: String(b.load ?? 'amp'), mode: modeOf(b.mode), dirty: !!b.dirty,
         pedals: b.pedals.filter((p: BoardPedal) => p && typeof p.tab === 'string').map((p: BoardPedal) => ({ tab: p.tab, on: p.on !== false })),
       };
     }
@@ -107,6 +127,8 @@ export interface BoardFile {
   saved: string;
   src: string;
   load: string;
+  /** Added in 0.2 (older files are stacks). */
+  mode?: BoardMode;
   pedals: {
     /** Display name. */
     name: string;
@@ -118,8 +140,8 @@ export interface BoardFile {
   }[];
 }
 
-export function makeBoardFile(b: Pick<Board, 'name' | 'src' | 'load'>, pedals: BoardFile['pedals']): BoardFile {
-  return { kind: BOARD_KIND, version: 1, name: b.name || 'Untitled board', saved: new Date().toISOString(), src: b.src, load: b.load, pedals };
+export function makeBoardFile(b: Pick<Board, 'name' | 'src' | 'load'> & { mode?: BoardMode }, pedals: BoardFile['pedals']): BoardFile {
+  return { kind: BOARD_KIND, version: 1, name: b.name || 'Untitled board', saved: new Date().toISOString(), src: b.src, load: b.load, mode: modeOf(b.mode), pedals };
 }
 
 /** Is this file's text a pedalboard (rather than a single schematic)? */
@@ -137,5 +159,5 @@ export function parseBoard(text: string): BoardFile {
     const project = parseProject(JSON.stringify(p.project));
     return { name: String(p.name || project.name), file: typeof p.file === 'string' && p.file ? p.file : null, on: p.on !== false, project };
   });
-  return { kind: BOARD_KIND, version: 1, name: String(d.name ?? ''), saved: String(d.saved ?? ''), src: String(d.src ?? 'single'), load: String(d.load ?? 'amp'), pedals };
+  return { kind: BOARD_KIND, version: 1, name: String(d.name ?? ''), saved: String(d.saved ?? ''), src: String(d.src ?? 'single'), load: String(d.load ?? 'amp'), mode: modeOf(d.mode), pedals };
 }

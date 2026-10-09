@@ -40,7 +40,7 @@ describe('pedalboard', () => {
 
   it('remembers the board in use', () => {
     expect(loadBoardSession()).toEqual(emptyBoard());
-    saveBoardSession({ name: 'B', pedals: [{ tab: 't1', on: true }, { tab: 't2', on: false }], src: 'single', load: 'amp', dirty: true });
+    saveBoardSession({ name: 'B', pedals: [{ tab: 't1', on: true }, { tab: 't2', on: false }], src: 'single', load: 'amp', mode: 'compare', dirty: true });
     expect(loadBoardSession().pedals).toEqual([{ tab: 't1', on: true }, { tab: 't2', on: false }]);
   });
 
@@ -71,5 +71,34 @@ describe('pedalboard', () => {
     expect(text).toContain('add a Unity buffer');
     expect(text).not.toContain('changes the tone');
     expect(check(1e6)).toBeNull();
+  });
+});
+
+describe('pedalboard modes and incomplete pedals', () => {
+  it('a board file keeps its Stack/Compare mode; older files open as a stack', async () => {
+    const { BOARD_KIND } = await import('../src/builder/board');
+    const p = makeProject('Fuzz', emptyDoc());
+    const compare = parseBoard(JSON.stringify(makeBoardFile({ name: 'B', src: 'single', load: 'amp', mode: 'compare' }, [{ name: 'Fuzz', file: null, on: true, project: p }])));
+    expect(compare.mode).toBe('compare');
+    const old = parseBoard(JSON.stringify({ kind: BOARD_KIND, version: 1, name: 'Old', src: 'single', load: 'amp', pedals: [{ name: 'Fuzz', file: null, on: true, project: p }] }));
+    expect(old.mode).toBe('stack');
+  });
+
+  it('notices a pedal that passes no signal (jacks not connected), and sorts errors from warnings', async () => {
+    const { isSilent, pedalIssues } = await import('../src/builder/board');
+    const { sch } = await import('../src/schematic/build');
+    const { extract } = await import('../src/schematic/extract');
+    const { freqGrid } = await import('../src/playground/analysis');
+    const f = freqGrid(20, 20000, 40);
+    // Complete: IN —R— OUT with a load to ground.
+    const ok = extract(sch().IN(0, 0).wire([0, 0], [10, 0]).R('R1', 40, 0, 0, 10e3).wire([70, 0], [130, 0]).R('R2', 100, 30, 90, 10e3).GND(100, 60).OUT(130, 0).build());
+    expect(isSilent(simulate(ok, [], f).out.mag)).toBe(false);
+    expect(pedalIssues(ok)).toEqual({ errors: [], warnings: [] });
+    // Incomplete: the output jack isn't wired to anything.
+    const open = extract(sch().IN(0, 0).wire([0, 0], [10, 0]).R('R1', 40, 0, 0, 10e3).R('R2', 100, 30, 90, 10e3).wire([70, 0], [100, 0]).GND(100, 60).OUT(300, 0).build());
+    const issues = pedalIssues(open);
+    expect(issues.errors).toEqual([]);
+    expect(issues.warnings.join(' ')).toMatch(/not connected/i);
+    expect(isSilent(simulate(open, [], f).out.mag)).toBe(true);
   });
 });

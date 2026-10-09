@@ -724,7 +724,7 @@ export function initBuilder(nav: { showBoard(): void; showBuilder(): void }): Bu
   }
   const fileOf = (t: Tab) => (t === active ? files.state().file : t.file ?? null);
   board = initBoard({
-    tabs: () => tabs.map(t => ({ id: t.id, name: nameOf(t) })),
+    tabs: () => tabs.map(t => ({ id: t.id, name: nameOf(t), file: fileOf(t)?.name ?? null })),
     doc: id => { const t = tabs.find(x => x.id === id); return t ? docOf(t) : null; },
     ex: id => { const t = tabs.find(x => x.id === id); return t ? exOf(docOf(t)) : null; },
     docHost,

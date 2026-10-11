@@ -12,7 +12,7 @@ import { onSegment, samePt, type Pt } from '../schematic/geometry';
 import { renderSchematic, renderSchematicBody } from '../schematic/render';
 import type { PartKind, SchPart, Schematic } from '../schematic/types';
 import { S } from '../playground/state';
-import { partBox, updateNote, updatePart } from './doc';
+import { GANGABLE, gangOf, partBox, setGang, updateNote, updatePart } from './doc';
 import { Editor, PART_KEYS, type DragMode, type Mode } from './editor';
 import { initFileBar, type FileBar, type FileHost } from './filebar';
 import { canWriteFolders, idbGet, idbSet } from './folder';
@@ -437,6 +437,12 @@ export function initBuilder(nav: { showBoard(): void; showBuilder(): void }): Bu
         ? ['Lugs 2 + 3', 'resistance falls as the knob turns up (unticked: lugs 1 + 2)']
         : ['Reverse', 'lugs 1 and 3 swapped: turning up moves the wiper towards pin 1'];
       h += row(rev[0], `<span class="chk"><input type="checkbox" data-field="reverse" ${p.props?.reverse ? 'checked' : ''}> <span class="hint">${rev[1]}</span></span>`);
+      // Dual-gang: another pot on the same shaft (they turn together; each keeps its value, taper and Reverse).
+      const others = editor.doc.parts.filter(q => GANGABLE.includes(q.kind) && q.id !== p.id);
+      const mate = gangOf(editor.doc, p.id).find(q => q.id !== p.id);
+      if (others.length) {
+        h += row('Ganged with', `<select data-field="gang" title="Put this pot on the same shaft as another (a dual-gang pot): they turn together"><option value="">None (its own shaft)</option>${others.map(q => `<option value="${esc(q.id)}" ${mate?.id === q.id ? 'selected' : ''}>${esc(q.ref || q.id)}${q.props?.gang ? ` (gang ${esc(q.props.gang)})` : ''}</option>`).join('')}</select>`);
+      }
     }
     if (SWEEPABLE_KINDS.includes(p.kind)) {
       h += row('Sweepable', `<span class="chk"><input type="checkbox" data-field="sweep" ${p.props?.sweep ? 'checked' : ''}> <span class="hint">offer ${p.kind === 'POT' || p.kind === 'RHEO' ? 'its rotation and value' : ['SW', 'SPDT', 'ONOFFON'].includes(p.kind) ? 'its positions' : 'its value'} in the Sweep menu</span></span>`);
@@ -570,6 +576,7 @@ export function initBuilder(nav: { showBoard(): void; showBuilder(): void }): Bu
     if (!p) return;
     const f = el.dataset.field!;
     let patch: Partial<SchPart> | null = null;
+    if (f === 'gang') { editor.commit(setGang(editor.doc, p.id, el.value || null)); return; }
     if (f === 'ref') patch = { ref: el.value.trim() || p.ref };
     else if (f === 'value') {
       const v = parseEng(el.value), ok = isFinite(v) && (p.kind === 'C' ? v >= 0 : p.kind === 'SUPPLY' ? true : v > 0);

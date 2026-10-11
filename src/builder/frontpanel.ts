@@ -4,7 +4,7 @@
 import { clamp, fmtEng } from '../core/units';
 import type { SchPart, Schematic } from '../schematic/types';
 import { updatePart } from './doc';
-import { controlsOf } from './sim';
+import { controlsOf, knobName } from './sim';
 
 const esc = (s: unknown): string =>
   String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!));
@@ -37,20 +37,21 @@ export function initFrontPanel(root: HTMLElement, editor: DocHost): FrontPanel {
   const switchInfo = (p: SchPart) => (p.kind === 'SW' ? (p.props?.closed ? 'On' : 'Off') : p.props?.pos === 'b' ? 'B' : p.props?.pos === 'off' ? 'Off' : 'A');
 
   function build(doc: Schematic): void {
-    const controls = controlsOf(doc);
+    // A gang of pots is one knob (it turns them all).
+    const controls = controlsOf(doc).filter((p, i, all) => !p.props?.gang || all.findIndex(q => q.props?.gang === p.props!.gang) === i);
     if (!controls.length) {
       root.innerHTML = '<p class="hint">Pots and switches in your circuit appear here as knobs and toggles.</p>';
       return;
     }
     root.innerHTML = `<div class="knobs">${controls.map(p => (p.kind === 'POT' || p.kind === 'RHEO')
       ? `<div class="knob" data-id="${esc(p.id)}">
-          <svg class="dial" viewBox="-22 -22 44 44" tabindex="0" role="slider" aria-label="${esc(p.ref || 'Pot')}" aria-valuemin="0" aria-valuemax="10">
+          <svg class="dial" viewBox="-22 -22 44 44" tabindex="0" role="slider" aria-label="${esc(knobName(doc, p) || 'Pot')}" aria-valuemin="0" aria-valuemax="10">
             <path class="dial-track" d="${arc(-SWEEP / 2, SWEEP / 2, 18)}"/>
             <path class="dial-value" d=""/>
             <circle class="dial-body" r="13"/>
             <line class="dial-ptr" x1="0" y1="-4" x2="0" y2="-12"/>
           </svg>
-          <div class="kname">${esc(p.ref || '')}</div><div class="kval"></div>
+          <div class="kname">${esc(knobName(doc, p))}</div><div class="kval"></div>
         </div>`
       : `<div class="knob switch" data-id="${esc(p.id)}">
           <button class="toggle" aria-label="${esc(p.ref || 'Switch')}"></button>
@@ -82,7 +83,7 @@ export function initFrontPanel(root: HTMLElement, editor: DocHost): FrontPanel {
 
   /** Rebuild when the set of controls changes; otherwise just update dials and labels. */
   function sync(doc: Schematic): void {
-    const sig = controlsOf(doc).map(p => `${p.id}:${p.kind}:${p.ref}`).join('|');
+    const sig = controlsOf(doc).map(p => `${p.id}:${p.kind}:${p.ref}:${p.props?.gang ?? ''}`).join('|');
     if (sig !== signature) { signature = sig; build(doc); } else refresh(doc);
   }
 

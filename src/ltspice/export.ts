@@ -48,7 +48,8 @@ const same = (a: LPt, b: LPt) => a[0] === b[0] && a[1] === b[1];
 const man = (a: LPt, b: LPt) => Math.abs(a[0] - b[0]) + Math.abs(a[1] - b[1]);
 
 /** Name of a pot's knob parameter in LTspice (e.g. VR1_pos). */
-const knobParam = (p: SchPart): string => `${(p.ref || p.id).replace(/[^\w]/g, '_')}_pos`;
+/** A pot's knob parameter; a gang (dual-gang pot) shares one, so its pots turn together in LTspice too. */
+const knobParam = (p: SchPart): string => (p.props?.gang ? `gang_${p.props.gang.replace(/[^\w]/g, '_')}_pos` : `${(p.ref || p.id).replace(/[^\w]/g, '_')}_pos`);
 
 /** A taper as an LTspice expression of knob parameter q (matches TAPERS: A = (81^q − 1)/80). */
 function taperExpr(tp: string, q: string): string {
@@ -194,7 +195,7 @@ export function exportAsc(doc: Schematic, opt: AscExportOptions = {}): string {
         place(RES, `${name}_a`, [['Value', `{${spiceNum(R)}*max(${fa},1e-4)}`]], { '1': tgt(p, '1'), '2': tgt(p, 'w') });
         place(RES, `${name}_b`, [['Value', `{${spiceNum(R)}*max(${fb},1e-4)}`]], { '1': tgt(p, 'w'), '2': tgt(p, '3') });
         knobParams.push([q, turn]);
-        knobs.push(`${p.ref || p.id}: ${spiceNum(R)} ${tp} pot, knob ${q}`);
+        knobs.push(`${p.ref || p.id}: ${spiceNum(R)} ${tp} pot, knob ${q}${p.props?.gang ? ` (gang ${p.props.gang})` : ''}`);
         break;
       }
       case 'RHEO': {
@@ -203,7 +204,7 @@ export function exportAsc(doc: Schematic, opt: AscExportOptions = {}): string {
         const fr = p.props?.reverse ? `(1-${taperExpr(tp, q)})` : taperExpr(tp, q); // lugs 2+3: falls as the knob turns up
         place(RES, name, [['Value', `{max(1,${spiceNum(R)}*${fr})}`]], { '1': tgt(p, '1'), '2': tgt(p, '2') });
         knobParams.push([q, turn]);
-        knobs.push(`${p.ref || p.id}: ${spiceNum(R)} ${tp} variable resistor, knob ${q}`);
+        knobs.push(`${p.ref || p.id}: ${spiceNum(R)} ${tp} variable resistor, knob ${q}${p.props?.gang ? ` (gang ${p.props.gang})` : ''}`);
         break;
       }
       default: {
@@ -242,8 +243,10 @@ export function exportAsc(doc: Schematic, opt: AscExportOptions = {}): string {
   const lib = modelLines(used, 'n-p', MODEL_SUFFIX);
   const meas = (opt.measure ?? []).map(f => `.meas AC g${Math.round(f)} FIND mag(V(out)) AT ${spiceNum(f)}`);
   // Knob positions (0 = fully anticlockwise … 1 = fully clockwise), with a sweep ready to uncomment.
-  const knobLines = knobParams.length
-    ? [`.param ${knobParams.map(([q, t]) => `${q}=${+t.toFixed(4)}`).join(' ')}`, ...knobParams.map(([q]) => `;.step param ${q} 0 1 0.25`)]
+  // A gang's pots share one parameter: write it once.
+  const params = [...new Map(knobParams).entries()];
+  const knobLines = params.length
+    ? [`.param ${params.map(([q, t]) => `${q}=${+t.toFixed(4)}`).join(' ')}`, ...params.map(([q]) => `;.step param ${q} 0 1 0.25`)]
     : [];
   const directive = [`.ac dec 100 ${spiceNum(opt.fmin ?? 10)} ${spiceNum(opt.fmax ?? 100e3)}`, ...knobLines, ...meas, ...lib].join('\\n');
   out.push(`TEXT ${x0} ${y1 + 64} Left 2 !${directive}`);

@@ -27,6 +27,8 @@ export interface PartProps {
   reverse?: boolean;
   /** Builder: offer this part (value, and rotation for pots) in the Sweep menu. */
   sweep?: boolean;
+  /** Pots and variable resistors on one shaft (a dual-gang pot) share a gang name ("A", "B"…) and turn together. */
+  gang?: string;
 }
 
 export interface SchPart {

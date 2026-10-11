@@ -10,6 +10,10 @@ import type { Netlist, Node } from '../engine/netlist';
 import { extract, type Extraction } from '../schematic/extract';
 import { probeColor } from '../schematic/library';
 import type { SchPart, Schematic } from '../schematic/types';
+import { gangOf, updatePart } from './doc';
+
+/** A pot's name for its knob: its ref, or all its gang's refs ("VR1+VR2"). */
+export const knobName = (doc: Schematic, p: SchPart): string => gangOf(doc, p.id).map(q => q.ref || q.id).join('+');
 
 export interface Curve { mag: number[]; ph: number[] }
 export interface ProbeCurve extends Curve { ref: string; color: string; net: Node }
@@ -81,11 +85,12 @@ export function switchPositions(kind: string): { label: string; props: SchPart['
  */
 export function sweepTargets(doc: Schematic): SweepTarget[] {
   const marked = doc.parts.filter(p => SWEEPABLE_KINDS.includes(p.kind) && p.ref && p.props?.sweep);
-  const pots = marked.filter(p => p.kind === 'POT' || p.kind === 'RHEO');
+  // A gang is one knob: one rotation target for it, whichever of its pots is marked.
+  const pots = marked.filter((p, i, all) => (p.kind === 'POT' || p.kind === 'RHEO') && (!p.props?.gang || all.findIndex(q => q.props?.gang === p.props!.gang) === i));
   const valued = marked.filter(p => (p.value ?? 0) > 0 && !SWITCHES.includes(p.kind));
   const switches = marked.filter(p => SWITCHES.includes(p.kind));
   return [
-    ...pots.map(p => ({ id: `turn:${p.id}`, label: `${p.ref} rotation` })),
+    ...pots.map(p => ({ id: `turn:${p.id}`, label: `${knobName(doc, p)} rotation` })),
     ...valued.map(p => ({ id: `value:${p.id}`, label: `${p.ref} value (÷3 … ×3)` })),
     ...switches.map(p => ({ id: `pos:${p.id}`, label: `${p.ref} position (${switchPositions(p.kind).map(s => s.label).join(' / ')})` })),
   ];
@@ -107,8 +112,9 @@ export function sweepVariants(doc: Schematic, targetId: string, steps: number): 
   return Array.from({ length: n }, (_, i) => {
     const r = i / (n - 1);
     if (kind === 'turn') {
-      const v = withPart(doc, id, p => ({ ...p, props: { ...p.props, turn: r } }));
-      return { label: `${part.ref} ${(r * 10).toFixed(1)}`, r, doc: v };
+      // The whole gang turns (updatePart moves every pot on the shaft).
+      const v = updatePart(doc, id, { props: { turn: r } });
+      return { label: `${knobName(doc, part)} ${(r * 10).toFixed(1)}`, r, doc: v };
     }
     const value = (part.value ?? 1) / 3 * Math.pow(9, r);
     const unit = part.kind === 'C' ? 'F' : part.kind === 'L' ? 'H' : 'Ω';

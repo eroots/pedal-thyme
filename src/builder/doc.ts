@@ -416,7 +416,7 @@ export function mirrorParts(doc: Schematic, partIds: Set<string>, stretch = true
 export function deleteSelection(doc: Schematic, partIds: Set<string>, wireIds: Set<string>, noteIds: Set<string> = new Set()): Schematic {
   const out: Schematic = { ...doc, parts: doc.parts.filter(p => !partIds.has(p.id)), wires: doc.wires.filter(w => !wireIds.has(w.id)) };
   if (doc.notes && noteIds.size) out.notes = doc.notes.filter(n => !noteIds.has(n.id));
-  return out;
+  return partIds.size ? tidyGangs(out) : out;
 }
 
 /* ---------- Text notes ---------- */
@@ -483,7 +483,52 @@ export function deleteWireSegment(doc0: Schematic, wireId: string, p: Pt): Schem
 }
 
 export function updatePart(doc: Schematic, id: string, patch: Partial<SchPart>): Schematic {
-  return { ...doc, parts: doc.parts.map(p => (p.id === id ? { ...p, ...patch, props: patch.props ? { ...p.props, ...patch.props } : p.props } : p)) };
+  // Turning one pot of a gang turns them all (one shaft).
+  const gang = patch.props?.turn !== undefined ? doc.parts.find(p => p.id === id)?.props?.gang : undefined;
+  return {
+    ...doc, parts: doc.parts.map(p => {
+      if (p.id === id) return { ...p, ...patch, props: patch.props ? { ...p.props, ...patch.props } : p.props };
+      if (gang && p.props?.gang === gang) return { ...p, props: { ...p.props, turn: patch.props!.turn } };
+      return p;
+    }),
+  };
+}
+
+/* ---------- Ganged pots (dual-gang: several pots or variable resistors on one shaft) ---------- */
+export const GANGABLE = ['POT', 'RHEO'];
+/** Pots in the same gang as `id` (including it), or just it. */
+export const gangOf = (doc: Schematic, id: string): SchPart[] => {
+  const p = doc.parts.find(q => q.id === id), g = p?.props?.gang;
+  return g ? doc.parts.filter(q => q.props?.gang === g) : p ? [p] : [];
+};
+const withoutGang = (p: SchPart): SchPart => { const { gang: _, ...props } = p.props ?? {}; return { ...p, props }; };
+/** Drop gangs that have only one pot left (after deleting or copying). */
+export function tidyGangs(doc: Schematic): Schematic {
+  const count = new Map<string, number>();
+  for (const p of doc.parts) if (p.props?.gang) count.set(p.props.gang, (count.get(p.props.gang) ?? 0) + 1);
+  if (![...count.values()].some(n => n < 2)) return doc;
+  return { ...doc, parts: doc.parts.map(p => (p.props?.gang && count.get(p.props.gang)! < 2 ? withoutGang(p) : p)) };
+}
+/** The next unused gang name: A, B, … Z, then G27… */
+export function nextGang(doc: Schematic, also: Set<string> = new Set()): string {
+  const used = new Set([...doc.parts.map(p => p.props?.gang).filter(Boolean) as string[], ...also]);
+  for (let i = 0; ; i++) { const g = i < 26 ? String.fromCharCode(65 + i) : `G${i + 1}`; if (!used.has(g)) return g; }
+}
+/**
+ * Put pot `id` on the same shaft as `withId` (joining its gang, or starting one), or take it off its
+ * shaft (`withId` null). Joining sets its rotation to the gang's.
+ */
+export function setGang(doc: Schematic, id: string, withId: string | null): Schematic {
+  const me = doc.parts.find(p => p.id === id);
+  if (!me) return doc;
+  if (!withId) return tidyGangs({ ...doc, parts: doc.parts.map(p => (p.id === id ? withoutGang(p) : p)) });
+  const other = doc.parts.find(p => p.id === withId);
+  if (!other || other.id === id) return doc;
+  const g = other.props?.gang ?? nextGang(doc);
+  const turn = other.props?.turn ?? 0.5;
+  return tidyGangs({
+    ...doc, parts: doc.parts.map(p => (p.id === id ? { ...p, props: { ...p.props, gang: g, turn } } : p.id === withId ? { ...p, props: { ...p.props, gang: g } } : p)),
+  });
 }
 
 /* ---------- Clipboard ---------- */
@@ -507,6 +552,14 @@ export function paste(doc: Schematic, clip: Clip, dx: number, dy: number): { doc
     // Only one input and one output jack make sense; skip duplicates.
     return { ...JSON.parse(JSON.stringify(p)), id, ref, x: p.x + dx, y: p.y + dy } as SchPart;
   }).filter(p => !((p.kind === 'IN' || p.kind === 'OUT') && doc.parts.some(q => q.kind === p.kind)));
+  // Copied gangs become new gangs (a pot copied without its partner then has none: see tidyGangs).
+  const gangMap = new Map<string, string>(), newGangs = new Set<string>();
+  for (const p of parts) {
+    const g = p.props?.gang;
+    if (!g) continue;
+    if (!gangMap.has(g)) { const n = nextGang(doc, newGangs); gangMap.set(g, n); newGangs.add(n); }
+    p.props = { ...p.props, gang: gangMap.get(g) };
+  }
   const wires = clip.wires.map(w => {
     const id = nextId(doc, 'w', ids);
     ids.add(id);
@@ -519,7 +572,7 @@ export function paste(doc: Schematic, clip: Clip, dx: number, dy: number): { doc
   });
   const out: Schematic = { ...doc, parts: [...doc.parts, ...parts], wires: [...doc.wires, ...wires] };
   if (notes.length) out.notes = [...(doc.notes ?? []), ...notes];
-  return { doc: out, ids };
+  return { doc: tidyGangs(out), ids };
 }
 
 /* ---------- Hit testing helpers ---------- */

@@ -548,7 +548,15 @@ export function importAsc(text: string, asyTexts: Record<string, string> = {}, n
       replaced.add(t.c);
       note(`${t.c.ref}: trimmer set to ${fmtR(t.setting)} by "${t.q}"; track ${fmtR(t.total)} (${t.how}), so its knob is at ${(turn * 10).toFixed(1)}/10.${steps.has(t.q) ? ' Marked Sweepable (.step).' : ''}`);
     }
-    for (const [q, refs] of byParam) if (refs.length > 1) note(`${refs.join(' and ')} all follow "${q}" in LTspice (ganged); here each has its own knob.`);
+    // Pots that all follow one knob parameter are one shaft: a gang (dual-gang pot) here too.
+    let gangs = 0;
+    for (const [q, refs] of byParam) {
+      if (refs.length < 2) continue;
+      const g = gangs < 26 ? String.fromCharCode(65 + gangs) : `G${gangs + 1}`;
+      gangs++;
+      for (const a of added) if (refs.includes(a.ref) && a.preset?.props) a.preset.props = { ...a.preset.props, gang: g };
+      note(`${refs.join(' and ')} all follow "${q}" in LTspice, so they are ganged here (gang ${g}) and turn together.`);
+    }
     for (let i = comps.length - 1; i >= 0; i--) if (replaced.has(comps[i])) comps.splice(i, 1);
     comps.push(...added);
   }

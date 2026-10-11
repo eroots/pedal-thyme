@@ -108,7 +108,7 @@ export const PARTS: Record<PartKind, PartSpec> = {
     label: 'Potentiometer', box: [-30, -30, 30, 7], unit: 'Ω', avoid: [0, -1],
     pins: [{ name: '1', at: [-30, 0] }, { name: '3', at: [30, 0] }, { name: 'w', at: [0, -30] }],
     draw: p => zigzag() + arrow(0, -30, -16 + 32 * wiperFrac(p), -8),
-    valueText: p => `${fmtEng(p.value, 'Ω')} ${p.props?.taper ?? 'B'}${p.props?.reverse ? ' rev' : ''}`,
+    valueText: p => `${fmtEng(p.value, 'Ω')} ${p.props?.taper ?? 'B'}${p.props?.reverse ? ' rev' : ''}${p.props?.gang ? ` · gang ${p.props.gang}` : ''}`,
     elements: (p, n) => [{
       type: 'POT', name: p.ref || p.id, a: n('1'), w: n('w'), b: n('3'), value: two(p),
       taper: (p.props?.taper ?? 'B') as TaperKey, rot: p.props?.turn ?? 0.5, ...(p.props?.reverse ? { reverse: true } : {}),
@@ -117,7 +117,7 @@ export const PARTS: Record<PartKind, PartSpec> = {
   RHEO: {
     label: 'Variable resistor', pins: TWO, box: [-30, -15, 30, 15], unit: 'Ω', labelPad: 9,
     draw: () => zigzag() + arrow(-13, 15, 13, -15),
-    valueText: p => `${fmtEng(p.value, 'Ω')} ${p.props?.taper ?? 'B'}${p.props?.reverse ? ' rev' : ''}`,
+    valueText: p => `${fmtEng(p.value, 'Ω')} ${p.props?.taper ?? 'B'}${p.props?.reverse ? ' rev' : ''}${p.props?.gang ? ` · gang ${p.props.gang}` : ''}`,
     elements: (p, n) => [{
       type: 'RHEO', name: p.ref || p.id, a: n('1'), b: n('2'), value: two(p),
       taper: (p.props?.taper ?? 'B') as TaperKey, rot: p.props?.turn ?? 0.5, ...(p.props?.reverse ? { reverse: true } : {}),

@@ -44,6 +44,9 @@ export interface DiodeModel { label: string; spice: string; is: number; n: numbe
 export const DIODE_MODELS: Record<string, DiodeModel> = {
   '1N4148': { label: '1N4148 (silicon)', is: 2.52e-9, n: 1.752, cj: 4e-12, spice: 'D(Is=2.52n Rs=0.568 N=1.752 Cjo=4p M=0.4 tt=20n)' },
   '1N914': { label: '1N914 (silicon)', is: 2.52e-9, n: 1.752, cj: 4e-12, spice: 'D(Is=2.52n Rs=0.568 N=1.752 Cjo=4p M=0.4 tt=20n)' },
+  // 1S1588: a Japanese 1N4148-type switching diode (Boss, Ibanez), modelled as a 1N4148 with a higher
+  // forward drop (≈ 1 V at 10 mA, ≈ 0.8 V at the 0.1 mA typical of a clipping stage).
+  '1S1588': { label: '1S1588 (silicon, Vf ≈ 1 V)', is: 2.58e-12, n: 1.752, cj: 3e-12, spice: 'D(Is=2.58p Rs=0.568 N=1.752 Cjo=3p M=0.4 tt=20n)', approx: true },
   '1N34A': { label: '1N34A (germanium)', is: 2e-6, n: 1.3, cj: 1e-12, spice: 'D(Is=2u Rs=7 N=1.3 Cjo=1p)', approx: true },
   LED_RED: { label: 'Red LED', is: 1e-19, n: 1.6, cj: 20e-12, spice: 'D(Is=1e-19 N=1.6 Rs=4 Cjo=20p)', approx: true },
 };

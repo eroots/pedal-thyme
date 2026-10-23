@@ -2,7 +2,7 @@
 // the netlist elements each part becomes. Two-terminal parts have pins at (−30, 0) and (30, 0).
 import { potFraction, type TaperKey } from '../core/pots';
 import { clamp, fmtEng } from '../core/units';
-import { OPAMP_MODELS, DIODE_MODELS } from '../engine/models';
+import { OPAMP_MODELS, DIODE_MODELS, opAmpModel } from '../engine/models';
 import { BJT_MODELS, JFET_MODELS, MOS_MODELS } from '../engine/semis';
 import { GND, type Element, type Node } from '../engine/netlist';
 import type { Pt } from './geometry';
@@ -208,7 +208,19 @@ export const PARTS: Record<PartKind, PartSpec> = {
     pins: [{ name: '-', at: [-40, -20] }, { name: '+', at: [-40, 20] }, { name: 'out', at: [40, 0] }],
     draw: () => line(-40, -20, -30, -20) + line(-40, 20, -30, 20) + polygon([[-30, -28], [-30, 28], [30, 0]]) + line(30, 0, 40, 0),
     valueText: p => (p.props?.model && p.props.model !== 'ideal' ? p.props.model : ''),
-    elements: (p, n) => [{ type: 'OA', name: p.ref || p.id, inP: n('+'), inN: n('-'), out: n('out'), model: p.props?.model ?? 'ideal' }],
+    elements: (p, n) => {
+      const name = p.ref || p.id, model = p.props?.model ?? 'ideal';
+      const oa: Element = { type: 'OA', name, inP: n('+'), inN: n('-'), out: n('out'), model };
+      // Input bias current: each input draws ib (a constant current: a 1 mV reference driving two
+      // transconductances, so the AC response is unaffected and the DC operating point includes it).
+      const ib = p.props?.ib ?? opAmpModel(model).ib;
+      if (!ib) return [oa];
+      const ref = `#ib:${name}`, VREF = 1e-3;
+      return [oa,
+        { type: 'V', name: `${name}#ibref`, p: ref, n: GND, dc: VREF },
+        { type: 'G', name: `${name}#ib+`, p: n('+'), n: GND, cp: ref, cn: GND, gm: ib / VREF },
+        { type: 'G', name: `${name}#ib-`, p: n('-'), n: GND, cp: ref, cn: GND, gm: ib / VREF }];
+    },
   },
   BUF: {
     label: 'Unity buffer', box: [-20, -11, 20, 11],

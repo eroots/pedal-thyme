@@ -29,6 +29,8 @@ export interface PartProps {
   sweep?: boolean;
   /** Pots and variable resistors on one shaft (a dual-gang pot) share a gang name ("A", "B"…) and turn together. */
   gang?: string;
+  /** Op-amps: input bias current (A) instead of the model's typical value (for a particular or unknown chip). */
+  ib?: number;
 }
 
 export interface SchPart {

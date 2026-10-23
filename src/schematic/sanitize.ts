@@ -27,7 +27,7 @@ function props(p: unknown): PartProps | undefined {
   const out = tidy<PartProps>({
     taper: oneOf(q.taper, TAPER_KEYS), turn: turn === undefined ? undefined : Math.min(1, Math.max(0, turn)),
     model: optStr(q.model), closed: optBool(q.closed), pos: oneOf(q.pos, ['a', 'b', 'off'] as const),
-    name: optStr(q.name), reverse: optBool(q.reverse), sweep: optBool(q.sweep), gang: optStr(q.gang),
+    name: optStr(q.name), reverse: optBool(q.reverse), sweep: optBool(q.sweep), gang: optStr(q.gang), ib: optNum(q.ib),
   });
   return Object.keys(out).length ? out : undefined;
 }

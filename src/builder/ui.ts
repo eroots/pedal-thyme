@@ -4,7 +4,7 @@ import { stepSeries } from '../core/eseries';
 import { TAPERS } from '../core/pots';
 import { fmtEng, parseEng } from '../core/units';
 import { dcOp, type DeviceOp, type OpPoint } from '../engine/dc';
-import { DIODE_MODELS, OPAMP_MODELS } from '../engine/models';
+import { DIODE_MODELS, OPAMP_MODELS, opAmpModel } from '../engine/models';
 import { BJT_MODELS, JFET_MODELS, MOS_MODELS } from '../engine/semis';
 import { extract, type Extraction } from '../schematic/extract';
 import { PARTS } from '../schematic/library';
@@ -447,7 +447,13 @@ export function initBuilder(nav: { showBoard(): void; showBuilder(): void }): Bu
     if (SWEEPABLE_KINDS.includes(p.kind)) {
       h += row('Sweepable', `<span class="chk"><input type="checkbox" data-field="sweep" ${p.props?.sweep ? 'checked' : ''}> <span class="hint">offer ${p.kind === 'POT' || p.kind === 'RHEO' ? 'its rotation and value' : ['SW', 'SPDT', 'ONOFFON'].includes(p.kind) ? 'its positions' : 'its value'} in the Sweep menu</span></span>`);
     }
-    if (p.kind === 'OA') h += row('Model', `<select data-field="model">${Object.entries(OPAMP_MODELS).map(([k, m]) => `<option value="${k}" ${p.props?.model === k ? 'selected' : ''}>${esc(m.label)}</option>`).join('')}</select>`);
+    if (p.kind === 'OA') {
+      h += row('Model', `<select data-field="model">${Object.entries(OPAMP_MODELS).map(([k, m]) => `<option value="${k}" ${p.props?.model === k ? 'selected' : ''}>${esc(m.label)}</option>`).join('')}</select>`);
+      // Input bias current: the model's typical value unless this part sets its own.
+      const typ = opAmpModel(p.props?.model ?? 'ideal').ib;
+      h += row('Input bias', `<span class="valrow"><input type="text" data-field="ib" value="${p.props?.ib !== undefined ? esc(fmtEng(p.props.ib)) : ''}" placeholder="${esc(fmtEng(typ))} (typical)" spellcheck="false" title="Current drawn by each input (positive: into the inputs, as in NPN-input chips like the 4558; negative: out of them, as in the LM358). Leave empty for the model's typical value; set it for a particular or unknown chip."><span class="unit">A</span></span>`);
+      h += '<p class="hint">Input bias current flows through the resistors at the inputs. Through a large feedback resistance (e.g. a Drive pot) it puts a small DC offset across clipping diodes in the loop, which makes the clipping slightly asymmetric, most of all at low levels.</p>';
+    }
     const modelSelect = (models: Record<string, { label: string; approx?: boolean }>, filter: (m: any) => boolean = () => true) =>
       row('Model', `<select data-field="model">${Object.entries(models).filter(([, m]) => filter(m)).map(([k, m]) => `<option value="${k}" ${p.props?.model === k ? 'selected' : ''}>${esc(m.label)}${m.approx ? ' ≈' : ''}</option>`).join('')}</select>`);
     if (p.kind === 'D' || p.kind === 'LED') h += modelSelect(DIODE_MODELS);
@@ -595,6 +601,14 @@ export function initBuilder(nav: { showBoard(): void; showBuilder(): void }): Bu
     else if (f === 'name') patch = { props: { name: el.value.trim() } };
     else if (f === 'sweep') patch = { props: { sweep: el.checked || undefined } };
     else if (f === 'reverse') patch = { props: { reverse: el.checked || undefined } };
+    else if (f === 'ib') {
+      const s = el.value.trim().replace(/a$/i, '');
+      const v = s ? parseEng(s) : undefined, ok = v === undefined || (isFinite(v) && Math.abs(v) < 1e-3);
+      el.classList.toggle('invalid', !ok);
+      if (!ok) return;
+      patch = { props: { ib: v } };
+      if (!live && v !== undefined) el.value = fmtEng(v);
+    }
     if (!patch) return;
     const next = updatePart(editor.doc, p.id, patch);
     if (live) editor.preview(next); else editor.commit(next);

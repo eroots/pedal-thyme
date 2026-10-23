@@ -17,18 +17,24 @@ export interface OpAmpModel {
   slew: number;
   /** How close the output gets to the negative and positive supply rails (V), single-supply pedal use. */
   headroom: [number, number];
+  /**
+   * Input bias current (A, typical), drawn by each input: positive flows into the inputs (NPN input
+   * stage), negative out of them (PNP). Through large resistors at the inputs it becomes a DC offset,
+   * e.g. across clipping diodes in a feedback loop. FET inputs: picoamps.
+   */
+  ib: number;
   note?: string;
 }
 
 export const OPAMP_MODELS: Record<string, OpAmpModel> = {
-  ideal: { label: 'Ideal', a0: Infinity, gbw: Infinity, rin: Infinity, rout: 0, slew: Infinity, headroom: [0, 0] },
-  TL072: { label: 'TL072 (JFET, 3 MHz)', a0: 200e3, gbw: 3e6, rin: 1e12, rout: 100, slew: 13, headroom: [1.5, 1.5] },
-  JRC4558: { label: 'JRC4558 (3 MHz)', a0: 100e3, gbw: 3e6, rin: 5e6, rout: 75, slew: 1.7, headroom: [1.2, 1.2] },
-  NE5532: { label: 'NE5532 (10 MHz)', a0: 100e3, gbw: 10e6, rin: 300e3, rout: 50, slew: 9, headroom: [1.5, 1.5] },
-  OPA2134: { label: 'OPA2134 (FET, 8 MHz)', a0: 1e6, gbw: 8e6, rin: 1e13, rout: 50, slew: 20, headroom: [1, 1] },
-  LM741: { label: 'LM741 (1 MHz)', a0: 200e3, gbw: 1e6, rin: 2e6, rout: 75, slew: 0.5, headroom: [1.5, 1.5] },
-  LM358: { label: 'LM358 (1 MHz)', a0: 100e3, gbw: 1e6, rin: 10e6, rout: 300, slew: 0.3, headroom: [0.02, 1.5] },
-  LM308: { label: 'LM308, 30 pF comp. (≈1 MHz)', a0: 300e3, gbw: 1e6, rin: 40e6, rout: 100, slew: 0.3, headroom: [1, 1], note: 'Approximate: GBW depends on the compensation cap.' },
+  ideal: { label: 'Ideal', a0: Infinity, gbw: Infinity, rin: Infinity, rout: 0, slew: Infinity, headroom: [0, 0], ib: 0 },
+  TL072: { label: 'TL072 (JFET, 3 MHz)', a0: 200e3, gbw: 3e6, rin: 1e12, rout: 100, slew: 13, headroom: [1.5, 1.5], ib: 30e-12 },
+  JRC4558: { label: 'JRC4558 (3 MHz)', a0: 100e3, gbw: 3e6, rin: 5e6, rout: 75, slew: 1.7, headroom: [1.2, 1.2], ib: 25e-9 },
+  NE5532: { label: 'NE5532 (10 MHz)', a0: 100e3, gbw: 10e6, rin: 300e3, rout: 50, slew: 9, headroom: [1.5, 1.5], ib: 200e-9 },
+  OPA2134: { label: 'OPA2134 (FET, 8 MHz)', a0: 1e6, gbw: 8e6, rin: 1e13, rout: 50, slew: 20, headroom: [1, 1], ib: 5e-12 },
+  LM741: { label: 'LM741 (1 MHz)', a0: 200e3, gbw: 1e6, rin: 2e6, rout: 75, slew: 0.5, headroom: [1.5, 1.5], ib: 80e-9 },
+  LM358: { label: 'LM358 (1 MHz)', a0: 100e3, gbw: 1e6, rin: 10e6, rout: 300, slew: 0.3, headroom: [0.02, 1.5], ib: -45e-9 },
+  LM308: { label: 'LM308, 30 pF comp. (≈1 MHz)', a0: 300e3, gbw: 1e6, rin: 40e6, rout: 100, slew: 0.3, headroom: [1, 1], ib: 1.5e-9, note: 'Approximate: GBW depends on the compensation cap.' },
 };
 
 /** `cj`: junction capacitance (F), used as a constant in AC and transient analysis. */

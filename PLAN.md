@@ -154,5 +154,18 @@ Speed: about 1–2 s per second of audio at 4×. Not done: real-time live input 
   tabs). Each pedal card shows its problems (errors, warnings, or "no signal" when nothing gets from its
   input jack to its output jack), and the readout explains them.
 
+## Amp captures ✅ (2026-10-23)
+The Sound panel can play the result through a Neural Amp Modeler capture (`src/audio/nam.ts`). The
+player follows NeuralAmpModelerCore's WaveNet (MIT): ungated layers, per-layer kernels and dilations,
+bottleneck, layer 1×1, a head kernel, and SlimmableContainer files (the full-size model is used).
+Unsupported features (gating, FiLM, LSTM) are refused rather than guessed.
+- Volts become digital via the capture's `input_level_dbu` (or +12 dBu), with an "Into amp" trim.
+- Captures are loaded by the user and kept in IndexedDB; none are bundled.
+- Checked on four real full-rig captures: the weight counts match the layout, and each file's
+  3-channel and 8-channel submodels agree to an ESR of 0.0005–0.03. Speed is about 1.5 s per second
+  of audio for the full model.
+- Not yet: a sample-exact comparison with the NAM plugin (needs a plugin render of a test signal), cab
+  IRs for amp-only captures, and LSTM captures.
+
 ## Next
 - Split screen: two tabs side by side.

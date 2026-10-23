@@ -255,6 +255,11 @@
         <label title="Oversampling: higher is cleaner (less aliasing from clipping) but slower">Quality <select id="sdOs">
           <option value="2">2×</option><option value="4" selected>4×</option><option value="8">8×</option>
         </select></label>
+        <label title="Play the result through an amp: a Neural Amp Modeler capture (.nam) you've downloaded. Full-rig captures include the cabinet.">Amp <select id="sdAmp"><option value="">No amp</option></select></label>
+        <label id="sdTrimL" title="How hard the pedal hits the amp, relative to the capture's calibrated input level" hidden>Into amp <select id="sdTrim">
+          <option value="-12">−12 dB</option><option value="-6">−6 dB</option><option value="0" selected>0 dB</option><option value="6">+6 dB</option><option value="12">+12 dB</option>
+        </select></label>
+        <input type="file" id="sdAmpFile" accept=".nam" hidden>
         <button id="sdRender" class="primary">Render</button>
         <progress id="sdProg" max="1" value="0" hidden></progress>
       </div>

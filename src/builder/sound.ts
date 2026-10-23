@@ -6,6 +6,10 @@ import type { Term } from '../core/termination';
 import { fmtEng } from '../core/units';
 import { harmonics, peakOf, rmsOf, spectrum, wav } from '../audio/analysis';
 import RenderWorker from '../audio/render.worker?worker&inline';
+import NamWorker from '../audio/nam.worker?worker&inline';
+import type { NamMessage, NamRequest } from '../audio/nam.worker';
+import { addAmp, listAmps, removeAmp, type AmpEntry } from '../audio/amps';
+import { includesCab, voltsToDigital } from '../audio/nam';
 import type { RenderMessage, RenderRequest } from '../audio/render.worker';
 import { hitsRails, opAmpSwings } from '../audio/rails';
 import { E_MAJOR, fadingSine, normalize, pluck, sine } from '../audio/signals';
@@ -48,6 +52,9 @@ interface Run {
   unconverged: number;
   /** Op-amps whose output reached their supply rails (over the steady part). */
   railClip: string[];
+  /** Through the amp capture (digital, full scale ±1): the pedal's output, and the dry guitar (for Bypass). */
+  ampOut?: Float32Array;
+  ampDry?: Float32Array;
 }
 
 interface Result {
@@ -62,6 +69,9 @@ interface Result {
   label: string;
   rails: [number, number];
   ms: number;
+  /** The amp capture the runs were played through, if any. */
+  amp?: { id: string; name: string; trim: number } | null;
+  ampNote?: string;
 }
 
 /** A tab's rendered sound (kept per tab, so each pedal can be listened to after switching). */
@@ -81,6 +91,112 @@ export function initSoundPanel(ctx: () => SoundContext, P = 'sd'): SoundPanel {
   let stale = false;
   const workers = new Set<Worker>();
   let busy = false;
+
+  /* ---------- Amp captures (NAM) ---------- */
+  let amps: AmpEntry[] = [];
+  const AMP_KEY = `pedal-filter-lab.sound.${P}.amp`;
+  const stored = (k: string) => { try { return localStorage.getItem(k) ?? ''; } catch { return ''; } };
+  let ampId = stored(AMP_KEY);
+  if (stored(AMP_KEY + '.trim')) $(`#${P}Trim`).value = stored(AMP_KEY + '.trim');
+  const ampOf = () => amps.find(a => a.id === ampId) ?? null;
+  function renderAmps(): void {
+    const sel = $<HTMLSelectElement>(`#${P}Amp`), a = ampOf();
+    sel.innerHTML = '<option value="">No amp</option>' + amps.map(x => `<option value="${esc(x.id)}">${esc(x.name)}</option>`).join('') +
+      '<option value="__load">Load a NAM capture (.nam)…</option>' + (a ? `<option value="__remove">Remove “${esc(a.name)}” from this list…</option>` : '');
+    sel.value = a ? a.id : '';
+    $(`#${P}TrimL`).hidden = !a;
+  }
+  const refreshAmps = async () => { amps = await listAmps(); renderAmps(); };
+  void refreshAmps();
+  function setAmp(id: string): void {
+    ampId = id;
+    try { localStorage.setItem(AMP_KEY, id); } catch { /* ignore */ }
+    renderAmps();
+    void reAmp();
+  }
+  $(`#${P}Amp`).addEventListener('focus', () => void refreshAmps());
+  $(`#${P}Amp`).addEventListener('change', async e => {
+    const v = (e.target as HTMLSelectElement).value;
+    if (v === '__load') { renderAmps(); $<HTMLInputElement>(`#${P}AmpFile`).click(); return; }
+    if (v === '__remove') {
+      const a = ampOf();
+      renderAmps();
+      if (a && confirm(`Remove “${a.name}” from the list of amps? (The .nam file itself isn't touched.)`)) { await removeAmp(a.id); await refreshAmps(); setAmp(''); }
+      return;
+    }
+    setAmp(v);
+  });
+  $<HTMLInputElement>(`#${P}AmpFile`).addEventListener('change', async e => {
+    const input = e.target as HTMLInputElement, f = input.files?.[0];
+    input.value = '';
+    if (!f) return;
+    try { const a = await addAmp(f); await refreshAmps(); setAmp(a.id); }
+    catch (err) { alert(`Couldn’t use ${f.name} as an amp: ${(err as Error).message}`); }
+  });
+  $(`#${P}Trim`).addEventListener('change', () => {
+    try { localStorage.setItem(AMP_KEY + '.trim', $(`#${P}Trim`).value); } catch { /* ignore */ }
+    void reAmp();
+  });
+
+  /** Run a capture over signals, one worker per signal, a few at a time. */
+  async function namJobs(text: string, signals: Float32Array[], onProgress: (f: number) => void): Promise<Float32Array[]> {
+    const out: Float32Array[] = new Array(signals.length), frac = signals.map(() => 0);
+    let next = 0;
+    const one = (k: number) => new Promise<void>((resolve, reject) => {
+      const w = new NamWorker();
+      workers.add(w);
+      w.onmessage = (e: MessageEvent<NamMessage>) => {
+        const m = e.data;
+        if (m.type === 'progress') { frac[k] = m.fraction; onProgress(frac.reduce((a, b) => a + b, 0) / signals.length); return; }
+        w.terminate(); workers.delete(w);
+        if (m.type === 'error') { reject(new Error(m.message)); return; }
+        out[k] = m.outputs[0];
+        resolve();
+      };
+      const req: NamRequest = { text, signals: [signals[k]] };
+      w.postMessage(req, [signals[k].buffer]);
+    });
+    const lanes = Math.max(1, Math.min(signals.length, (navigator.hardwareConcurrency || 4) - 1, 6));
+    await Promise.all(Array.from({ length: lanes }, async () => { while (next < signals.length) await one(next++); }));
+    return out;
+  }
+
+  /** Play each run's output, and the dry guitar, through the chosen amp (or clear it). */
+  async function applyAmp(r: Result, onProgress: (f: number) => void): Promise<void> {
+    for (const run of r.runs) { delete run.ampOut; delete run.ampDry; }
+    r.amp = null; r.ampNote = '';
+    const a = ampOf();
+    if (!a) return;
+    const trim = +$(`#${P}Trim`).value || 0;
+    // The dry inputs: one per level-sweep step, otherwise one signal shared by every run.
+    const dryKeys: Float64Array[] = [];
+    for (const run of r.runs) if (!dryKeys.includes(run.input)) dryKeys.push(run.input);
+    const signals = [...r.runs.map(run => voltsToDigital(run.out, a.inputLevelDbu, trim)), ...dryKeys.map(x => voltsToDigital(x, a.inputLevelDbu, trim))];
+    const outs = await namJobs(a.text, signals, onProgress);
+    r.runs.forEach((run, i) => { run.ampOut = outs[i]; run.ampDry = outs[r.runs.length + dryKeys.indexOf(run.input)]; });
+    r.amp = { id: a.id, name: a.name, trim };
+    r.ampNote = includesCab(a.gearType) ? '' : a.gearType
+      ? `“${a.name}” is marked as ${a.gearType}, not a full rig (amp and cabinet): without a cabinet simulation it may sound harsh.`
+      : '';
+  }
+  /** The amp or its drive changed: re-run just the amp stage on the last render. */
+  async function reAmp(): Promise<void> {
+    if (!res || busy) { draw(); return; }
+    const r = res;
+    busy = true;
+    const prog = $<HTMLProgressElement>(`#${P}Prog`);
+    prog.hidden = false; prog.value = 0;
+    $<HTMLButtonElement>(`#${P}Render`).disabled = true;
+    if (ampOf()) msg(`Playing it through ${esc(ampOf()!.name)}…`);
+    try {
+      await applyAmp(r, f => { prog.value = f; });
+      if (busy) draw();
+    } catch (err) {
+      if (busy) msg(`The amp failed: ${esc((err as Error).message)}`);
+    } finally {
+      if (busy) stopWorkers();
+    }
+  }
   let fileSignal: { name: string; x: Float64Array } | null = null;
   let audio: AudioContext | null = null;
   let playing: AudioBufferSourceNode | null = null;
@@ -227,7 +343,15 @@ export function initSoundPanel(ctx: () => SoundContext, P = 'sd'): SoundPanel {
     try {
       const { runs, rails } = await renderJobs(jobs, c.term, base.tail, f => { prog.value = f; });
       if (!busy) return; // cancelled (e.g. switched tabs)
-      res = { runs, sweep: kind, sineHz: base.sineHz, tail: base.tail, periodic: base.periodic, fading: base.fading, label: base.label, rails, ms: performance.now() - t0 };
+      const r: Result = { runs, sweep: kind, sineHz: base.sineHz, tail: base.tail, periodic: base.periodic, fading: base.fading, label: base.label, rails, ms: 0 };
+      if (ampOf()) {
+        msg(`Playing it through ${esc(ampOf()!.name)}…`);
+        prog.value = 0;
+        await applyAmp(r, f => { prog.value = f; });
+        if (!busy) return;
+      }
+      r.ms = performance.now() - t0;
+      res = r;
       pick = runs.length - 1;
       stale = false;
       renderPick();
@@ -331,18 +455,24 @@ export function initSoundPanel(ctx: () => SoundContext, P = 'sd'): SoundPanel {
       : '';
     const warn = unconverged ? ` <span class="warnc">${unconverged} steps didn't fully converge; treat the result as approximate.</span>` : '';
     msg(`${stale ? '<span class="warnc">The circuit has changed: Render again.</span> ' : ''}${esc(r.label)}${many ? ` (${esc(run.label)})` : ''}: output swings ${st.pp.toFixed(2)} V peak-to-peak${dcNote}. ` +
-      `Op-amps clip between ${r.rails[0].toFixed(1)} and ${r.rails[1].toFixed(1)} V less their headroom. Rendered in ${r.ms < 1000 ? `${Math.round(r.ms)} ms` : `${(r.ms / 1000).toFixed(1)} s`}.${warn}${railNote}`);
+      `Op-amps clip between ${r.rails[0].toFixed(1)} and ${r.rails[1].toFixed(1)} V less their headroom. Rendered in ${r.ms < 1000 ? `${Math.round(r.ms)} ms` : `${(r.ms / 1000).toFixed(1)} s`}.${warn}` +
+      (r.amp ? ` ▶ and Download play it through <b>${esc(r.amp.name)}</b>${r.amp.trim ? ` (${r.amp.trim > 0 ? '+' : ''}${r.amp.trim} dB into it)` : ''}; the plots show the pedal's own output.` : '') +
+      (r.ampNote ? `<span class="pb-warn">⚠ ${esc(r.ampNote)}</span>` : '') + railNote);
   }
 
   /* ---------- Playback and download ---------- */
   const current = (): Run | null => (res ? res.runs[Math.min(pick, res.runs.length - 1)] : null);
   /** Scale for listening: both at the same loudness, or both by one factor (so the pedal's gain is audible). */
+  /** What ▶ Pedal and ▶ Bypass play: through the amp when there is one. */
+  const wetOf = (r: Run): ArrayLike<number> => r.ampOut ?? r.out;
+  const dryOf = (r: Run): ArrayLike<number> => r.ampDry ?? r.input;
   const scales = (r: Run): [number, number] => {
+    const dry = dryOf(r), wet = wetOf(r);
     if ($<HTMLInputElement>(`#${P}Match`).checked) {
       const target = 0.12;
-      return [Math.min(target / Math.max(rmsOf(r.input), 1e-9), 0.95 / Math.max(peakOf(r.input), 1e-9)), Math.min(target / Math.max(rmsOf(r.out), 1e-9), 0.95 / Math.max(peakOf(r.out), 1e-9))];
+      return [Math.min(target / Math.max(rmsOf(dry), 1e-9), 0.95 / Math.max(peakOf(dry), 1e-9)), Math.min(target / Math.max(rmsOf(wet), 1e-9), 0.95 / Math.max(peakOf(wet), 1e-9))];
     }
-    const k = 0.9 / Math.max(peakOf(r.input), peakOf(r.out), 1e-9);
+    const k = 0.9 / Math.max(peakOf(dry), peakOf(wet), 1e-9);
     return [k, k];
   };
   const play = (wet: boolean) => {
@@ -350,10 +480,10 @@ export function initSoundPanel(ctx: () => SoundContext, P = 'sd'): SoundPanel {
     if (!r) return;
     stop();
     audio ??= new AudioContext();
-    const [kd, kw] = scales(r), x = wet ? r.out : r.input, k = wet ? kw : kd;
+    const [kd, kw] = scales(r), x = wet ? wetOf(r) : dryOf(r), k = wet ? kw : kd;
     // Remove the DC bias of the output (coupling caps are part of the circuit, but probes may not be).
     let mean = 0;
-    for (const v of x) mean += v;
+    for (let i = 0; i < x.length; i++) mean += x[i];
     mean /= x.length;
     const buf = audio.createBuffer(1, x.length, FS);
     const ch = buf.getChannelData(0);
@@ -368,13 +498,13 @@ export function initSoundPanel(ctx: () => SoundContext, P = 'sd'): SoundPanel {
   $(`#${P}Download`).addEventListener('click', () => {
     const r = current();
     if (!r || !res) return;
-    const k = 0.9 / Math.max(peakOf(r.out), 1e-9);
+    const y = wetOf(r), k = 0.9 / Math.max(peakOf(y), 1e-9);
     let mean = 0;
-    for (const v of r.out) mean += v;
-    mean /= r.out.length;
+    for (let i = 0; i < y.length; i++) mean += y[i];
+    mean /= y.length;
     const base = (ctx().name || 'pedal').trim().replace(/[^\w\- ]+/g, '').replace(/\s+/g, '-').toLowerCase() || 'pedal';
-    const label = res.runs.length > 1 ? `${res.label}-${r.label}` : res.label;
-    download(`${base}-${label.replace(/[^\w]+/g, '-').toLowerCase()}.wav`, wav(r.out.map(v => (v - mean) * k), FS));
+    const label = (res.runs.length > 1 ? `${res.label}-${r.label}` : res.label) + (res.amp ? `-${res.amp.name}` : '');
+    download(`${base}-${label.replace(/[^\w]+/g, '-').toLowerCase()}.wav`, wav(Array.from(y, v => (v - mean) * k), FS));
   });
 
   return {

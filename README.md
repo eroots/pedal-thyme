@@ -22,7 +22,11 @@ The version is shown at the bottom of the page.
 - **Storage and updates:** open tabs and the current pedalboard are kept in the browser's storage;
   saved files (`.pfl.json`, `.pfl-board.json`) are the reliable copy. To update, replace the old
   `pedal-lab.html` with the new one (same name, same folder), and open tabs carry over.
-- **Licences:** the file includes PDF.js (Apache License 2.0); its licence text is embedded at the end.
+- **Licences:** the file includes PDF.js (Apache License 2.0), and its NAM capture player follows
+  NeuralAmpModelerCore (MIT); both licence texts are embedded at the end (and in `third-party/`).
+- **Amp captures:** none are included. People load the Neural Amp Modeler captures (`.nam`) they've
+  downloaded themselves (most capture licences allow use, not redistribution); the app keeps them in
+  the browser's storage.
 
 ## Running
 

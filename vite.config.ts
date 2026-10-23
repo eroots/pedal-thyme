@@ -37,7 +37,9 @@ const notices = (): Plugin => ({
   enforce: 'post',
   transformIndexHtml: html => {
     const license = readFileSync(new URL('./node_modules/pdfjs-dist/LICENSE', import.meta.url), 'utf8').replace(/-->/g, '--&gt;');
-    return html.replace('</html>', `<!--\nThird-party software included in this file:\n\nPDF.js (pdfjs-dist), Copyright Mozilla Foundation, licensed under the Apache License 2.0:\n\n${license}\n-->\n</html>`);
+    const nam = readFileSync(new URL('./third-party/NeuralAmpModelerCore-LICENSE.txt', import.meta.url), 'utf8');
+    return html.replace('</html>', `<!--\nThird-party software included in this file:\n\nPDF.js (pdfjs-dist), Copyright Mozilla Foundation, licensed under the Apache License 2.0:\n\n${license}\n\n` +
+      `The NAM capture player (src/audio/nam.ts) follows NeuralAmpModelerCore (https://github.com/sdatkinson/NeuralAmpModelerCore):\n\n${nam}\n-->\n</html>`);
   },
 });
 

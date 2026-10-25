@@ -19,10 +19,12 @@ export interface PlotConfig {
   wrap?: boolean;
   /** Frequency under the pointer, for the crosshair readout. */
   hoverF?: number | null;
+  /** Y-axis title; defaults to Level [dB] or Phase [°] from `unit`. */
+  yLabel?: string;
 }
 
 /** Plot margins in CSS pixels; pointer handlers need them to map x → frequency. */
-export const PLOT_MARGIN = { l: 46, r: 12, t: 12, b: 22 };
+export const PLOT_MARGIN = { l: 58, r: 12, t: 12, b: 36 };
 
 const fmtFreqShort = (f: number): string => (f >= 1000 ? (f / 1000) + 'k' : String(f));
 
@@ -60,7 +62,7 @@ export function drawPlot(canvas: HTMLCanvasElement, cfg: PlotConfig): void {
       if (k === 1 || ((k === 2 || k === 5) && fits(x, w))) {
         if (k !== 1) labelled.push(x);
         g.fillStyle = colMuted; g.textAlign = 'center';
-        g.fillText(label, x, H - 6);
+        g.fillText(label, x, m.t + ph + 15);
       }
     }
   }
@@ -72,6 +74,13 @@ export function drawPlot(canvas: HTMLCanvasElement, cfg: PlotConfig): void {
     g.fillStyle = colMuted; g.textAlign = 'right';
     g.fillText(y + cfg.unit, m.l - 6, yy + 4);
   }
+  // Axis titles
+  g.fillStyle = colMuted; g.textAlign = 'center';
+  g.fillText('Frequency [Hz]', m.l + pw / 2, H - 4);
+  g.save();
+  g.translate(12, m.t + ph / 2); g.rotate(-Math.PI / 2);
+  g.fillText(cfg.yLabel ?? (cfg.unit === '°' ? 'Phase [°]' : 'Level [dB]'), 0, 0);
+  g.restore();
 
   g.save();
   g.beginPath(); g.rect(m.l, m.t, pw, ph); g.clip();

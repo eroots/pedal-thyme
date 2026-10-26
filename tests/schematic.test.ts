@@ -134,3 +134,25 @@ describe('Playground schematics', () => {
     });
   }
 });
+
+describe('supplies', () => {
+  it('several symbols for one supply are one source (the same 9V placed in several spots)', () => {
+    // IN → R1 → OUT, with R2 from a 9V symbol to OUT and a second 9V symbol elsewhere (joined by name).
+    const d = sch().IN(0, 0).wire([0, 0], [10, 0]).R('R1', 40, 0, 0, 10e3).wire([70, 0], [130, 0]).OUT(130, 0)
+      .R('R2', 100, 30, 90, 10e3).wire([100, 0], [100, 0])
+      .part('SUPPLY', undefined, 100, 60, 180, 9, { props: { name: '9V' } })
+      .part('SUPPLY', undefined, 300, 0, 0, 9, { props: { name: '9V' } })
+      .build();
+    const ex = extract(d);
+    expect(ex.netlist.elements.filter(e => e.type === 'V')).toHaveLength(1);
+    expect(ex.issues.filter(i => i.severity === 'error')).toEqual([]);
+  });
+
+  it('a closed switch with both ends on one net is left out (it does nothing)', () => {
+    const d = sch().IN(0, 0).wire([0, 0], [10, 0]).R('R1', 40, 0, 0, 10e3).wire([70, 0], [130, 0]).OUT(130, 0)
+      .part('SW', 'S1', 200, 0, 0, undefined, { props: { closed: true } }).GND(170, 0).GND(230, 0).build();
+    const ex = extract(d);
+    expect(ex.netlist.elements.some(e => e.type === 'SW')).toBe(false);
+    expect(Number.isFinite(new Circuit(ex.netlist).solve(new Cx(0, TAU * 1000), {}).v('out').abs())).toBe(true);
+  });
+});

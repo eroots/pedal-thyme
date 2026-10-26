@@ -120,9 +120,20 @@ export function extract(sch: Schematic): Extraction {
     const net = pinNet.get(`${part.id}:${pin}`);
     return net === GND || (nets.get(net!)?.length ?? 0) > 1;
   };
+  // Several supply symbols on one net (the same "9V" placed in several spots) are one source: two
+  // ideal sources in parallel can't be solved. (Different voltages on one net are an error, below.)
+  const supplied = new Set<Node>();
   for (const p of sch.parts) {
     const spec = PARTS[p.kind];
-    elements.push(...spec.elements(p, pin => pinNet.get(`${p.id}:${pin}`) ?? GND, pin => usedPin(p, pin)));
+    if (p.kind === 'SUPPLY') {
+      const net = pinNet.get(`${p.id}:v`) ?? GND;
+      if (supplied.has(net)) continue;
+      supplied.add(net);
+    }
+    // A closed switch between two points of one net does nothing (and, as an ideal short from a net to
+    // itself, couldn't be solved): leave it out.
+    elements.push(...spec.elements(p, pin => pinNet.get(`${p.id}:${pin}`) ?? GND, pin => usedPin(p, pin))
+      .filter(e => !(e.type === 'SW' && e.closed && e.a === e.b) && !(e.type === 'SPDT' && e.com === (e.pos === 'a' ? e.a : e.b))));
   }
 
   // ---------- ERC ----------

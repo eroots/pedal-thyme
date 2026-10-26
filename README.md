@@ -1,65 +1,88 @@
 # Pedal Lab
 
-A browser app for designing guitar-pedal circuits:
-- The **Playground** lets you try out filters, shelves, scoops, gyrator EQ bands and tone stacks: tweak
-  values, sweep pots, model source and load, and design from target specs using standard E-series parts.
-- The **Pedal Builder** is a schematic editor (with LTspice import/export) that simulates what you draw:
-  frequency response, DC bias, and the sound itself, clipping included.
-- The **Pedalboard** chains pedals together.
+Design guitar-pedal circuits, see what they do to your tone, and hear them, all in one web page
+that runs offline on your own computer.
 
-See [PLAN.md](PLAN.md) for what's been built and how.
+- **Playground:** filters, shelves, mid scoops, gyrator EQ bands and amp tone stacks, ready to tweak.
+  Turn the knobs, sweep a pot, add a guitar pickup and an amp input, or ask it to pick standard
+  part values that hit a target frequency.
+- **Pedal Builder:** draw a pedal's schematic, or trace one from a picture or PDF, and simulate it:
+  - the frequency response at any point in the circuit, with a knob for every pot;
+  - the DC voltages at every node (bias);
+  - the sound itself, clipping included. Render a sine, a plucked note, a chord or your own DI
+    recording, then look at the waveform and harmonics and listen to it against bypass. You can also
+    play it through a Neural Amp Modeler capture of an amp.
+- **Pedalboard:** chain pedals in order, switch them on and off, and see and hear the whole board,
+  including how each pedal loads the next.
 
-## Sharing it
+It imports and exports LTspice schematics, and exports SPICE netlists, parts lists and schematic
+images.
 
-Give people `dist/pedal-lab.html`, the only file needed; there's nothing to install. It opens by
-double-click in Chrome or Edge (Firefox works too, but saves by downloading instead of into a folder).
-The version is shown at the bottom of the page.
-- **Offline:** everything is inside that one file, and its Content Security Policy forbids loading or
-  sending anything over the network, so it works offline and can't phone home.
-- **Untrusted files:** schematics, boards, LTspice files and PDFs from other people are treated as untrusted.
-  Schematics are rebuilt with checked types (`src/schematic/sanitize.ts`), all text is escaped before
-  display, and PDFs are rendered by PDF.js without evaluating any code.
-- **Storage and updates:** open tabs and the current pedalboard are kept in the browser's storage;
-  saved files (`.pfl.json`, `.pfl-board.json`) are the reliable copy. To update, replace the old
-  `pedal-lab.html` with the new one (same name, same folder), and open tabs carry over.
-- **Licences:** the file includes PDF.js (Apache License 2.0), and its NAM capture player follows
-  NeuralAmpModelerCore (MIT); both licence texts are embedded at the end (and in `third-party/`).
-- **Amp captures:** none are included. People load the Neural Amp Modeler captures (`.nam`) they've
-  downloaded themselves (most capture licences allow use, not redistribution); the app keeps them in
-  the browser's storage.
+## Getting started
 
-## Running
+1. Download `pedal-lab.html` from the latest [release](../../releases/latest).
+2. Double-click it. It opens in your browser; there's nothing to install.
 
-Requires Node.js (LTS).
+Chrome or Edge is recommended: they can save straight back into a folder of schematics. Firefox
+works too, but saves by downloading a new file each time.
+
+Then read the **[user guide](docs/user-guide.md)**. The quickest way in: open the **Pedal Builder**,
+pick **New ▾ → Tube Screamer-style overdrive**, turn the Drive knob in the Front panel, and press
+**Render** in the Sound panel.
+
+## Privacy and safety
+
+- **Offline:** everything is inside the one HTML file. Its Content Security Policy stops it loading
+  or sending anything over the network, so it works without internet and can't send anything
+  anywhere.
+- **Your work stays on your computer:** schematics are saved as files where you choose; open tabs
+  and the current pedalboard are also kept in the browser's storage between sessions.
+- **Files from other people** (schematics, pedalboards, LTspice files, PDFs) are treated as
+  untrusted. Schematics are rebuilt field by field with checked types, all text is escaped before
+  it's shown, and PDFs are drawn by PDF.js without running any code they contain.
+
+## Updating
+
+Download the new `pedal-lab.html` and replace the old one (same name, same folder). Your open tabs
+and pedalboard carry over, and files saved with older versions keep opening: every release is
+tested against files saved by the earlier ones. The version number is shown at the bottom of the
+page.
+
+## Accuracy
+
+The engine is a circuit simulator in the same family as SPICE:
+- the frequency response is a small-signal analysis around the DC operating point;
+- the Sound panel is a full nonlinear time-domain simulation.
+
+Its results were cross-checked against LTspice; details are in the
+[developer guide](docs/development.md#accuracy). The part models are simplified, though: op-amps
+are macromodels (gain, bandwidth, slew rate, output swing, input bias current), and transistors
+use Ebers–Moll and square-law models. Treat the results as a good guide to how a design behaves,
+not as a guarantee of how a particular build will sound.
+
+## Amp captures
+
+No amp captures are included. To play the sound through an amp, download Neural Amp Modeler
+captures (`.nam` files) yourself, for example from [TONE3000](https://www.tone3000.com/), and load
+them from the Sound panel's **Amp** menu. Full-rig captures (amp and cabinet) work best.
+
+## Building from source
+
+You need [Node.js](https://nodejs.org/) (the LTS version).
 
 ```bash
 npm install
-npm run dev        # dev server at http://localhost:5173
-npm test           # unit tests (Vitest)
-npm run typecheck
-npm run build      # dist/pedal-lab.html: one self-contained file, opens by double-click
+npm run dev      # development server at http://localhost:5173
+npm test         # unit tests
+npm run build    # dist/pedal-lab.html: the single file you share
 ```
 
-## Making a release
+See the [developer guide](docs/development.md) for how the code is organised and how to make a
+release.
 
-1. Set `version` in `package.json` (it is shown in the app's footer).
-2. `npm test`, then `npm run build`.
-3. Add files saved with this release to `tests/fixtures/compat/v<version>/`: a schematic, a pedalboard,
-   and anything else people save. `tests/compat.test.ts` opens every release's files, so a later change
-   that would stop old work opening fails the tests.
-4. Create a GitHub release and attach `dist/pedal-lab.html`.
+## Third-party software
 
-## Layout
-
-| Path | Contents |
-|---|---|
-| `src/core/` | Complex numbers, units, E-series, pot tapers, source/load terminations, measurements |
-| `src/engine/` | Netlist format, MNA small-signal solver (with Zin/Zout), DC operating point and linearisation, time-domain (DK-method) simulation, op-amp/diode/transistor models, SPICE export |
-| `src/schematic/` | Schematic JSON format, part library and symbols, SVG renderer, netlist extraction + electrical rule check, builder DSL |
-| `src/topologies/` | The Playground catalogue: each topology's parts, schematic (netlist is extracted from it), metrics and design solver |
-| `src/playground/` | Playground state, analysis, design search and UI |
-| `src/builder/` | Pedal Builder: document operations, wire router, canvas editor, trace overlay and UI |
-| `src/ltspice/` | LTspice schematic (.asc) import and export, symbol pin tables generated from LTspice's library |
-| `src/audio/` | Test signals, spectrum/THD analysis, WAV export and the render worker for the time-domain simulation |
-| `src/ui/` | Shared UI pieces (Bode plot, oscilloscope) |
-| `tests/` | Unit tests; `legacy.ts` keeps the original hand-written H(s) as oracles for the netlists |
+The built file includes [PDF.js](https://mozilla.github.io/pdf.js/) (Apache License 2.0). The NAM
+capture player is written after
+[NeuralAmpModelerCore](https://github.com/sdatkinson/NeuralAmpModelerCore) (MIT). Both licence texts
+are in the app under **Third-party licences** at the bottom of the page, and in `third-party/`.

@@ -2,6 +2,7 @@
   "name": "pedal-lab",
   "private": true,
   "version": "0.1.0",
+  "description": "Design, simulate and hear guitar-pedal circuits, offline in one HTML file.",
   "type": "module",
   "scripts": {
     "dev": "vite",

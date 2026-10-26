@@ -55,6 +55,7 @@
       <section class="card metrics">
         <h2>Characteristics</h2>
         <table id="metrics"></table>
+        <p class="hint">Worked out for an ideal source (0 Ω) and load (∞), as is target design. Turn on Source &amp; load to see the real-world response on the plot.</p>
       </section>
     </div>
 
@@ -308,7 +309,7 @@
   <div class="b-notice card" id="pbNote" hidden></div>
   <section class="card pb-chain">
     <div class="pb-strip" id="pbStrip"></div>
-    <p class="hint" id="pbEmpty">The pedals are the schematics open in the Builder (one per tab). Add them here in signal order, then switch each one on or off: the guitar only goes through the ones that are on. Turning knobs here edits that pedal.</p>
+    <p class="hint" id="pbEmpty">Add pedals in signal order, from the tabs open in the Builder or from your schematics folder, then switch each one on or off: the guitar only goes through the ones that are on. Turning knobs here edits that pedal.</p>
   </section>
   <section class="card pb-sim">
     <div class="plothead"><h2>Response</h2>
@@ -325,10 +326,9 @@
 </div>
 
 <footer>
-  Characteristics and target design assume an ideal source (0 Ω) and load (∞); turn on Source &amp; load to see the real-world response on the plot.
-  Op-amps are ideal (no GBW or slew limits).
-  Values accept engineering notation: <code>4.7k</code>, <code>4k7</code>, <code>22n</code>, <code>2n2</code>, <code>1u</code>, <code>1M</code>, <code>1e-9</code>.
-  <br>Pedal Lab <span id="appVersion"></span>. Runs entirely on this computer: nothing is sent or loaded over the internet. Includes PDF.js (Mozilla, Apache License 2.0; licence text at the end of this file).
+  <p>Values accept engineering notation: <code>4.7k</code>, <code>4k7</code>, <code>22n</code>, <code>2n2</code>, <code>1u</code>, <code>1M</code>, <code>1e-9</code>.</p>
+  <p>Pedal Lab <span id="appVersion"></span>. Runs entirely on this computer: nothing is sent or loaded over the internet.</p>
+  <details class="licences"><summary>Third-party licences</summary><pre id="licences">The licence texts are added to the built file.</pre></details>
 </footer>
 
 <script type="module" src="/src/main.ts"></script>

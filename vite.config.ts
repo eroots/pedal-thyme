@@ -30,16 +30,22 @@ const csp = (): Plugin => ({
   transformIndexHtml: html => html.replace('<meta charset="utf-8">', `<meta charset="utf-8">\n<meta http-equiv="Content-Security-Policy" content="${CSP}">`),
 });
 
-/** Third-party code bundled into the single file keeps its licence with it (PDF.js: Apache-2.0). */
+/**
+ * Third-party code bundled into the single file keeps its licence with it: the texts fill the footer's
+ * "Third-party licences" section (PDF.js: Apache-2.0; the NAM player follows NeuralAmpModelerCore: MIT).
+ */
 const notices = (): Plugin => ({
   name: 'third-party-notices',
   apply: 'build',
   enforce: 'post',
   transformIndexHtml: html => {
-    const license = readFileSync(new URL('./node_modules/pdfjs-dist/LICENSE', import.meta.url), 'utf8').replace(/-->/g, '--&gt;');
-    const nam = readFileSync(new URL('./third-party/NeuralAmpModelerCore-LICENSE.txt', import.meta.url), 'utf8');
-    return html.replace('</html>', `<!--\nThird-party software included in this file:\n\nPDF.js (pdfjs-dist), Copyright Mozilla Foundation, licensed under the Apache License 2.0:\n\n${license}\n\n` +
-      `The NAM capture player (src/audio/nam.ts) follows NeuralAmpModelerCore (https://github.com/sdatkinson/NeuralAmpModelerCore):\n\n${nam}\n-->\n</html>`);
+    const read = (path: string) => readFileSync(new URL(path, import.meta.url), 'utf8').trim();
+    const text = `PDF.js (pdfjs-dist), Copyright Mozilla Foundation, licensed under the Apache License 2.0:\n\n${read('./node_modules/pdfjs-dist/LICENSE')}\n\n\n` +
+      `The NAM capture player (src/audio/nam.ts) follows NeuralAmpModelerCore (https://github.com/sdatkinson/NeuralAmpModelerCore):\n\n${read('./third-party/NeuralAmpModelerCore-LICENSE.txt')}`;
+    const marker = '<pre id="licences">The licence texts are added to the built file.</pre>';
+    if (!html.includes(marker)) throw new Error('third-party-notices: the licences placeholder is missing from index.html');
+    const escaped = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    return html.replace(marker, () => `<pre id="licences">${escaped}</pre>`);
   },
 });
 

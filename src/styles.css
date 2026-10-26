@@ -234,6 +234,9 @@ ul.list .empty { color: var(--muted); font-size: 13px; border: none; }
 label.btn { background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px; padding: 5px 10px; cursor: pointer; }
 label.btn:hover { border-color: var(--muted); }
 footer { color: var(--muted); font-size: 12px; padding: 0 20px 30px; max-width: 1600px; margin: 0 auto; }
+footer p { margin: 4px 0; }
+footer .licences summary { cursor: pointer; }
+footer .licences pre { white-space: pre-wrap; max-height: 360px; overflow: auto; font-size: 11px; padding: 8px; border: 1px solid var(--grid); border-radius: 6px; }
 
 /* ---------- Sections ---------- */
 [hidden] { display: none !important; }

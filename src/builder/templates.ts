@@ -41,7 +41,7 @@ function tubeScreamer(): Schematic {
     .POT('VR3', 680, 70, 270, 100e3, 0.7, 'A', { mirror: true, ...sweepable }).GND(680, 100)
     .wire([710, 70], [760, 70]).OUT(760, 70);
   biasSupply(b, 40, 140, ['R6', 'R7', 'C6']);
-  b.note(300, 275, 'VR1 drive · VR2 tone · VR3 volume. D1/D2 clip large signals (not modelled in this small-signal view).', 'start');
+  b.note(300, 275, 'VR1 drive · VR2 tone · VR3 volume. D1/D2 clip large signals: render the Sound to hear it (the Response plot is small-signal).', 'start');
   return b.build();
 }
 
@@ -67,7 +67,7 @@ function rat(): Schematic {
     .POT('VR3', 740, 50, 270, 100e3, 0.7, 'A', { mirror: true, ...sweepable }).GND(740, 80)
     .wire([770, 50], [820, 50]).OUT(820, 50);
   biasSupply(b, 40, 260, ['R6', 'R7', 'C7']);
-  b.note(300, 300, 'VR1 distortion · VR2 filter · VR3 volume. D1/D2 clip to ground (not modelled in this small-signal view).', 'start');
+  b.note(300, 300, 'VR1 distortion · VR2 filter · VR3 volume. D1/D2 clip to ground: render the Sound to hear it (the Response plot is small-signal).', 'start');
   return b.build();
 }
 
@@ -165,7 +165,7 @@ function zendrive(): Schematic {
     .POT('VR3', 680, 70, 270, 100e3, 0.7, 'A', { mirror: true, props: { sweep: true } }).GND(680, 100)
     .wire([710, 70], [760, 70]).OUT(760, 70);
   biasSupply(b, 40, 140, ['R6', 'R7', 'C6']);
-  b.note(300, 375, 'VR1 gain · VR2 tone · VR3 volume · VR4 voice. Q1/Q2: diode-connected 2N7000 clippers (clipping not modelled in this small-signal view).', 'start');
+  b.note(300, 375, 'VR1 gain · VR2 tone · VR3 volume · VR4 voice. Q1/Q2: diode-connected 2N7000 clippers; render the Sound to hear them clip.', 'start');
   return b.build();
 }
 

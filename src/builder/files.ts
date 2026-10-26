@@ -156,6 +156,8 @@ const EXPORT_CSS = `
   .schem .pn { font-weight: 700; }
   .schem .pv { fill: #555; font-family: ui-monospace, Consolas, Menlo, monospace; font-size: 10.5px; }
   .schem .sign { font-size: 13px; font-weight: 600; }
+  .schem .pinno { fill: #666; font-size: 8.5px; }
+  .schem .pinlbl { font-size: 8.5px; font-family: monospace; }
   .schem .tiny { fill: #666; font-size: 9px; }
   .schem .probe-lead { stroke: var(--probe); stroke-width: 2; }
   .schem .probe-tip { fill: var(--probe); stroke: var(--probe); fill-opacity: .35; }

@@ -110,9 +110,12 @@ Click a part to edit it in the **Properties** panel on the right. Double-click f
   - **Ganged with** joins two pots (or rheostats) into one dual-gang pot: they share a knob and
     turn together.
 - **Switches:** SPST, SPDT and on-off-on. Click the switch in the Front panel to change it.
+  - **Linked with** makes switches of the same kind the poles of one switch: two SPDTs make a
+    DPDT, two SPSTs a DPST, three a 3PDT and so on. They share one toggle and switch together.
+    Draw each pole where it sits in the circuit.
 - **Diodes and LEDs:** 1N4148, 1N914, 1S1588, 1N34A (germanium) and a red LED.
 - **Transistors:**
-  - NPN and PNP BJTs (2N3904, 2N5088, 2N3906, BC109, AC128);
+  - NPN and PNP BJTs (2N3904, 2N5088, 2N5089, 2N3906, BC109, AC128);
   - JFETs (J201, 2N5457, MPF102, 2N5460);
   - MOSFETs (2N7000, BS170, BS250).
 
@@ -123,6 +126,21 @@ Click a part to edit it in the **Properties** panel on the right. Double-click f
   - **Input bias** overrides the model's typical input bias current, for a particular or unknown
     chip. Through a large feedback resistance it puts a small DC offset across clipping diodes,
     making the clipping slightly asymmetric.
+  - **All pins** draws the chip as its 8-pin package, numbered as on the datasheet:
+    - Use it when you want to wire the supply pins yourself, or show both halves of a dual
+      op-amp as one part. The op-amp then clips at whatever voltages reach its supply pins (after
+      a filter resistor, a charge pump and so on), instead of at the circuit's supply rails.
+    - A dual chip (TL072, 4558, NE5532, OPA2134, LM358) shows op-amps A and B. If nothing is
+      connected to one of them, it's left out.
+    - Single op-amps (LM741, LM308) show their offset-null or compensation pins, which can be left
+      unconnected.
+    - Wires stay on the matching pins when you switch views. When you change the model of a
+      package, each wire keeps its pin number, as when you put a different chip in the same socket.
+  - **LM386:** the small power amp, always shown as its 8-pin package.
+    - Its inputs are referenced to ground, and its output sits at half the supply on pin 6.
+    - Its gain is 20 with pins 1 and 8 open, and up to 200 with a capacitor (e.g. 10 µF) between
+      them; a resistor in series with the capacitor sets a gain in between.
+    - LTspice export leaves it out (LTspice has no LM386 model) and adds a note saying so.
 - **Unity buffer:** an ideal buffer, handy for isolating stages.
 - **Supply rail:** a DC voltage (9 V by default; use −9 V parts for a bipolar supply).
 - **Sweepable** (on pots, switches and parts): offers that part in the Sweep menus of the Response

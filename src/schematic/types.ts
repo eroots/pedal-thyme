@@ -27,10 +27,15 @@ export interface PartProps {
   reverse?: boolean;
   /** Builder: offer this part (value, and rotation for pots) in the Sweep menu. */
   sweep?: boolean;
-  /** Pots and variable resistors on one shaft (a dual-gang pot) share a gang name ("A", "B"…) and turn together. */
+  /**
+   * Gang name ("A", "B"…): pots and variable resistors on one shaft (a dual-gang pot) turn together;
+   * switches of one kind linked as the poles of one switch (two SPDTs make a DPDT) flip together.
+   */
   gang?: string;
   /** Op-amps: input bias current (A) instead of the model's typical value (for a particular or unknown chip). */
   ib?: number;
+  /** Op-amps: "all" draws the 8-pin package with every pin, supplies included (LM386: always). */
+  pins?: 'all';
 }
 
 export interface SchPart {

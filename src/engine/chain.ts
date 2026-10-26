@@ -2,12 +2,26 @@
 // one's input jack, so loading between them (the next input impedance on the previous output) is real.
 // Ground is shared; everything else of an upstream pedal is prefixed, so its supplies, parts and nets
 // stay its own. The last pedal keeps its own names (probes and bias readouts refer to them).
+import type { OpPoint } from './dc';
 import { GND, type Element, type Netlist, type Node } from './netlist';
 
 /** Element fields that hold nodes (every other string field is a name, model or setting). */
-const NODE_KEYS = ['a', 'b', 'p', 'n', 'cp', 'cn', 'inP', 'inN', 'out', 'w', 'com', 'k', 'c', 'e', 'd', 'g', 's'] as const;
+const NODE_KEYS = ['a', 'b', 'p', 'n', 'cp', 'cn', 'inP', 'inN', 'out', 'vp', 'vn', 'w', 'com', 'k', 'c', 'e', 'd', 'g', 's'] as const;
 
 /** The supply span of one pedal: its highest and lowest DC source, including ground. */
+/**
+ * The span an op-amp clips within: the DC voltages of its supply pins when it has them (and they're
+ * connected, so the operating point knows them), or else its own `rails`, or else `fallback`.
+ */
+export function opAmpRails(e: Extract<Element, { type: 'OA' }>, fallback: [number, number], op?: Pick<OpPoint, 'v' | 'nodes'>): [number, number] {
+  const known = (n?: Node): n is Node => !!n && (n === GND || !!op?.nodes.has(n));
+  if (op && known(e.vp) && known(e.vn)) {
+    const a = op.v(e.vn), b = op.v(e.vp);
+    return [Math.min(a, b), Math.max(a, b)];
+  }
+  return e.rails ?? fallback;
+}
+
 export function supplyRails(nl: Netlist): [number, number] {
   const dcs = nl.elements.filter((e): e is Extract<Element, { type: 'V' }> => e.type === 'V').map(e => e.dc);
   return [Math.min(0, ...dcs), Math.max(0, ...dcs)];

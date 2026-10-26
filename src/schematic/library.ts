@@ -8,12 +8,23 @@ import { GND, type Element, type Node } from '../engine/netlist';
 import type { Pt } from './geometry';
 import type { PartKind, SchPart } from './types';
 
-export interface PinSpec { name: string; at: Pt }
+export interface PinSpec {
+  name: string;
+  at: Pt;
+  /** Shown beside the pin (an IC's pin function). */
+  label?: string;
+  /** May be left unconnected (offset null, compensation, an LM386's gain pins). */
+  optional?: boolean;
+  /** One op-amp of a dual package: its pins may all be left unconnected (that op-amp is then unused). */
+  group?: string;
+}
 
 export interface PartSpec {
   /** Human-readable name for palettes. */
   label: string;
   pins: PinSpec[];
+  /** Pins that depend on the part's settings (an op-amp's 8-pin view); overrides `pins`. */
+  pinsOf?(p: SchPart): PinSpec[];
   /** Symbol drawing in local coordinates (rot 0, not mirrored). */
   draw(p: SchPart): string;
   /** Local bounding box [x0, y0, x1, y1] of the symbol. */
@@ -28,8 +39,11 @@ export interface PartSpec {
   avoid?: Pt;
   /** Extra clearance between the symbol and its labels (e.g. a rheostat's arrow). */
   labelPad?: number;
-  /** Netlist elements; `n(pin)` gives the net of a pin. Labels/jacks/ground return none. */
-  elements(p: SchPart, n: (pin: string) => Node): Element[];
+  /**
+   * Netlist elements; `n(pin)` gives the net of a pin, and `used(pin)` (when known) whether anything
+   * else connects to it. Labels/jacks/ground return none.
+   */
+  elements(p: SchPart, n: (pin: string) => Node, used?: (pin: string) => boolean): Element[];
 }
 
 /* ---------- Drawing helpers ---------- */
@@ -50,6 +64,90 @@ function zigzag(): string {
   return line(-30, 0, -16, 0) + polyline(pts) + line(16, 0, 30, 0);
 }
 const TWO: PinSpec[] = [{ name: '1', at: [-30, 0] }, { name: '2', at: [30, 0] }];
+/** A ganged pot or linked switch says which gang it's in. */
+const gangText = (p: SchPart): string => (p.props?.gang ? ` · gang ${p.props.gang}` : '');
+/** A part's pins: usually fixed by its kind, but an op-amp's depend on its view. */
+export const partPins = (p: SchPart): PinSpec[] => PARTS[p.kind].pinsOf?.(p) ?? PARTS[p.kind].pins;
+
+/* ---------- Op-amps: the triangle (one op-amp, supplies implied) or the 8-pin package ---------- */
+export type OpAmpView = 'triangle' | 'dual' | 'single' | 'lm386';
+/** How an op-amp part is drawn: the LM386 only has its package view; others have it when "all pins" is on. */
+export function opAmpView(p: SchPart): OpAmpView {
+  const m = opAmpModel(p.props?.model ?? 'ideal');
+  if (m.pkg === 'lm386') return 'lm386';
+  return p.props?.pins === 'all' ? m.pkg ?? 'dual' : 'triangle';
+}
+const OA_TRIANGLE: PinSpec[] = [{ name: '-', at: [-40, -20] }, { name: '+', at: [-40, 20] }, { name: 'out', at: [40, 0] }];
+/** DIP-8 seen from above: pins 1–4 down the left side, 8–5 down the right. */
+const DIP_AT: Pt[] = [[-50, -30], [-50, -10], [-50, 10], [-50, 30], [50, 30], [50, 10], [50, -10], [50, -30]];
+const DIP_LABELS: Record<Exclude<OpAmpView, 'triangle'>, string[]> = {
+  dual: ['OUTA', '−INA', '+INA', 'V−', '+INB', '−INB', 'OUTB', 'V+'],
+  single: ['NULL', '−IN', '+IN', 'V−', 'NULL', 'OUT', 'V+', 'NC'],
+  lm386: ['GAIN', '−IN', '+IN', 'GND', 'OUT', 'VS', 'BYP', 'GAIN'],
+};
+const DIP_OPTIONAL: Record<Exclude<OpAmpView, 'triangle'>, number[]> = { dual: [], single: [1, 5, 8], lm386: [1, 7, 8] };
+const DUAL_GROUP: Record<number, string> = { 1: 'A', 2: 'A', 3: 'A', 5: 'B', 6: 'B', 7: 'B' };
+function opAmpPins(p: SchPart): PinSpec[] {
+  const view = opAmpView(p);
+  if (view === 'triangle') return OA_TRIANGLE;
+  const names = opAmpModel(p.props?.model ?? 'ideal').pinNames ?? DIP_LABELS[view];
+  return DIP_AT.map((at, i) => ({
+    name: String(i + 1), at, label: names[i],
+    ...(DIP_OPTIONAL[view].includes(i + 1) ? { optional: true } : {}),
+    ...(view === 'dual' && DUAL_GROUP[i + 1] ? { group: DUAL_GROUP[i + 1] } : {}),
+  }));
+}
+
+/**
+ * How an op-amp's pins carry over when its view changes: the triangle's inputs and output become the
+ * package's (op-amp A in a dual), and back. Between packages, pins keep their numbers (as when another
+ * chip goes into the same socket).
+ */
+export function opAmpPinMap(from: OpAmpView, to: OpAmpView): Record<string, string> {
+  const OUT: Record<Exclude<OpAmpView, 'triangle'>, string> = { dual: '1', single: '6', lm386: '5' };
+  if (from === 'triangle' && to === 'triangle') return { '+': '+', '-': '-', out: 'out' };
+  if (from === 'triangle') return { '+': '3', '-': '2', out: OUT[to as Exclude<OpAmpView, 'triangle'>] };
+  if (to === 'triangle') return { '3': '+', '2': '-', [OUT[from]]: 'out' };
+  return Object.fromEntries(DIP_AT.map((_, i) => [String(i + 1), String(i + 1)]));
+}
+
+/**
+ * Input bias current into an op-amp's inputs: a constant current per input (a 1 mV reference driving a
+ * transconductance, so the AC response is unaffected and the DC operating point includes it).
+ */
+function biasCurrent(name: string, ib: number, inputs: Node[]): Element[] {
+  if (!ib) return [];
+  const ref = `#ib:${name}`, VREF = 1e-3;
+  return [{ type: 'V', name: `${name}#ibref`, p: ref, n: GND, dc: VREF },
+    ...inputs.map((inp, i): Element => ({ type: 'G', name: `${name}#ib${i}`, p: inp, n: GND, cp: ref, cn: GND, gm: ib / VREF }))];
+}
+
+/**
+ * LM386 macromodel. Its input followers (each input has 50 kΩ to ground) drive the two ends of the
+ * emitter network: 150 Ω, then 1.35 kΩ from pin 8 to pin 1, with the 15 kΩ feedback resistor from the
+ * output to pin 1. The output moves until both input transistors carry the same current (sensed here
+ * through 10 Ω), which makes the gain 2 · 15k / (150 + 1.35k ∥ whatever is across pins 1 and 8): 20 with
+ * them open, 200 with a capacitor. A current of (supply / 2) / 15 kΩ drawn from pin 1 sets the output
+ * at half the supply; 2 kΩ across the supply pins stands for the chip's quiescent current.
+ */
+function lm386(name: string, n: (pin: string) => Node, ib: number): Element[] {
+  const P = (i: number) => n(String(i)), gnd = P(4), x = (s: string) => `${name}#${s}`;
+  const RS = 10, K = 15e3 / RS;
+  const E = (id: string, p: Node, cp: Node, cn: Node, gain: number): Element => ({ type: 'E', name: x(id), p, n: gnd, cp, cn, gain });
+  const R = (id: string, a: Node, b: Node, value: number): Element => ({ type: 'R', name: x(id), a, b, value });
+  return [
+    R('rinp', P(3), gnd, 50e3), R('rinn', P(2), gnd, 50e3),
+    E('fp', x('a1'), P(3), gnd, 1), R('sp', x('a1'), P(1), RS),
+    E('fn', x('a2'), P(2), gnd, 1), R('sn', x('a2'), x('e2'), RS), R('r150', x('e2'), P(8), 150),
+    R('r1k35', P(8), P(1), 1.35e3), R('rf', P(5), P(1), 15e3),
+    E('ip', x('d1'), x('a1'), P(1), K), E('in', x('d2'), x('a2'), x('e2'), K),
+    { type: 'G', name: x('bias'), p: P(1), n: gnd, cp: P(6), cn: gnd, gm: 1 / 30e3 },
+    R('iq', P(6), gnd, 2e3),
+    { type: 'OA', name, inP: x('d1'), inN: x('d2'), out: P(5), model: 'LM386', vp: P(6), vn: gnd },
+    ...biasCurrent(name, ib, [P(3), P(2)]),
+  ];
+}
+
 /** Net label line length: room for the name (≈ 6.5 units per character) plus margins. */
 export const labelLen = (p: SchPart): number => Math.max(20, Math.ceil(((p.props?.name || 'NET').length * 6.5 + 10) / 10) * 10);
 /** Symbol bounding box for a specific part instance. */
@@ -108,7 +206,7 @@ export const PARTS: Record<PartKind, PartSpec> = {
     label: 'Potentiometer', box: [-30, -30, 30, 7], unit: 'Ω', avoid: [0, -1],
     pins: [{ name: '1', at: [-30, 0] }, { name: '3', at: [30, 0] }, { name: 'w', at: [0, -30] }],
     draw: p => zigzag() + arrow(0, -30, -16 + 32 * wiperFrac(p), -8),
-    valueText: p => `${fmtEng(p.value, 'Ω')} ${p.props?.taper ?? 'B'}${p.props?.reverse ? ' rev' : ''}${p.props?.gang ? ` · gang ${p.props.gang}` : ''}`,
+    valueText: p => `${fmtEng(p.value, 'Ω')} ${p.props?.taper ?? 'B'}${p.props?.reverse ? ' rev' : ''}${gangText(p)}`,
     elements: (p, n) => [{
       type: 'POT', name: p.ref || p.id, a: n('1'), w: n('w'), b: n('3'), value: two(p),
       taper: (p.props?.taper ?? 'B') as TaperKey, rot: p.props?.turn ?? 0.5, ...(p.props?.reverse ? { reverse: true } : {}),
@@ -117,7 +215,7 @@ export const PARTS: Record<PartKind, PartSpec> = {
   RHEO: {
     label: 'Variable resistor', pins: TWO, box: [-30, -15, 30, 15], unit: 'Ω', labelPad: 9,
     draw: () => zigzag() + arrow(-13, 15, 13, -15),
-    valueText: p => `${fmtEng(p.value, 'Ω')} ${p.props?.taper ?? 'B'}${p.props?.reverse ? ' rev' : ''}${p.props?.gang ? ` · gang ${p.props.gang}` : ''}`,
+    valueText: p => `${fmtEng(p.value, 'Ω')} ${p.props?.taper ?? 'B'}${p.props?.reverse ? ' rev' : ''}${gangText(p)}`,
     elements: (p, n) => [{
       type: 'RHEO', name: p.ref || p.id, a: n('1'), b: n('2'), value: two(p),
       taper: (p.props?.taper ?? 'B') as TaperKey, rot: p.props?.turn ?? 0.5, ...(p.props?.reverse ? { reverse: true } : {}),
@@ -178,7 +276,7 @@ export const PARTS: Record<PartKind, PartSpec> = {
     label: 'Switch (on-off, SPST)', pins: TWO, box: [-30, -12, 30, 3],
     draw: p => line(-30, 0, -12, 0) + line(12, 0, 30, 0) + `<circle class="contact" cx="-12" cy="0" r="2"/><circle class="contact" cx="12" cy="0" r="2"/>`
       + (p.props?.closed ? line(-12, 0, 12, -2) : line(-12, 0, 10, -11)),
-    valueText: p => (p.props?.closed ? 'closed' : 'open'),
+    valueText: p => (p.props?.closed ? 'closed' : 'open') + gangText(p),
     elements: (p, n) => [{ type: 'SW', name: p.ref || p.id, a: n('1'), b: n('2'), closed: !!p.props?.closed }],
   },
   SPDT: {
@@ -187,7 +285,7 @@ export const PARTS: Record<PartKind, PartSpec> = {
     draw: p => line(-30, 0, -12, 0) + line(12, -20, 30, -20) + line(12, 20, 30, 20)
       + `<circle class="contact" cx="-12" cy="0" r="2"/><circle class="contact" cx="12" cy="-20" r="2"/><circle class="contact" cx="12" cy="20" r="2"/>`
       + (p.props?.pos === 'b' ? line(-12, 0, 11, 17) : line(-12, 0, 11, -17)),
-    valueText: p => `to ${p.props?.pos ?? 'a'}`,
+    valueText: p => `to ${p.props?.pos ?? 'a'}${gangText(p)}`,
     elements: (p, n) => [{ type: 'SPDT', name: p.ref || p.id, com: n('c'), a: n('a'), b: n('b'), pos: p.props?.pos === 'b' ? 'b' : 'a' }],
   },
   ONOFFON: {
@@ -197,29 +295,34 @@ export const PARTS: Record<PartKind, PartSpec> = {
     draw: p => line(-30, 0, -12, 0) + line(12, -20, 30, -20) + line(12, 20, 30, 20)
       + `<circle class="contact" cx="-12" cy="0" r="2"/><circle class="contact" cx="12" cy="-20" r="2"/><circle class="contact" cx="12" cy="20" r="2"/>`
       + (p.props?.pos === 'b' ? line(-12, 0, 11, 17) : p.props?.pos === 'a' ? line(-12, 0, 11, -17) : line(-12, 0, 9, 0)),
-    valueText: p => (p.props?.pos === 'a' || p.props?.pos === 'b' ? `to ${p.props.pos}` : 'off'),
+    valueText: p => (p.props?.pos === 'a' || p.props?.pos === 'b' ? `to ${p.props.pos}` : 'off') + gangText(p),
     elements: (p, n) => (p.props?.pos === 'a' || p.props?.pos === 'b'
       ? [{ type: 'SPDT', name: p.ref || p.id, com: n('c'), a: n('a'), b: n('b'), pos: p.props.pos }]
       : []),
   },
   OA: {
-    // Triangle 60 × 56 between the pins, with short leads out to them.
+    // Triangle 60 × 56 between the pins, with short leads out to them (supplies implied); or, with all
+    // pins shown, an 8-pin package 60 × 80 with leads out to pins on a 20-unit pitch. The renderer
+    // adds the pin numbers and names, upright.
     label: 'Op-amp', box: [-40, -28, 40, 28], avoid: [0, 1],
-    pins: [{ name: '-', at: [-40, -20] }, { name: '+', at: [-40, 20] }, { name: 'out', at: [40, 0] }],
-    draw: () => line(-40, -20, -30, -20) + line(-40, 20, -30, 20) + polygon([[-30, -28], [-30, 28], [30, 0]]) + line(30, 0, 40, 0),
+    boxOf: p => (opAmpView(p) === 'triangle' ? [-40, -28, 40, 28] : [-50, -40, 50, 40]),
+    pins: OA_TRIANGLE,
+    pinsOf: opAmpPins,
+    draw: p => (opAmpView(p) === 'triangle'
+      ? line(-40, -20, -30, -20) + line(-40, 20, -30, 20) + polygon([[-30, -28], [-30, 28], [30, 0]]) + line(30, 0, 40, 0)
+      : DIP_AT.map(([x, y]) => line(x, y, x < 0 ? -30 : 30, y)).join('') + polygon([[-30, -40], [30, -40], [30, 40], [-30, 40]])
+        + '<path class="notch" d="M -7 -40 A 7 7 0 0 0 7 -40"/>'),
     valueText: p => (p.props?.model && p.props.model !== 'ideal' ? p.props.model : ''),
-    elements: (p, n) => {
-      const name = p.ref || p.id, model = p.props?.model ?? 'ideal';
-      const oa: Element = { type: 'OA', name, inP: n('+'), inN: n('-'), out: n('out'), model };
-      // Input bias current: each input draws ib (a constant current: a 1 mV reference driving two
-      // transconductances, so the AC response is unaffected and the DC operating point includes it).
+    elements: (p, n, used) => {
+      const name = p.ref || p.id, model = p.props?.model ?? 'ideal', view = opAmpView(p);
       const ib = p.props?.ib ?? opAmpModel(model).ib;
-      if (!ib) return [oa];
-      const ref = `#ib:${name}`, VREF = 1e-3;
-      return [oa,
-        { type: 'V', name: `${name}#ibref`, p: ref, n: GND, dc: VREF },
-        { type: 'G', name: `${name}#ib+`, p: n('+'), n: GND, cp: ref, cn: GND, gm: ib / VREF },
-        { type: 'G', name: `${name}#ib-`, p: n('-'), n: GND, cp: ref, cn: GND, gm: ib / VREF }];
+      if (view === 'lm386') return lm386(name, n, ib);
+      if (view === 'triangle') return [{ type: 'OA', name, inP: n('+'), inN: n('-'), out: n('out'), model }, ...biasCurrent(name, ib, [n('+'), n('-')])];
+      if (view === 'single') return [{ type: 'OA', name, inP: n('3'), inN: n('2'), out: n('6'), model, vp: n('7'), vn: n('4') }, ...biasCurrent(name, ib, [n('3'), n('2')])];
+      // Dual: op-amps A and B (named U1A, U1B), each left out when none of its pins are connected.
+      return ([['A', '3', '2', '1'], ['B', '5', '6', '7']] as const).flatMap(([s, inP, inN, out]): Element[] =>
+        (used && ![inP, inN, out].some(used) ? []
+          : [{ type: 'OA', name: name + s, inP: n(inP), inN: n(inN), out: n(out), model, vp: n('8'), vn: n('4') }, ...biasCurrent(name + s, ib, [n(inP), n(inN)])]));
     },
   },
   BUF: {

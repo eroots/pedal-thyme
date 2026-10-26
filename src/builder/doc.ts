@@ -343,7 +343,7 @@ const FOLLOWERS = new Set(['GND', 'SUPPLY', 'LABEL', 'PROBE']);
  * travel with it; any other part touching a moved pin pin-to-pin gets a short connecting wire.
  */
 function transformSelection(doc0: Schematic, partIds: Set<string>, wireIds: Set<string>,
-  partFn: (p: SchPart) => SchPart, ptFn: (p: Pt) => Pt, stretch = true): Schematic {
+  partFn: (p: SchPart) => SchPart, ptFn: (p: Pt) => Pt, stretch = true, rename?: Record<string, string>): Schematic {
   if (!stretch) {
     // Move: only the selection moves; everything else (wires, markers) stays where it is.
     return {
@@ -355,11 +355,20 @@ function transformSelection(doc0: Schematic, partIds: Set<string>, wireIds: Set<
   const doc = splitAtTaps(doc0, wireIds).doc;
   // Probes always move on their own: their pins never drag wires (they only observe a net).
   const pulls = (p: SchPart) => partIds.has(p.id) && p.kind !== 'PROBE';
+  // `rename`: pins that change name (old → new); a pin with no new name keeps its wires where they are.
+  const renamed = (k: string) => {
+    if (!rename) return k;
+    const i = k.lastIndexOf(':'), to = rename[k.slice(i + 1)];
+    return to === undefined ? null : `${k.slice(0, i)}:${to}`;
+  };
   const before = pinMap(doc.parts.filter(pulls));
   let parts = doc.parts.map(p => (partIds.has(p.id) ? partFn({ ...p }) : p));
   const after = pinMap(parts.filter(pulls));
   const moved = new Map<string, Pt>();
-  for (const [k, at] of before) { const to = after.get(k)!; if (!samePt(at, to)) moved.set(key(at), to); }
+  for (const [k, at] of before) {
+    const nk = renamed(k), to = nk && after.get(nk);
+    if (to && !samePt(at, to)) moved.set(key(at), to);
+  }
   // Markers sitting on moved pins travel with them; other pin-to-pin contacts are noted for a new wire.
   const contacts: [Pt, Pt][] = [];
   parts = parts.map(p => {
@@ -406,6 +415,15 @@ export function rotateSelection(doc: Schematic, partIds: Set<string>, wireIds: S
     const [x, y] = rot([p.x, p.y]);
     return { ...p, x, y, rot: ((p.rot + 90) % 360) as Rot };
   }, rot, stretch);
+}
+
+/**
+ * Change a part in a way that renames or moves its pins (an op-amp switching between its triangle and
+ * its 8-pin package), keeping wires attached: `rename` maps each old pin to its new one. Wires on pins
+ * with no counterpart stay where they are.
+ */
+export function reshapePart(doc: Schematic, id: string, patch: Partial<SchPart>, rename: Record<string, string>): Schematic {
+  return transformSelection(doc, new Set([id]), new Set(), p => ({ ...p, ...patch, props: patch.props ? { ...p.props, ...patch.props } : p.props }), q => q, true, rename);
 }
 
 /** Flip parts across their own horizontal axis (e.g. swap an op-amp's + and − inputs). */
@@ -483,19 +501,35 @@ export function deleteWireSegment(doc0: Schematic, wireId: string, p: Pt): Schem
 }
 
 export function updatePart(doc: Schematic, id: string, patch: Partial<SchPart>): Schematic {
-  // Turning one pot of a gang turns them all (one shaft).
-  const gang = patch.props?.turn !== undefined ? doc.parts.find(p => p.id === id)?.props?.gang : undefined;
+  // Turning one pot of a gang turns them all (one shaft); flipping one pole of a linked switch flips them all.
+  const shared = sharedState(patch.props);
+  const gang = shared ? doc.parts.find(p => p.id === id)?.props?.gang : undefined;
   return {
     ...doc, parts: doc.parts.map(p => {
       if (p.id === id) return { ...p, ...patch, props: patch.props ? { ...p.props, ...patch.props } : p.props };
-      if (gang && p.props?.gang === gang) return { ...p, props: { ...p.props, turn: patch.props!.turn } };
+      if (gang && p.props?.gang === gang) return { ...p, props: { ...p.props, ...shared } };
       return p;
     }),
   };
 }
+/** The part of a props patch that a gang shares: a pot's rotation, a switch's position. */
+function sharedState(props: PartProps | undefined): PartProps | null {
+  if (!props) return null;
+  const out: PartProps = {};
+  for (const k of ['turn', 'closed', 'pos'] as const) if (k in props) (out as Record<string, unknown>)[k] = props[k];
+  return Object.keys(out).length ? out : null;
+}
 
-/* ---------- Ganged pots (dual-gang: several pots or variable resistors on one shaft) ---------- */
-export const GANGABLE = ['POT', 'RHEO'];
+/*
+ * ---------- Gangs: dual-gang pots and multi-pole switches ----------
+ * Pots and variable resistors on one shaft turn together; switches of one kind linked as the poles of
+ * one switch (two SPDTs make a DPDT) flip together.
+ */
+export const GANGABLE = ['POT', 'RHEO', 'SW', 'SPDT', 'ONOFFON'];
+const POTS = ['POT', 'RHEO'];
+/** Can these two parts share a gang? Pots with pots; switches only with switches of the same kind. */
+export const canGang = (a: SchPart, b: SchPart): boolean =>
+  a.id !== b.id && (POTS.includes(a.kind) ? POTS.includes(b.kind) : GANGABLE.includes(a.kind) && a.kind === b.kind);
 /** Pots in the same gang as `id` (including it), or just it. */
 export const gangOf = (doc: Schematic, id: string): SchPart[] => {
   const p = doc.parts.find(q => q.id === id), g = p?.props?.gang;
@@ -515,19 +549,20 @@ export function nextGang(doc: Schematic, also: Set<string> = new Set()): string 
   for (let i = 0; ; i++) { const g = i < 26 ? String.fromCharCode(65 + i) : `G${i + 1}`; if (!used.has(g)) return g; }
 }
 /**
- * Put pot `id` on the same shaft as `withId` (joining its gang, or starting one), or take it off its
- * shaft (`withId` null). Joining sets its rotation to the gang's.
+ * Put pot or switch `id` in the same gang as `withId` (joining its gang, or starting one), or take it
+ * out of its gang (`withId` null). Joining sets its rotation or position to the gang's.
  */
 export function setGang(doc: Schematic, id: string, withId: string | null): Schematic {
   const me = doc.parts.find(p => p.id === id);
   if (!me) return doc;
   if (!withId) return tidyGangs({ ...doc, parts: doc.parts.map(p => (p.id === id ? withoutGang(p) : p)) });
   const other = doc.parts.find(p => p.id === withId);
-  if (!other || other.id === id) return doc;
+  if (!other || !canGang(me, other)) return doc;
   const g = other.props?.gang ?? nextGang(doc);
-  const turn = other.props?.turn ?? 0.5;
+  // Joining takes the gang's setting: its rotation, or its switch position.
+  const state: PartProps = POTS.includes(me.kind) ? { turn: other.props?.turn ?? 0.5 } : me.kind === 'SW' ? { closed: other.props?.closed } : { pos: other.props?.pos };
   return tidyGangs({
-    ...doc, parts: doc.parts.map(p => (p.id === id ? { ...p, props: { ...p.props, gang: g, turn } } : p.id === withId ? { ...p, props: { ...p.props, gang: g } } : p)),
+    ...doc, parts: doc.parts.map(p => (p.id === id ? { ...p, props: { ...p.props, ...state, gang: g } } : p.id === withId ? { ...p, props: { ...p.props, gang: g } } : p)),
   });
 }
 

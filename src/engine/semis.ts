@@ -32,6 +32,8 @@ export const BJT_MODELS: Record<string, BjtModel> = {
     spice: 'NPN(Is=6.734f Xti=3 Eg=1.11 Vaf=74.03 Bf=416.4 Ne=1.259 Ise=6.734f Ikf=66.78m Xtb=1.5 Br=.7371 Nc=2 Isc=0 Ikr=0 Rc=1 Cjc=3.638p Mjc=.3085 Vjc=.75 Fc=.5 Cje=4.493p Mje=.2593 Vje=.75 Tr=239.5n Tf=301.2p Itf=.4 Vtf=4 Xtf=2 Rb=10)' },
   '2N5088': { label: '2N5088 (Si NPN, high gain, low noise)', pol: 'npn', is: 5.911e-15, bf: 1122, br: 1.271, vaf: 62.37, cje: 4.973e-12, cjc: 4.017e-12,
     spice: 'NPN(Is=5.911f Xti=3 Eg=1.11 Vaf=62.37 Bf=1.122K Ne=1.394 Ise=5.911f Ikf=14.92m Xtb=1.5 Br=1.271 Nc=2 Isc=0 Ikr=0 Rc=1.61 Cjc=4.017p Mjc=.3174 Vjc=.75 Fc=.5 Cje=4.973p Mje=.4146 Vje=.75 Tr=4.673n Tf=821.7p Itf=.35 Vtf=4 Xtf=7 Rb=10)' },
+  '2N5089': { label: '2N5089 (Si NPN, very high gain, low noise)', pol: 'npn', is: 5.911e-15, bf: 1434, br: 1.262, vaf: 62.37, cje: 4.973e-12, cjc: 4.017e-12,
+    spice: 'NPN(Is=5.911f Xti=3 Eg=1.11 Vaf=62.37 Bf=1.434K Ne=1.421 Ise=5.911f Ikf=14.92m Xtb=1.5 Br=1.262 Nc=2 Isc=0 Ikr=0 Rc=1.61 Cjc=4.017p Mjc=.3174 Vjc=.75 Fc=.5 Cje=4.973p Mje=.4146 Vje=.75 Tr=4.673n Tf=821.7p Itf=.35 Vtf=4 Xtf=7 Rb=10)' },
   '2N3906': { label: '2N3906 (Si PNP)', pol: 'pnp', is: 1.41e-15, bf: 180.7, br: 4.977, vaf: 18.7, cje: 8.063e-12, cjc: 9.728e-12,
     spice: 'PNP(Is=1.41f Xti=3 Eg=1.11 Vaf=18.7 Bf=180.7 Ne=1.5 Ise=0 Ikf=80m Xtb=1.5 Br=4.977 Nc=2 Isc=0 Ikr=0 Rc=2.5 Cjc=9.728p Mjc=.5776 Vjc=.75 Fc=.5 Cje=8.063p Mje=.3677 Vje=.75 Tr=33.42n Tf=179.3p Itf=.4 Vtf=4 Xtf=6 Rb=10)' },
   BC109: { label: 'BC109 (Si NPN, high gain)', pol: 'npn', is: 1.8e-14, bf: 400, br: 35.5, vaf: 80, cje: 1.3e-11, cjc: 4e-12,

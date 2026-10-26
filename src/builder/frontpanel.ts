@@ -3,7 +3,7 @@
 // committed to history when the gesture ends.
 import { clamp, fmtEng } from '../core/units';
 import type { SchPart, Schematic } from '../schematic/types';
-import { updatePart } from './doc';
+import { gangOf, updatePart } from './doc';
 import { controlsOf, knobName } from './sim';
 
 const esc = (s: unknown): string =>
@@ -37,7 +37,7 @@ export function initFrontPanel(root: HTMLElement, editor: DocHost): FrontPanel {
   const switchInfo = (p: SchPart) => (p.kind === 'SW' ? (p.props?.closed ? 'On' : 'Off') : p.props?.pos === 'b' ? 'B' : p.props?.pos === 'off' ? 'Off' : 'A');
 
   function build(doc: Schematic): void {
-    // A gang of pots is one knob (it turns them all).
+    // A gang of pots is one knob (it turns them all); a linked switch is one toggle.
     const controls = controlsOf(doc).filter((p, i, all) => !p.props?.gang || all.findIndex(q => q.props?.gang === p.props!.gang) === i);
     if (!controls.length) {
       root.innerHTML = '<p class="hint">Pots and switches in your circuit appear here as knobs and toggles.</p>';
@@ -54,8 +54,8 @@ export function initFrontPanel(root: HTMLElement, editor: DocHost): FrontPanel {
           <div class="kname">${esc(knobName(doc, p))}</div><div class="kval"></div>
         </div>`
       : `<div class="knob switch" data-id="${esc(p.id)}">
-          <button class="toggle" aria-label="${esc(p.ref || 'Switch')}"></button>
-          <div class="kname">${esc(p.ref || '')}</div><div class="kval"></div>
+          <button class="toggle" aria-label="${esc(knobName(doc, p) || 'Switch')}"></button>
+          <div class="kname">${esc(knobName(doc, p))}</div><div class="kval"></div>
         </div>`).join('')}</div>`;
     refresh(doc);
   }
@@ -69,7 +69,9 @@ export function initFrontPanel(root: HTMLElement, editor: DocHost): FrontPanel {
         const btn = el.querySelector<HTMLButtonElement>('.toggle')!;
         btn.classList.toggle('on', on);
         btn.textContent = switchInfo(p);
-        el.querySelector('.kval')!.textContent = p.kind === 'SW' ? 'on-off' : p.kind === 'SPDT' ? 'on-on' : 'on-off-on';
+        // Poles: two linked SPDTs are a DPDT, three a 3PDT …
+        const poles = gangOf(doc, p.id).length, np = poles > 1 ? (poles === 2 ? 'D' : String(poles)) : '';
+        el.querySelector('.kval')!.textContent = p.kind === 'SW' ? (np ? `${np}PST` : 'on-off') : p.kind === 'SPDT' ? (np ? `${np}PDT` : 'on-on') : (np ? `${np}PDT on-off-on` : 'on-off-on');
         continue;
       }
       const turn = p.props?.turn ?? 0.5, a = angle(turn);

@@ -1,6 +1,7 @@
 // Op-amp rail clipping: an op-amp whose output reaches its supply rails squares the signal off, so any
 // diode clipping after it only sees a square wave. Used to point this out after a Sound render.
-import { supplyRails } from '../engine/chain';
+import { opAmpRails, supplyRails } from '../engine/chain';
+import { dcOp, type OpPoint } from '../engine/dc';
 import { opAmpModel } from '../engine/models';
 import type { Netlist, Node } from '../engine/netlist';
 
@@ -9,9 +10,12 @@ export interface OpAmpSwing { name: string; net: Node; lo: number; hi: number }
 
 export function opAmpSwings(nl: Netlist): OpAmpSwing[] {
   const supply = supplyRails(nl);
+  // Op-amps with supply pins clip within those pins' DC voltages.
+  let op: OpPoint | undefined;
+  if (nl.elements.some(e => e.type === 'OA' && e.vp)) op = dcOp(nl);
   return nl.elements.flatMap(e => {
     if (e.type !== 'OA') return [];
-    const m = opAmpModel(e.model), rails = e.rails ?? supply;
+    const m = opAmpModel(e.model), rails = opAmpRails(e, supply, op);
     return [{ name: e.name, net: e.out, lo: rails[0] + m.headroom[0], hi: rails[1] - m.headroom[1] }];
   });
 }

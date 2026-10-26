@@ -73,3 +73,34 @@ describe('ganged (dual-gang) pots', () => {
     expect(pots[0].props?.gang).toBeTruthy();
   });
 });
+
+describe('linked (multi-pole) switches', () => {
+  /** Two SPDTs and an SPST, unwired: only the gang logic matters here. */
+  const switches = (): Schematic => ({
+    version: 1, wires: [], parts: [
+      { id: 's1', kind: 'SPDT', ref: 'S1', x: 0, y: 0, rot: 0, props: { pos: 'a', sweep: true } },
+      { id: 's2', kind: 'SPDT', ref: 'S2', x: 100, y: 0, rot: 0, props: { pos: 'b', sweep: true } },
+      { id: 's3', kind: 'SW', ref: 'S3', x: 200, y: 0, rot: 0, props: { closed: false } },
+    ],
+  });
+  const pos = (d: Schematic) => d.parts.map(p => [p.ref, p.props?.pos ?? p.props?.closed, p.props?.gang]);
+
+  it('two SPDTs linked make a DPDT: flipping either flips both', () => {
+    const d = setGang(switches(), 's2', 's1');
+    expect(pos(d)).toEqual([['S1', 'a', 'A'], ['S2', 'a', 'A'], ['S3', false, undefined]]); // joining takes the gang's position
+    expect(pos(updatePart(d, 's2', { props: { pos: 'b' } }))).toEqual([['S1', 'b', 'A'], ['S2', 'b', 'A'], ['S3', false, undefined]]);
+  });
+
+  it('only switches of the same kind link', () => {
+    expect(setGang(switches(), 's3', 's1')).toEqual(switches());
+  });
+
+  it('a linked switch is one sweep target, and its sweep moves every pole', () => {
+    const d = setGang(switches(), 's2', 's1');
+    const t = sweepTargets(d);
+    expect(t.map(x => x.label)).toEqual(['S1+S2 position (A / B)']);
+    expect(sweepVariants(d, t[0].id, 5).map(v => pos(v.doc).slice(0, 2))).toEqual([
+      [['S1', 'a', 'A'], ['S2', 'a', 'A']], [['S1', 'b', 'A'], ['S2', 'b', 'A']],
+    ]);
+  });
+});

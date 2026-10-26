@@ -5,7 +5,7 @@
 // cross do not connect. Labels with the same name (and every ground symbol) join their nets.
 import { GND, type Element, type Netlist, type Node } from '../engine/netlist';
 import { key, onSegment, samePt, toWorld, type Pt } from './geometry';
-import { PARTS } from './library';
+import { PARTS, partPins } from './library';
 import type { SchPart, Schematic } from './types';
 
 export type Severity = 'error' | 'warning';
@@ -35,7 +35,7 @@ class UnionFind {
   }
 }
 
-export const pinsOf = (p: SchPart): PinRef[] => PARTS[p.kind].pins.map(pin => ({ part: p, pin: pin.name, at: toWorld(p, pin.at) }));
+export const pinsOf = (p: SchPart): PinRef[] => partPins(p).map(pin => ({ part: p, pin: pin.name, at: toWorld(p, pin.at) }));
 
 export function extract(sch: Schematic): Extraction {
   const uf = new UnionFind();
@@ -115,21 +115,31 @@ export function extract(sch: Schematic): Extraction {
 
   // Elements.
   const elements: Element[] = [];
+  // A pin is used when something else is on its net.
+  const usedPin = (part: SchPart, pin: string) => {
+    const net = pinNet.get(`${part.id}:${pin}`);
+    return net === GND || (nets.get(net!)?.length ?? 0) > 1;
+  };
   for (const p of sch.parts) {
     const spec = PARTS[p.kind];
-    elements.push(...spec.elements(p, pin => pinNet.get(`${p.id}:${pin}`) ?? GND));
+    elements.push(...spec.elements(p, pin => pinNet.get(`${p.id}:${pin}`) ?? GND, pin => usedPin(p, pin)));
   }
 
   // ---------- ERC ----------
   if (inJacks.length !== 1) issues.push({ severity: 'error', message: inJacks.length ? 'More than one input jack.' : 'No input jack: add one where the signal enters.', parts: inJacks.map(p => p.id) });
   if (outJacks.length !== 1) issues.push({ severity: 'error', message: outJacks.length ? 'More than one output jack.' : 'No output jack: add one where the signal leaves.', parts: outJacks.map(p => p.id) });
 
-  // Unconnected pins (a net with one member), except a lone label/supply/ground marker.
+  // Unconnected pins (a net with one member), except a lone label/supply/ground marker, pins that may
+  // be left open (offset null, compensation …), and the pins of an unused op-amp in a dual package.
   for (const [name, members] of nets) {
     if (members.length > 1 || name === GND) continue;
     const m = members[0];
     if (m.part.kind === 'LABEL') continue;
-    issues.push({ severity: 'warning', message: `${m.part.ref || PARTS[m.part.kind].label} pin ${m.pin} is not connected.`, parts: [m.part.id], at: m.at });
+    const all = partPins(m.part), spec = all.find(q => q.name === m.pin);
+    if (spec?.optional) continue;
+    if (spec?.group && !all.some(q => q.group === spec.group && usedPin(m.part, q.name))) continue;
+    const label = spec?.label ? ` (${spec.label})` : '';
+    issues.push({ severity: 'warning', message: `${m.part.ref || PARTS[m.part.kind].label} pin ${m.pin}${label} is not connected.`, parts: [m.part.id], at: m.at });
   }
 
   // Supplies: shorted to ground, or two different voltages on one net.

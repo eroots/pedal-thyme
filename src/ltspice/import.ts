@@ -11,7 +11,7 @@ import { BJT_MODELS, JFET_MODELS, MOS_MODELS } from '../engine/semis';
 import { reattach } from '../builder/doc';
 import { extract } from '../schematic/extract';
 import { toWorld, type Pt } from '../schematic/geometry';
-import { PARTS, boxOf, labelLen } from '../schematic/library';
+import { PARTS, boxOf, labelLen, partPins } from '../schematic/library';
 import type { PartKind, PartProps, Rot, SchPart, Schematic } from '../schematic/types';
 import {
   MODEL_SUFFIX, evalValue, ltNets, ltPieces, readSteps, ltTransform, onSeg, parseAsc, parseAsy, readModels, readParams, symbolBase,
@@ -315,7 +315,7 @@ export function importAsc(text: string, asyTexts: Record<string, string> = {}, n
   // "target"). Wire ends and markers at a target follow the pin, re-routed like a stretch move. Where
   // two parts' pins met at one target, short stubs join them there instead. If that ever disagrees with
   // LTspice's nets, fall back to stubs everywhere, which keeps LTspice's wires exactly as drawn.
-  const pinAt = (t: { part: SchPart; pin: string }) => toWorld(t.part, PARTS[t.part.kind].pins.find(p => p.name === t.pin)!.at);
+  const pinAt = (t: { part: SchPart; pin: string }) => toWorld(t.part, partPins(t.part).find(p => p.name === t.pin)!.at);
   const byTarget = new Map<string, typeof pinTargets>();
   for (const t of pinTargets) byTarget.set(pk(t.target), [...(byTarget.get(pk(t.target)) ?? []), t]);
   const baseParts = parts.slice(), baseWires = wires.slice();
@@ -632,7 +632,7 @@ export function importAsc(text: string, asyTexts: Record<string, string> = {}, n
 function pruneDangling(sch: Schematic): Schematic {
   let wires = sch.wires.slice(), parts = sch.parts.slice();
   for (let pass = 0; pass < 30; pass++) {
-    const pinPts = parts.flatMap(p => PARTS[p.kind].pins.map(pin => toWorld(p, pin.at)));
+    const pinPts = parts.flatMap(p => partPins(p).map(pin => toWorld(p, pin.at)));
     const touches = (q: Pt, self: number) =>
       pinPts.some(p => same(p, q)) || wires.some((w, i) => i !== self && w.pts.some((p, j) => same(p, q) || (j > 0 && onSeg(q, w.pts[j - 1], p))));
     let changed = false;
@@ -655,7 +655,7 @@ function pruneDangling(sch: Schematic): Schematic {
     const keepParts = parts.filter(p => {
       if (p.kind !== 'GND' && p.kind !== 'LABEL') return true;
       const q = toWorld(p, PARTS[p.kind].pins[0].at);
-      return wirePts(q) || parts.some(o => o !== p && o.kind !== 'GND' && o.kind !== 'LABEL' && PARTS[o.kind].pins.some(pin => same(toWorld(o, pin.at), q)));
+      return wirePts(q) || parts.some(o => o !== p && o.kind !== 'GND' && o.kind !== 'LABEL' && partPins(o).some(pin => same(toWorld(o, pin.at), q)));
     });
     if (!changed && keepParts.length === parts.length) break;
     wires = keep; parts = keepParts;

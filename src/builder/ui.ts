@@ -7,12 +7,12 @@ import { dcOp, type DeviceOp, type OpPoint } from '../engine/dc';
 import { DIODE_MODELS, OPAMP_MODELS, opAmpModel } from '../engine/models';
 import { BJT_MODELS, JFET_MODELS, MOS_MODELS } from '../engine/semis';
 import { extract, type Extraction } from '../schematic/extract';
-import { PARTS } from '../schematic/library';
+import { PARTS, opAmpPinMap, opAmpView } from '../schematic/library';
 import { onSegment, samePt, type Pt } from '../schematic/geometry';
 import { renderSchematic, renderSchematicBody } from '../schematic/render';
 import type { PartKind, SchPart, Schematic } from '../schematic/types';
 import { S } from '../playground/state';
-import { GANGABLE, gangOf, partBox, setGang, updateNote, updatePart } from './doc';
+import { canGang, gangOf, partBox, reshapePart, setGang, updateNote, updatePart } from './doc';
 import { Editor, PART_KEYS, type DragMode, type Mode } from './editor';
 import { initFileBar, type FileBar, type FileHost } from './filebar';
 import { canWriteFolders, idbGet, idbSet } from './folder';
@@ -422,6 +422,11 @@ export function initBuilder(nav: { showBoard(): void; showBuilder(): void }): Bu
     }
     const p = parts[0], spec = PARTS[p.kind];
     const row = (label: string, html: string) => `<label class="prop"><span>${label}</span>${html}</label>`;
+    // Gang: another pot on the same shaft, or another pole of the same switch.
+    const gangRow = (q: SchPart, label: string, title: string, none: string) => {
+      const others = editor.doc.parts.filter(o => canGang(q, o)), mate = gangOf(editor.doc, q.id).find(o => o.id !== q.id);
+      return others.length ? row(label, `<select data-field="gang" title="${esc(title)}"><option value="">${none}</option>${others.map(o => `<option value="${esc(o.id)}" ${mate?.id === o.id ? 'selected' : ''}>${esc(o.ref || o.id)}${o.props?.gang ? ` (gang ${esc(o.props.gang)})` : ''}</option>`).join('')}</select>`) : '';
+    };
     let h = `<h2>${esc(spec.label)}</h2>`;
     if (spec.elements(p, () => '0').length && p.kind !== 'SUPPLY') h += row('Reference', `<input type="text" data-field="ref" value="${esc(p.ref || '')}" spellcheck="false">`);
     if (spec.unit && p.kind !== 'SUPPLY') {
@@ -438,11 +443,7 @@ export function initBuilder(nav: { showBoard(): void; showBuilder(): void }): Bu
         : ['Reverse', 'lugs 1 and 3 swapped: turning up moves the wiper towards pin 1'];
       h += row(rev[0], `<span class="chk"><input type="checkbox" data-field="reverse" ${p.props?.reverse ? 'checked' : ''}> <span class="hint">${rev[1]}</span></span>`);
       // Dual-gang: another pot on the same shaft (they turn together; each keeps its value, taper and Reverse).
-      const others = editor.doc.parts.filter(q => GANGABLE.includes(q.kind) && q.id !== p.id);
-      const mate = gangOf(editor.doc, p.id).find(q => q.id !== p.id);
-      if (others.length) {
-        h += row('Ganged with', `<select data-field="gang" title="Put this pot on the same shaft as another (a dual-gang pot): they turn together"><option value="">None (its own shaft)</option>${others.map(q => `<option value="${esc(q.id)}" ${mate?.id === q.id ? 'selected' : ''}>${esc(q.ref || q.id)}${q.props?.gang ? ` (gang ${esc(q.props.gang)})` : ''}</option>`).join('')}</select>`);
-      }
+      h += gangRow(p, 'Ganged with', 'Put this pot on the same shaft as another (a dual-gang pot): they turn together', 'None (its own shaft)');
     }
     if (SWEEPABLE_KINDS.includes(p.kind)) {
       h += row('Sweepable', `<span class="chk"><input type="checkbox" data-field="sweep" ${p.props?.sweep ? 'checked' : ''}> <span class="hint">offer ${p.kind === 'POT' || p.kind === 'RHEO' ? 'its rotation and value' : ['SW', 'SPDT', 'ONOFFON'].includes(p.kind) ? 'its positions' : 'its value'} in the Sweep menu</span></span>`);
@@ -453,6 +454,17 @@ export function initBuilder(nav: { showBoard(): void; showBuilder(): void }): Bu
       const typ = opAmpModel(p.props?.model ?? 'ideal').ib;
       h += row('Input bias', `<span class="valrow"><input type="text" data-field="ib" value="${p.props?.ib !== undefined ? esc(fmtEng(p.props.ib)) : ''}" placeholder="${esc(fmtEng(typ))} (typical)" spellcheck="false" title="Current drawn by each input (positive: into the inputs, as in NPN-input chips like the 4558; negative: out of them, as in the LM358). Leave empty for the model's typical value; set it for a particular or unknown chip."><span class="unit">A</span></span>`);
       h += '<p class="hint">Input bias current flows through the resistors at the inputs. Through a large feedback resistance (e.g. a Drive pot) it puts a small DC offset across clipping diodes in the loop, which makes the clipping slightly asymmetric, most of all at low levels.</p>';
+      // All pins: the 8-pin package (both op-amps of a dual, and the supply pins).
+      const view = opAmpView(p), lm = view === 'lm386';
+      h += row('All pins', `<span class="chk"><input type="checkbox" data-field="pins" ${view !== 'triangle' ? 'checked' : ''} ${lm ? 'disabled' : ''}> <span class="hint">${lm ? 'the LM386 is always shown as its 8-pin package' : 'show the 8-pin package'}</span></span>`);
+      if (view !== 'triangle') {
+        h += `<p class="hint">${view === 'dual' ? `Both op-amps of the chip (${esc(p.ref || 'U')}A and ${esc(p.ref || 'U')}B); one with nothing connected is left out. ` : ''}`
+          + `It clips at the voltages on its supply pins (${view === 'lm386' ? '6 and 4' : view === 'single' ? '7 and 4' : '8 and 4'}), so wire them to the supplies. `
+          + `${view === 'lm386' ? 'Gain is 20 with pins 1 and 8 open, up to 200 with a capacitor (e.g. 10 µF) between them; pin 7 (bypass) can be left open. ' : view === 'single' ? 'Pins 1, 5 and 8 (offset null, compensation) can be left open. ' : ''}`
+          + 'Changing the model keeps each wire on the same pin number, as when swapping a chip in its socket.</p>';
+      }
+      const note = opAmpModel(p.props?.model ?? 'ideal').note;
+      if (note) h += `<p class="hint">${esc(note)}</p>`;
     }
     const modelSelect = (models: Record<string, { label: string; approx?: boolean }>, filter: (m: any) => boolean = () => true) =>
       row('Model', `<select data-field="model">${Object.entries(models).filter(([, m]) => filter(m)).map(([k, m]) => `<option value="${k}" ${p.props?.model === k ? 'selected' : ''}>${esc(m.label)}${m.approx ? ' ≈' : ''}</option>`).join('')}</select>`);
@@ -466,12 +478,17 @@ export function initBuilder(nav: { showBoard(): void; showBuilder(): void }): Bu
       const pos = p.props?.pos ?? 'a', opt = (v: string, label: string) => `<option value="${v}" ${pos === v ? 'selected' : ''}>${label}</option>`;
       h += row('Position', `<select data-field="pos">${opt('a', 'To A (upper)')}${p.kind === 'ONOFFON' ? opt('off', 'Off (centre)') : ''}${opt('b', 'To B (lower)')}</select>`);
     }
+    if (p.kind === 'SW' || p.kind === 'SPDT' || p.kind === 'ONOFFON') {
+      h += gangRow(p, 'Linked with', `Make this one pole of a multi-pole switch (two ${p.kind === 'SW' ? 'SPSTs make a DPST' : p.kind === 'SPDT' ? 'SPDTs make a DPDT' : 'on-off-ons make a DPDT on-off-on'}): the poles switch together`, 'None (a switch of its own)');
+    }
     if (p.kind === 'LABEL' || p.kind === 'SUPPLY') h += row('Net name', `<input type="text" data-field="name" value="${esc(p.props?.name || '')}" spellcheck="false">`);
     if (p.kind === 'SUPPLY') h += row('Voltage', `<span class="valrow"><input type="text" data-field="value" value="${esc(p.value ?? 9)}"><span class="unit">V</span></span>`);
     if (p.kind === 'NMOS' || p.kind === 'PMOS') h += '<p class="hint">Real thresholds vary a lot between samples (2N7000: about 0.8–3 V), so circuits use a trimmer or drain feedback. For a clipper, tie the gate to the drain: it then conducts above V<sub>th</sub>, and its body diode conducts the other way.</p>';
     if (['D', 'LED', 'NPN', 'PNP', 'NJF', 'PJF', 'NMOS', 'PMOS'].includes(p.kind)) h += '<p class="hint">The Response plot linearises it at its DC operating point (small-signal, so no clipping there). The Sound panel simulates it fully, clipping included. ≈ marks approximate models.</p>';
     if (p.kind === 'SUPPLY') h += '<p class="hint">Supplies are AC ground in the frequency response.</p>';
-    h += `<div class="btnrow"><button data-act="rotate" title="Ctrl+R">Rotate</button><button data-act="mirror" title="Ctrl+E">Mirror</button><button data-act="delete">Delete</button></div>`;
+    // No Mirror for an op-amp package: it's drawn as seen from above.
+    const mirror = p.kind === 'OA' && opAmpView(p) !== 'triangle' ? '' : '<button data-act="mirror" title="Ctrl+E">Mirror</button>';
+    h += `<div class="btnrow"><button data-act="rotate" title="Ctrl+R">Rotate</button>${mirror}<button data-act="delete">Delete</button></div>`;
     el.innerHTML = h;
     el.dataset.id = p.id;
     fillDeviceOp();
@@ -583,6 +600,15 @@ export function initBuilder(nav: { showBoard(): void; showBuilder(): void }): Bu
     const f = el.dataset.field!;
     let patch: Partial<SchPart> | null = null;
     if (f === 'gang') { editor.commit(setGang(editor.doc, p.id, el.value || null)); return; }
+    if (p.kind === 'OA' && (f === 'model' || f === 'pins')) {
+      // An op-amp changing between its triangle and its 8-pin package keeps its wires on the same pins.
+      const props = f === 'model' ? { model: el.value } : { pins: el.checked ? 'all' as const : undefined };
+      const from = opAmpView(p), to = opAmpView({ ...p, props: { ...p.props, ...props } });
+      // A package is drawn as seen from above (pin 1 top left), so going to it drops a mirror.
+      const flip = from === 'triangle' && to !== 'triangle' && p.mirror ? { mirror: undefined } : {};
+      editor.commit(reshapePart(editor.doc, p.id, { props, ...flip }, opAmpPinMap(from, to)));
+      return;
+    }
     if (f === 'ref') patch = { ref: el.value.trim() || p.ref };
     else if (f === 'value') {
       const v = parseEng(el.value), ok = isFinite(v) && (p.kind === 'C' ? v >= 0 : p.kind === 'SUPPLY' ? true : v > 0);

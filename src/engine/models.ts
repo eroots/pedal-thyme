@@ -23,6 +23,14 @@ export interface OpAmpModel {
    * e.g. across clipping diodes in a feedback loop. FET inputs: picoamps.
    */
   ib: number;
+  /**
+   * The 8-pin package, for the all-pins view: two op-amps (the default: 1 OUT A, 2 −IN A, 3 +IN A,
+   * 4 V−, 5 +IN B, 6 −IN B, 7 OUT B, 8 V+), one (2 −IN, 3 +IN, 4 V−, 6 OUT, 7 V+; 1, 5 and 8 offset
+   * null or compensation), or the LM386 power amp.
+   */
+  pkg?: 'single' | 'lm386';
+  /** Names for the package's pins 1–8, where they differ from the package's usual ones. */
+  pinNames?: string[];
   note?: string;
 }
 
@@ -32,9 +40,15 @@ export const OPAMP_MODELS: Record<string, OpAmpModel> = {
   JRC4558: { label: 'JRC4558 (3 MHz)', a0: 100e3, gbw: 3e6, rin: 5e6, rout: 75, slew: 1.7, headroom: [1.2, 1.2], ib: 25e-9 },
   NE5532: { label: 'NE5532 (10 MHz)', a0: 100e3, gbw: 10e6, rin: 300e3, rout: 50, slew: 9, headroom: [1.5, 1.5], ib: 200e-9 },
   OPA2134: { label: 'OPA2134 (FET, 8 MHz)', a0: 1e6, gbw: 8e6, rin: 1e13, rout: 50, slew: 20, headroom: [1, 1], ib: 5e-12 },
-  LM741: { label: 'LM741 (1 MHz)', a0: 200e3, gbw: 1e6, rin: 2e6, rout: 75, slew: 0.5, headroom: [1.5, 1.5], ib: 80e-9 },
+  LM741: { label: 'LM741 (1 MHz)', a0: 200e3, gbw: 1e6, rin: 2e6, rout: 75, slew: 0.5, headroom: [1.5, 1.5], ib: 80e-9, pkg: 'single' },
   LM358: { label: 'LM358 (1 MHz)', a0: 100e3, gbw: 1e6, rin: 10e6, rout: 300, slew: 0.3, headroom: [0.02, 1.5], ib: -45e-9 },
-  LM308: { label: 'LM308, 30 pF comp. (≈1 MHz)', a0: 300e3, gbw: 1e6, rin: 40e6, rout: 100, slew: 0.3, headroom: [1, 1], ib: 1.5e-9, note: 'Approximate: GBW depends on the compensation cap.' },
+  LM308: { label: 'LM308, 30 pF comp. (≈1 MHz)', a0: 300e3, gbw: 1e6, rin: 40e6, rout: 100, slew: 0.3, headroom: [1, 1], ib: 1.5e-9, pkg: 'single',
+    pinNames: ['COMP', '−IN', '+IN', 'V−', 'BAL', 'OUT', 'V+', 'COMP'], note: 'Approximate: GBW depends on the compensation cap (between pins 1 and 8, not simulated: 30 pF is assumed).' },
+  // LM386: a power amp, not an op-amp. Its inputs are referenced to ground through 50 kΩ, its output
+  // sits at half the supply, and its gain is 20, or up to 200 with a capacitor across pins 1 and 8.
+  // These figures are for the output stage of its macromodel (see the OA part in the schematic library).
+  LM386: { label: 'LM386 (power amp, gain 20–200)', a0: 30e3, gbw: 300e3, rin: 1e12, rout: 0.5, slew: 2, headroom: [0.8, 1], ib: -250e-9, pkg: 'lm386',
+    note: 'Approximate: a macromodel of the gain stage (gain 20 with pins 1 and 8 open, 200 with a capacitor between them; 300 kHz bandwidth; output at half the supply). It only comes in its 8-pin view.' },
 };
 
 /** `cj`: junction capacitance (F), used as a constant in AC and transient analysis. */

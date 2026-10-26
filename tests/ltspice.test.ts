@@ -122,7 +122,7 @@ SYMATTR InstName V2
 SYMATTR Value 9
 SYMBOL npn 0 64 R0
 SYMATTR InstName Q1
-SYMATTR Value 2N5089
+SYMATTR Value MPSA18
 SYMBOL res 48 -48 R0
 SYMATTR InstName R1
 SYMATTR Value 10k
@@ -133,7 +133,7 @@ SYMATTR Value 10k
     const q = r.schematic.parts.find(p => p.ref === 'Q1')!;
     expect(q.kind).toBe('NPN');
     expect(q.props?.model).toBe('2N3904');
-    expect(r.report.some(x => /2N5089/.test(x))).toBe(true);
+    expect(r.report.some(x => /MPSA18/.test(x))).toBe(true);
   });
   it('maps a pot from its .asy symbol file', () => {
     const asy = `Version 4

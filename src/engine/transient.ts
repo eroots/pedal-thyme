@@ -12,6 +12,7 @@
 import { potFraction } from '../core/pots';
 import { clamp } from '../core/units';
 import type { Term } from '../core/termination';
+import { opAmpRails } from './chain';
 import { dcOp } from './dc';
 import { diodeModel, opAmpModel } from './models';
 import { GND, type Element, type Netlist, type Node } from './netlist';
@@ -100,9 +101,11 @@ export class TransientSim {
       if (load.R > 0) els.push({ type: 'R', name: '#RL', a: nl.output, b: GND, value: load.R });
       if (load.C > 0) els.push({ type: 'C', name: '#CL', a: nl.output, b: GND, value: load.C });
     }
-    // Rails: the supply span.
+    // Rails: the supply span (op-amps with supply pins use their pins' DC voltages instead).
     const dcs = els.filter((e): e is Extract<Element, { type: 'V' }> => e.type === 'V').map(e => e.dc);
     this.rails = [Math.min(0, ...dcs), Math.max(0, ...dcs)];
+    // The run starts from the DC operating point.
+    const op = dcOp(nl, { rs: src?.on ? src.R : null, rl: load?.on ? load.R : null });
 
     // Unknowns: nodes, op-amp integrator nodes, then voltage-source branch currents.
     const idx = new Map<Node, number>();
@@ -205,7 +208,7 @@ export class TransientSim {
           const m = opAmpModel(e.model), y = yNode.get(e)!;
           const a0 = isFinite(m.a0) ? m.a0 : 1e6, gbw = isFinite(m.gbw) ? m.gbw : 50e6, rout = Math.max(m.rout, 1e-2);
           const gm = a0 / RY, cy = gm / (2 * Math.PI * gbw), imax = isFinite(m.slew) ? m.slew * 1e6 * cy : Infinity;
-          const rails = e.rails ?? this.rails, lo = rails[0] + m.headroom[0], hi = rails[1] - m.headroom[1];
+          const rails = opAmpRails(e, this.rails, op), lo = rails[0] + m.headroom[0], hi = rails[1] - m.headroom[1];
           cond(y, -1, 1 / RY);
           reactive(y, -1, 'C', cy, true);
           if (isFinite(m.rin)) cond(node(e.inP), node(e.inN), 1 / m.rin);
@@ -251,7 +254,6 @@ export class TransientSim {
     this.v = new Float64Array(this.controls.length);
 
     // Start from the DC operating point.
-    const op = dcOp(nl, { rs: src?.on ? src.R : null, rl: load?.on ? load.R : null });
     const x0 = new Float64Array(N);
     for (const [n, k] of idx) if (!n.startsWith('#')) x0[k] = op.v(n);
     if (idx.has('#srcL')) x0[idx.get('#srcL')!] = op.v(nl.input);

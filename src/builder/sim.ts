@@ -12,7 +12,7 @@ import { probeColor } from '../schematic/library';
 import type { SchPart, Schematic } from '../schematic/types';
 import { gangOf, updatePart } from './doc';
 
-/** A pot's name for its knob: its ref, or all its gang's refs ("VR1+VR2"). */
+/** A pot's or switch's name on the front panel: its ref, or all its gang's refs ("VR1+VR2"). */
 export const knobName = (doc: Schematic, p: SchPart): string => gangOf(doc, p.id).map(q => q.ref || q.id).join('+');
 
 export interface Curve { mag: number[]; ph: number[] }
@@ -88,11 +88,11 @@ export function sweepTargets(doc: Schematic): SweepTarget[] {
   // A gang is one knob: one rotation target for it, whichever of its pots is marked.
   const pots = marked.filter((p, i, all) => (p.kind === 'POT' || p.kind === 'RHEO') && (!p.props?.gang || all.findIndex(q => q.props?.gang === p.props!.gang) === i));
   const valued = marked.filter(p => (p.value ?? 0) > 0 && !SWITCHES.includes(p.kind));
-  const switches = marked.filter(p => SWITCHES.includes(p.kind));
+  const switches = marked.filter((p, i, all) => SWITCHES.includes(p.kind) && (!p.props?.gang || all.findIndex(q => q.props?.gang === p.props!.gang) === i));
   return [
     ...pots.map(p => ({ id: `turn:${p.id}`, label: `${knobName(doc, p)} rotation` })),
     ...valued.map(p => ({ id: `value:${p.id}`, label: `${p.ref} value (÷3 … ×3)` })),
-    ...switches.map(p => ({ id: `pos:${p.id}`, label: `${p.ref} position (${switchPositions(p.kind).map(s => s.label).join(' / ')})` })),
+    ...switches.map(p => ({ id: `pos:${p.id}`, label: `${knobName(doc, p)} position (${switchPositions(p.kind).map(s => s.label).join(' / ')})` })),
   ];
 }
 
@@ -104,9 +104,9 @@ export function sweepVariants(doc: Schematic, targetId: string, steps: number): 
   const part = doc.parts.find(p => p.id === id);
   if (!part) return [];
   if (kind === 'pos') {
-    // One curve per switch position (the Steps setting doesn't apply).
+    // One curve per switch position (the Steps setting doesn't apply); linked poles switch together.
     const pos = switchPositions(part.kind);
-    return pos.map((s, i) => ({ label: `${part.ref} ${s.label}`, r: pos.length > 1 ? i / (pos.length - 1) : 0, doc: withPart(doc, id, p => ({ ...p, props: { ...p.props, ...s.props } })) }));
+    return pos.map((s, i) => ({ label: `${knobName(doc, part)} ${s.label}`, r: pos.length > 1 ? i / (pos.length - 1) : 0, doc: updatePart(doc, id, { props: s.props }) }));
   }
   const n = Math.max(2, Math.min(15, Math.round(steps)));
   return Array.from({ length: n }, (_, i) => {

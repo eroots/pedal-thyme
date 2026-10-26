@@ -110,6 +110,8 @@ main { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
 .schem .pn { font-weight: 700; }
 .schem .pv { fill: var(--muted); font-family: var(--mono); font-size: 10.5px; }
 .schem .sign { font-size: 13px; font-weight: 600; }
+.schem .pinno { fill: var(--muted); font-size: 8.5px; }
+.schem .pinlbl { font-size: 8.5px; font-family: var(--mono); }
 .schem .tiny { fill: var(--muted); font-size: 9px; }
 .schem .head { fill: var(--schem); stroke: var(--schem); stroke-width: 1; }
 .schem .contact { fill: var(--panel); stroke: var(--schem); stroke-width: 1.4; }

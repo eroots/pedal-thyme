@@ -8,7 +8,7 @@
 import { modelLines, opAmpSubcktName, spiceNum, type UsedModels } from '../engine/spice';
 import { extract } from '../schematic/extract';
 import { toWorld, type Pt } from '../schematic/geometry';
-import { PARTS } from '../schematic/library';
+import { PARTS, opAmpView, partPins } from '../schematic/library';
 import type { PartKind, SchPart, Schematic } from '../schematic/types';
 import { MODEL_SUFFIX, ORIENTS, ltTransform, onSeg, type LPt } from './asc';
 
@@ -75,7 +75,7 @@ export function exportAsc(doc: Schematic, opt: AscExportOptions = {}): string {
 
   // Our wires, split wherever a pin or another wire's end lies inside a segment (so every LTspice
   // connection is end-to-end), each tagged with its net.
-  const pinPts: { at: LPt; net: string }[] = doc.parts.flatMap(p => PARTS[p.kind].pins.map(pin => ({ at: up(toWorld(p, pin.at)), net: netAt(p, pin.name) })));
+  const pinPts: { at: LPt; net: string }[] = doc.parts.flatMap(p => partPins(p).map(pin => ({ at: up(toWorld(p, pin.at)), net: netAt(p, pin.name) })));
   const wireNet = (pts: LPt[]): string => {
     for (const q of pinPts) if (pts.some((p, i) => same(p, q.at) || (i > 0 && onSeg(q.at, pts[i - 1], p)))) return q.net;
     return '';
@@ -158,10 +158,26 @@ export function exportAsc(doc: Schematic, opt: AscExportOptions = {}): string {
   /** Knob parameters (name, position) for the .param line. */
   const knobParams: [string, number][] = [];
   const inst = (p: SchPart) => (p.ref || p.id).replace(/[^\w]/g, '_');
-  const tgt = (p: SchPart, pin: string) => ({ at: up(toWorld(p, PARTS[p.kind].pins.find(q => q.name === pin)!.at)), net: netAt(p, pin) });
+  const tgt = (p: SchPart, pin: string) => ({ at: up(toWorld(p, partPins(p).find(q => q.name === pin)!.at)), net: netAt(p, pin) });
   const supplyNets = new Set<string>();
+  const unexported: string[] = [];
   for (const p of doc.parts) {
     const name = inst(p);
+    const view = p.kind === 'OA' ? opAmpView(p) : null;
+    if (view && view !== 'triangle') {
+      // 8-pin package: LTspice's op-amp symbol for each op-amp in use, wired to the package's pins (its
+      // supplies are implied, as for the triangle). Connected pins are flagged so their nets keep their names.
+      for (const pin of partPins(p)) if ((ex.nets.get(netAt(p, pin.name))?.length ?? 0) > 1) { const t = tgt(p, pin.name); flag(t.at, t.net); }
+      if (view === 'lm386') { unexported.push(`${p.ref || p.id} (LM386) isn't exported: LTspice has no LM386 model. Its pins' nets are flagged.`); continue; }
+      const model = p.props?.model ?? 'ideal', base = p.ref || p.id;
+      const sections = view === 'single' ? [['', '3', '2', '6']] : [['A', '3', '2', '1'], ['B', '5', '6', '7']];
+      for (const [s, inP, inN, out] of sections) {
+        if (!ex.netlist.elements.some(e => e.type === 'OA' && e.name === base + s)) continue; // unused half
+        used.opamps.add(model);
+        place(SYMS.OA!, name + s, [['Value', opAmpSubcktName(model)]], { '+': tgt(p, inP), '-': tgt(p, inN), out: tgt(p, out) });
+      }
+      continue;
+    }
     switch (p.kind) {
       case 'GND': case 'LABEL': case 'OUT': flag(tgt(p, PARTS[p.kind].pins[0].name).at, tgt(p, PARTS[p.kind].pins[0].name).net); break;
       case 'IN': {
@@ -250,7 +266,7 @@ export function exportAsc(doc: Schematic, opt: AscExportOptions = {}): string {
     : [];
   const directive = [`.ac dec 100 ${spiceNum(opt.fmin ?? 10)} ${spiceNum(opt.fmax ?? 100e3)}`, ...knobLines, ...meas, ...lib].join('\\n');
   out.push(`TEXT ${x0} ${y1 + 64} Left 2 !${directive}`);
-  const comments = [opt.title ? `${opt.title} (exported from Pedal Lab)` : 'Exported from Pedal Lab', ...(knobs.length ? ['Knobs: ' + knobs.join('; ')] : []), ...(opt.notes ?? [])];
+  const comments = [opt.title ? `${opt.title} (exported from Pedal Lab)` : 'Exported from Pedal Lab', ...(knobs.length ? ['Knobs: ' + knobs.join('; ')] : []), ...unexported, ...(opt.notes ?? [])];
   comments.forEach((c, i) => out.push(`TEXT ${x0} ${y0 - 64 - 32 * (comments.length - 1 - i)} Left 2 ;${c.replace(/\n/g, ' ')}`));
   for (const n of doc.notes ?? []) { const [x, y] = up([n.x, n.y]); out.push(`TEXT ${x} ${y} Left 2 ;${n.text.replace(/\n/g, ' ')}`); }
   return out.join('\n') + '\n';

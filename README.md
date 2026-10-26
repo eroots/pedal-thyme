@@ -86,3 +86,7 @@ The built file includes [PDF.js](https://mozilla.github.io/pdf.js/) (Apache Lice
 capture player is written after
 [NeuralAmpModelerCore](https://github.com/sdatkinson/NeuralAmpModelerCore) (MIT). Both licence texts
 are in the app under **Third-party licences** at the bottom of the page, and in `third-party/`.
+
+## Licence
+
+Pedal Lab is released under the [MIT License](LICENSE).

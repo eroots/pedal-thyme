@@ -9,6 +9,7 @@ import { importAsc } from '../ltspice/import';
 import { bomCsv, makeProject, parseProject, projectSpice, safeFileName, schematicSvg, svgToPng } from './files';
 import type { TraceMenu } from './trace';
 import type { SimPanel } from './simpanel';
+import { BLOCKS } from './blocks';
 import { TEMPLATES } from './templates';
 import { isBoardText } from './board';
 import { ProjectFolder, allowed, canSaveAs, canWriteFolders, saveAsDialog, writeHandle, type FolderEntry } from './folder';
@@ -74,6 +75,17 @@ export function initFileBar(editor: Editor, sim: SimPanel, trace: TraceMenu, hos
       dirty = t.id !== 'empty';
       showState();
     });
+  });
+
+  // Blocks: a ready-made stage follows the cursor until a click drops it into this schematic.
+  $('#bBlocks').innerHTML = BLOCKS.map(b =>
+    `<button data-block="${b.id}"><b>${esc(b.name)}</b><span>${esc(b.description)}</span></button>`).join('')
+    + '<p class="hint">Blocks use VREF (half the supply): add the Bias supply block if your circuit has none. Wire up the block’s “in” and “out” ends after dropping it.</p>';
+  $('#bBlocks').addEventListener('click', e => {
+    const b = (e.target as Element).closest<HTMLButtonElement>('[data-block]');
+    if (!b) return;
+    closeMenus();
+    editor.placeBlock(BLOCKS.find(x => x.id === b.dataset.block)!.build());
   });
 
   // Import notes (LTspice substitutions and the like).

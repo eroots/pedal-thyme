@@ -26,6 +26,13 @@ export interface EditorState { doc: Schematic; view: View; undo: string[]; redo:
 /** Single-key shortcuts that start placing a part (as in LTspice). */
 export const PART_KEYS: Record<string, PartKind> = { r: 'R', c: 'C', l: 'L', d: 'D', g: 'GND', p: 'POT', o: 'OA', q: 'NPN', j: 'NJF', x: 'PROBE' };
 
+/** Top-left grid point of a clip: where the cursor holds it. */
+function clipCorner(c: Clip): Pt {
+  const xs = [...c.parts.map(p => p.x), ...c.wires.flatMap(w => w.pts.map(p => p[0])), ...(c.notes ?? []).map(n => n.x)];
+  const ys = [...c.parts.map(p => p.y), ...c.wires.flatMap(w => w.pts.map(p => p[1])), ...(c.notes ?? []).map(n => n.y)];
+  return snapPt([Math.min(...xs), Math.min(...ys)]);
+}
+
 export interface EditorEvents {
   /** The document changed (committed or live during a drag). */
   change(doc: Schematic, committed: boolean): void;
@@ -59,6 +66,8 @@ export class Editor {
   private clip: Clip | null = null;
   /** Copy mode: what's being carried, and the point of it that sits under the cursor. */
   private carry: { clip: Clip; at: Pt } | null = null;
+  /** The carried clip is a block: one click drops it, then back to Select. */
+  private carryOnce = false;
   private drag: null | { kind: 'move'; start: Pt; orig: Schematic; moved: boolean; stretch: boolean }
     | { kind: 'box'; start: Pt; now: Pt; add: boolean; del?: boolean }
     | { kind: 'pan'; sx: number; sy: number; vx: number; vy: number }
@@ -113,6 +122,7 @@ export class Editor {
     this.mode = mode;
     this.draft = null;
     this.placing = mode === 'place' && kind ? { kind, rot: 0, mirror: false } : null;
+    this.carryOnce = false;
     this.delHover = null;
     if (mode !== 'select') { this.sel.clear(); this.on.select(this.sel); }
     this.wrap.dataset.mode = mode;
@@ -198,6 +208,19 @@ export class Editor {
 
   /** Ctrl+C / the Copy button: copy mode (carrying the selection, if there is one). */
   copyMode(): void { this.setMode('copy'); }
+
+  /** Carry a block under the cursor: a click drops it (selected), then back to Select; Esc cancels. */
+  placeBlock(clip: Clip): void {
+    this.sel.clear();
+    this.on.select(this.sel);
+    this.setMode('copy');
+    this.carry = { clip, at: clipCorner(clip) };
+    this.carryOnce = true;
+    this.on.mode(this.mode, null);
+    this.render();
+  }
+  /** Is a block being placed (for the hint)? */
+  get placingBlock(): boolean { return this.carryOnce && !!this.carry; }
 
   private copySel(): Clip { return copySelection(this.doc, this.selParts(), this.selWires(), this.selNotes()); }
 
@@ -411,7 +434,7 @@ export class Editor {
       e.preventDefault();
       if (this.mode === 'wire' && this.draft) this.finishWire();
       else if (this.mode === 'place') this.rotate();
-      else if (this.mode === 'copy' && this.carry) { this.carry = null; this.render(); }
+      else if (this.mode === 'copy' && this.carry) { if (this.carryOnce) this.setMode('select'); else { this.carry = null; this.render(); } }
       else if (this.mode !== 'select') this.setMode('select');
     });
     svg.addEventListener('wheel', e => {
@@ -478,6 +501,7 @@ export class Editor {
         const [dx, dy] = this.carryOffset(p);
         const r = paste(this.doc, this.carry.clip, dx, dy);
         this.commit(cutWiresUnder(r.doc, r.ids));
+        if (this.carryOnce) { this.setMode('select'); this.selectIds(r.ids); }
         return;
       }
       const id = this.hitId(e.target as Element);
@@ -629,7 +653,7 @@ export class Editor {
       case 'Escape':
         if (this.traceAdjust) { this.setTraceAdjust(false); break; }
         if (this.draft) { this.draft = null; this.render(); }
-        else if (this.carry) { this.carry = null; this.render(); }
+        else if (this.carry) { if (this.carryOnce) this.setMode('select'); else { this.carry = null; this.render(); } }
         else if (this.mode !== 'select') this.setMode('select');
         else { this.sel.clear(); this.on.select(this.sel); this.render(); }
         break;

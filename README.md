@@ -6,7 +6,8 @@ that runs offline on your own computer.
 - **Playground:** filters, shelves, mid scoops, gyrator EQ bands and amp tone stacks, ready to tweak.
   Turn the knobs, sweep a pot, add a guitar pickup and an amp input, or ask it to pick standard
   part values that hit a target frequency.
-- **Pedal Builder:** draw a pedal's schematic, or trace one from a picture or PDF, and simulate it:
+- **Pedal Builder:** draw a pedal's schematic (from scratch, from ready-made blocks such as buffers and
+  clipping stages, or by tracing a picture or PDF), and simulate it:
   - the frequency response at any point in the circuit, with a knob for every pot;
   - the DC voltages at every node (bias);
   - the sound itself, clipping included. Render a sine, a plucked note, a chord or your own DI

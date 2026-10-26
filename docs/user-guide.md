@@ -19,6 +19,7 @@ Anywhere a value is typed, engineering notation works: `4.7k`, `4k7`, `22n`, `2n
 - [Pedal Builder](#pedal-builder)
   - [Drawing a schematic](#drawing-a-schematic)
   - [Parts and their properties](#parts-and-their-properties)
+  - [Circuit blocks](#circuit-blocks)
   - [Tracing a schematic from a picture or PDF](#tracing-a-schematic-from-a-picture-or-pdf)
   - [Files, tabs and the schematics folder](#files-tabs-and-the-schematics-folder)
   - [Response](#response)
@@ -148,6 +149,20 @@ Click a part to edit it in the **Properties** panel on the right. Double-click f
   and Sound panels.
 
 Models marked ≈ are approximate.
+
+### Circuit blocks
+
+**Blocks ▾** drops a ready-made stage into the schematic you're working on:
+- Bias supply (VREF): 9 V into a 10k/10k divider with 47 µF, making the 4.5 V VREF the other
+  blocks use;
+- op-amp input buffer (Klon-style), JFET buffer and BJT buffer;
+- Tube Screamer clipping stage, and Tube Screamer tone and volume;
+- hard clipping to ground (RAT style).
+
+Choose one and it follows the cursor; click to drop it (Esc cancels). Its references are renumbered
+so they don't clash with the parts already there. Then wire up its **in** and **out** ends (the Checks
+panel lists them until they're connected). If your circuit has no VREF yet, add the Bias supply
+block too.
 
 ### Tracing a schematic from a picture or PDF
 

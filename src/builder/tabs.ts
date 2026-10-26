@@ -49,7 +49,7 @@ export function newTab(sim: ProjectSim, doc: Schematic = emptyDoc()): Tab {
     id: newTabId(), name: '', dirty: false, compare: '', input: '', trace: null, file: null, sound: null, needsFit: true,
     state: { doc, view: { ...DEFAULT_VIEW }, undo: [], redo: [] },
     // A new tab keeps the source/load setup but starts without a sweep.
-    sim: { ...JSON.parse(JSON.stringify(sim)), sweep: '' },
+    sim: { ...JSON.parse(JSON.stringify(sim)), sweep: '', sweep2: '' },
   };
 }
 

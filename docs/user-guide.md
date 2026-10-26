@@ -184,6 +184,9 @@ The frequency response of the pedal (the **Output** curve), plus a curve for eve
 - **Fix scale:** keeps the dB range fixed while you change values.
 - **Sweep:** overlays curves for several settings of a Sweepable part, with **Steps** setting how
   many.
+  - **and** adds a second sweep and draws every combination. For example, 5 Drive settings × 3
+    Tone settings gives 15 curves: colour shows the first sweep's setting, line style (solid,
+    dashed, dotted …) the second's.
 - **Compare with:** overlays the output of a schematic open in another tab.
 - **Source / Load:** model the guitar pickup and cable, and the amp or next pedal. The readout
   gives the input and output impedance.

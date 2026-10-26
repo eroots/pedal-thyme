@@ -24,11 +24,16 @@ interface SimSettings {
   showPhase: boolean;
   sweep: string;
   steps: number;
+  /** A second sweep: each of the first sweep's curves is drawn at each of its settings. */
+  sweep2: string;
+  steps2: number;
 }
 const DEFAULTS: SimSettings = {
   term: { src: { on: false, preset: 'single', R: 6e3, L: 2.5, C: 470e-12 }, load: { on: false, preset: 'pedal', R: 1e6, C: 0 } },
-  showOut: true, showTol: false, showPhase: false, sweep: '', steps: 5,
+  showOut: true, showTol: false, showPhase: false, sweep: '', steps: 5, sweep2: '', steps2: 3,
 };
+/** Line styles for the second sweep's settings, in order. */
+const SWEEP2_DASH: number[][] = [[], [7, 4], [2, 3], [10, 3, 2, 3], [14, 5]];
 
 function loadSettings(): SimSettings {
   try {
@@ -93,7 +98,9 @@ export function initSimPanel(): SimPanel {
   const st = loadSettings();
   let doc: Schematic | null = null, ex: Extraction | null = null;
   let res: SimResult | null = null, ideal: SimResult | null = null;
-  let sweep: { label: string; r: number; mag: number[]; ph: number[] }[] = [];
+  /** Sweep curves: `r` places a curve in the first sweep (its colour), `k` in the second (its line style). */
+  let sweep: { label: string; r: number; k: number; mag: number[]; ph: number[] }[] = [];
+  let sweep2Labels: string[] = [];
   let tolBand: { lo: number[]; hi: number[] } | null = null;
   let freqs: number[] = [];
   let compareId = '', compareSrc: CompareSource | null = null;
@@ -177,8 +184,11 @@ export function initSimPanel(): SimPanel {
     draw();
   });
   $('#bSweepSteps').value = String(st.steps);
-  $('#bSweep').addEventListener('change', e => { st.sweep = (e.target as HTMLSelectElement).value; save(); schedule(true); });
+  $('#bSweepSteps2').value = String(st.steps2);
+  $('#bSweep').addEventListener('change', e => { st.sweep = (e.target as HTMLSelectElement).value; renderSweepOptions(); save(); schedule(true); });
   $('#bSweepSteps').addEventListener('change', e => { st.steps = +(e.target as HTMLSelectElement).value; save(); schedule(true); });
+  $('#bSweep2').addEventListener('change', e => { st.sweep2 = (e.target as HTMLSelectElement).value; renderSweepOptions(); save(); schedule(true); });
+  $('#bSweepSteps2').addEventListener('change', e => { st.steps2 = +(e.target as HTMLSelectElement).value; save(); schedule(true); });
   /**
    * `prune`: forget a sweep whose part is gone. Only when computing: settings applied for another tab
    * arrive just before that tab's schematic does, so `doc` may still be the previous tab's.
@@ -187,7 +197,14 @@ export function initSimPanel(): SimPanel {
     if (!doc) return;
     const targets = sweepTargets(doc);
     if (prune && st.sweep && !targets.some(t => t.id === st.sweep)) st.sweep = '';
+    if (prune && st.sweep2 && !targets.some(t => t.id === st.sweep2)) st.sweep2 = '';
     $('#bSweep').innerHTML = `<option value="">${targets.length ? 'Off' : 'Off (mark parts Sweepable in Properties)'}</option>` + targets.map(t => `<option value="${t.id}" ${t.id === st.sweep ? 'selected' : ''}>${esc(t.label)}</option>`).join('');
+    // The second sweep: any other target, once the first is on.
+    const others = targets.filter(t => t.id !== st.sweep);
+    $('#bSweep2').innerHTML = '<option value="">Nothing else</option>' + others.map(t => `<option value="${t.id}" ${t.id === st.sweep2 ? 'selected' : ''}>${esc(t.label)}</option>`).join('');
+    const on2 = !!st.sweep && others.length > 0;
+    $('#bSweep2L').hidden = !on2;
+    $('#bSweepSteps2L').hidden = !on2 || !st.sweep2 || st.sweep2.startsWith('pos:');
   }
 
   $('#bCompare').addEventListener('change', e => { compareId = (e.target as HTMLSelectElement).value; schedule(false); });
@@ -215,11 +232,18 @@ export function initSimPanel(): SimPanel {
     const probes = probesOf(doc, ex), t = termOf(up);
     res = simulate(sx, probes, freqs, t);
     ideal = t ? simulate(sx, [], freqs, null) : null;
+    // Every combination of the two sweeps (the second's settings within each of the first's).
+    const second = !!st.sweep && !!st.sweep2 && st.sweep2 !== st.sweep;
+    sweep2Labels = [];
     sweep = st.sweep ? sweepVariants(doc, st.sweep, st.steps).flatMap(v => {
-      const vx = extract(v.doc);
-      if (vx.issues.some(i => i.severity === 'error')) return [];
-      const r = simulate(W(vx), [], freqs, t);
-      return [{ label: v.label, r: v.r, mag: r.out.mag, ph: r.out.ph }];
+      const inner = second ? sweepVariants(v.doc, st.sweep2, st.steps2).slice(0, SWEEP2_DASH.length) : [{ label: '', r: 0, doc: v.doc }];
+      if (second && !sweep2Labels.length) sweep2Labels = inner.map(w => w.label);
+      return inner.flatMap((w, k) => {
+        const vx = extract(w.doc);
+        if (vx.issues.some(i => i.severity === 'error')) return [];
+        const r = simulate(W(vx), [], freqs, t);
+        return [{ label: second ? `${v.label} · ${w.label}` : v.label, r: v.r, k, mag: r.out.mag, ph: r.out.ph }];
+      });
     }) : [];
     // Another tab's output, with its own source and load.
     cmp = null;
@@ -276,7 +300,7 @@ export function initSimPanel(): SimPanel {
   function seriesList(kind: 'mag' | 'ph'): PlotSeries[] {
     if (!res) return [];
     const out: PlotSeries[] = [];
-    if (st.showOut) sweep.forEach(s => out.push({ vals: s[kind], color: sweepColor(s.r), width: 1.4, label: s.label }));
+    if (st.showOut) sweep.forEach(s => out.push({ vals: s[kind], color: sweepColor(s.r), width: 1.4, label: s.label, ...(s.k ? { dash: SWEEP2_DASH[s.k] } : {}) }));
     if (ideal && st.showOut) out.push({ vals: ideal.out[kind], color: cssVar('--muted'), width: 1.4, dash: [5, 4], label: 'Ideal source/load' });
     res.probes.forEach(p => out.push({ vals: p[kind], color: p.color, width: 1.8, label: p.ref }));
     if (cmp) out.push({ vals: cmp[kind], color: cssVar('--compare'), width: 2.2, label: cmp.label });
@@ -302,9 +326,12 @@ export function initSimPanel(): SimPanel {
     res.probes.forEach(p => items.push(`<span><span class="sw" style="background:${p.color}"></span>${esc(p.ref)}</span>`));
     if (ideal && st.showOut) items.push('<span><span class="sw" style="background:repeating-linear-gradient(90deg, var(--muted) 0 4px, transparent 4px 7px)"></span>Ideal source/load</span>');
     // Switch positions are discrete: one swatch each. Values and rotations: a colour ramp.
+    // With a second sweep, colour tells the first sweep's settings apart and line style the second's.
     if (sweep.length && st.showOut) {
-      if (st.sweep.startsWith('pos:')) sweep.forEach(s => items.push(`<span><span class="sw" style="background:${sweepColor(s.r)}"></span>${esc(s.label)}</span>`));
-      else items.push(`<span><span class="ramp" style="background:linear-gradient(90deg, ${sweepColor(0)}, ${sweepColor(1)})"></span>${esc(sweep[0].label)} → ${esc(sweep[sweep.length - 1].label)}</span>`);
+      const firsts = sweep.filter(s => s.k === 0), name = (s: { label: string }) => (sweep2Labels.length ? s.label.split(' · ')[0] : s.label);
+      if (st.sweep.startsWith('pos:')) firsts.forEach(s => items.push(`<span><span class="sw" style="background:${sweepColor(s.r)}"></span>${esc(name(s))}</span>`));
+      else if (firsts.length) items.push(`<span><span class="ramp" style="background:linear-gradient(90deg, ${sweepColor(0)}, ${sweepColor(1)})"></span>${esc(name(firsts[0]))} → ${esc(name(firsts[firsts.length - 1]))}</span>`);
+      sweep2Labels.forEach((l, k) => items.push(`<span><svg class="dashsw" width="26" height="8" aria-hidden="true"><line x1="1" y1="4" x2="25" y2="4" stroke="${cssVar('--muted')}" stroke-width="2" stroke-dasharray="${SWEEP2_DASH[k].join(' ')}"/></svg>${esc(l)}</span>`));
     }
     if (st.showTol && tolBand && st.showOut) items.push(`<span><span class="sw" style="background:var(--accent-soft);height:8px"></span>R ±${S.settings.rTol}% · C ±${S.settings.cTol}%</span>`);
     if (!res.probes.length) items.push(st.showOut ? '<span class="hint">Add probes (Probe in the toolbar, or X) to see other nets.</span>' : '<span class="hint">Output is hidden and there are no probes: add a probe or tick Output.</span>');
@@ -327,15 +354,17 @@ export function initSimPanel(): SimPanel {
   function syncControls(): void {
     $('#bShowOut').checked = st.showOut; $('#bShowTol').checked = st.showTol; $('#bShowPhase').checked = st.showPhase;
     $('#bSweepSteps').value = String(st.steps);
+    $('#bSweepSteps2').value = String(st.steps2);
     renderTerm(); renderSweepOptions();
   }
 
   renderTerm();
   return {
-    settings: () => JSON.parse(JSON.stringify({ term: st.term, showOut: st.showOut, showTol: st.showTol, showPhase: st.showPhase, sweep: st.sweep, steps: st.steps })),
+    settings: () => JSON.parse(JSON.stringify({ term: st.term, showOut: st.showOut, showTol: st.showTol, showPhase: st.showPhase, sweep: st.sweep, steps: st.steps, sweep2: st.sweep2, steps2: st.steps2 })),
     apply: sim => {
       const d = DEFAULTS;
-      Object.assign(st, { showOut: sim.showOut ?? d.showOut, showTol: sim.showTol ?? d.showTol, showPhase: sim.showPhase ?? d.showPhase, sweep: sim.sweep ?? '', steps: sim.steps ?? d.steps });
+      Object.assign(st, { showOut: sim.showOut ?? d.showOut, showTol: sim.showTol ?? d.showTol, showPhase: sim.showPhase ?? d.showPhase, sweep: sim.sweep ?? '', steps: sim.steps ?? d.steps,
+        sweep2: typeof sim.sweep2 === 'string' ? sim.sweep2 : '', steps2: [2, 3, 4, 5].includes(sim.steps2 ?? 0) ? sim.steps2! : d.steps2 });
       st.term = { src: { ...d.term.src, ...sim.term?.src }, load: { ...d.term.load, ...sim.term?.load } };
       save(); syncControls(); schedule(true);
     },

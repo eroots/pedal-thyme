@@ -21,6 +21,9 @@ export interface ProjectSim {
   showPhase?: boolean;
   sweep?: string;
   steps?: number;
+  /** A second sweep, combined with the first (every combination). */
+  sweep2?: string;
+  steps2?: number;
 }
 
 export interface Project {

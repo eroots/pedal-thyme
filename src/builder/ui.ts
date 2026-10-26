@@ -426,7 +426,7 @@ export function initBuilder(nav: { showBoard(): void; showBuilder(): void }): Bu
     // Gang: another pot on the same shaft, or another pole of the same switch.
     const gangRow = (q: SchPart, label: string, title: string, none: string) => {
       const others = editor.doc.parts.filter(o => canGang(q, o)), mate = gangOf(editor.doc, q.id).find(o => o.id !== q.id);
-      return others.length ? row(label, `<select data-field="gang" title="${esc(title)}"><option value="">${none}</option>${others.map(o => `<option value="${esc(o.id)}" ${mate?.id === o.id ? 'selected' : ''}>${esc(o.ref || o.id)}${o.props?.gang ? ` (gang ${esc(o.props.gang)})` : ''}</option>`).join('')}</select>`) : '';
+      return others.length ? row(label, `<select data-field="gang" title="${esc(title)}"><option value="">${none}</option>${others.map(o => `<option value="${esc(o.id)}" ${mate?.id === o.id ? 'selected' : ''}>${esc(o.ref || o.id)}${o.props?.gang ? ` (${o.kind === 'POT' || o.kind === 'RHEO' ? 'gang' : 'linked'} ${esc(o.props.gang)})` : ''}</option>`).join('')}</select>`) : '';
     };
     let h = `<h2>${esc(spec.label)}</h2>`;
     if (spec.elements(p, () => '0').length && p.kind !== 'SUPPLY') h += row('Reference', `<input type="text" data-field="ref" value="${esc(p.ref || '')}" spellcheck="false">`);

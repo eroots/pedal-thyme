@@ -64,8 +64,8 @@ function zigzag(): string {
   return line(-30, 0, -16, 0) + polyline(pts) + line(16, 0, 30, 0);
 }
 const TWO: PinSpec[] = [{ name: '1', at: [-30, 0] }, { name: '2', at: [30, 0] }];
-/** A ganged pot or linked switch says which gang it's in. */
-const gangText = (p: SchPart): string => (p.props?.gang ? ` · gang ${p.props.gang}` : '');
+/** A ganged pot or linked switch says which gang it's in ("gang A" on a pot's shaft, "linked A" for a switch's poles). */
+const gangText = (p: SchPart): string => (p.props?.gang ? ` · ${p.kind === 'POT' || p.kind === 'RHEO' ? 'gang' : 'linked'} ${p.props.gang}` : '');
 /** A part's pins: usually fixed by its kind, but an op-amp's depend on its view. */
 export const partPins = (p: SchPart): PinSpec[] => PARTS[p.kind].pinsOf?.(p) ?? PARTS[p.kind].pins;
 

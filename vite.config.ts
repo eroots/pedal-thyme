@@ -1,5 +1,6 @@
 /// <reference types="vitest/config" />
-import { existsSync, readFileSync, renameSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { defineConfig, type Plugin } from 'vite';
 import { viteSingleFile } from 'vite-plugin-singlefile';
 
@@ -49,14 +50,19 @@ const notices = (): Plugin => ({
   },
 });
 
-/** The built app is one file named after the app (the source entry stays index.html). */
+/**
+ * The built app is one file named after the app (the source entry stays index.html), with its SHA-256
+ * checksum beside it (`sha256sum` format) so people can check a download is the released file.
+ */
 const fileName = (): Plugin => ({
   name: 'file-name',
   apply: 'build',
   enforce: 'post',
   closeBundle() {
-    const from = new URL('./dist/index.html', import.meta.url);
-    if (existsSync(from)) renameSync(from, new URL('./dist/pedal-lab.html', import.meta.url));
+    const from = new URL('./dist/index.html', import.meta.url), to = new URL('./dist/pedal-lab.html', import.meta.url);
+    if (existsSync(from)) renameSync(from, to);
+    const hash = createHash('sha256').update(readFileSync(to)).digest('hex');
+    writeFileSync(new URL('./dist/pedal-lab.html.sha256', import.meta.url), `${hash}  pedal-lab.html\n`);
   },
 });
 

@@ -143,8 +143,16 @@ migration rather than breaking old files.
 2. Run `npm test`, then `npm run build`.
 3. Add files saved with this release to `tests/fixtures/compat/v<version>/`: a schematic, a
    pedalboard, and anything else people save.
-4. Commit, tag (`git tag v<version>`) and push the tag.
-5. Create a GitHub release for the tag and attach `dist/pedal-lab.html`.
+4. Commit, tag (`git tag v<version>`) and push the commit and the tag.
+5. The **Release** workflow (`.github/workflows/release.yml`) checks the tag matches `package.json`,
+   runs the tests, builds, and creates a **draft** release with `pedal-lab.html` and
+   `pedal-lab.html.sha256` attached and the checksum in its notes. Add release notes and publish it.
+
+The **Tests** workflow (`.github/workflows/ci.yml`) type-checks, tests and builds every push to `main`
+and every pull request.
+
+`npm run build` writes the checksum beside the app (`dist/pedal-lab.html.sha256`). Use the one the
+Release workflow makes: a build on another computer can differ (line endings, for example).
 
 ## Third-party code
 

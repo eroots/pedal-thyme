@@ -43,6 +43,14 @@ pick **New ▾ → Tube Screamer-style overdrive**, turn the Drive knob in the F
   untrusted. Schematics are rebuilt field by field with checked types, all text is escaped before
   it's shown, and PDFs are drawn by PDF.js without running any code they contain.
 
+## Checking a download
+
+Each release lists the SHA-256 checksum of `pedal-lab.html` (also attached as
+`pedal-lab.html.sha256`). To check your copy is the released file, compare it with the output of:
+- Windows (PowerShell): `Get-FileHash pedal-lab.html`
+- macOS: `shasum -a 256 pedal-lab.html`
+- Linux: `sha256sum pedal-lab.html`
+
 ## Updating
 
 Download the new `pedal-lab.html` and replace the old one (same name, same folder). Your open tabs

@@ -53,6 +53,8 @@ export interface BuilderApi {
   shown(): void;
   /** Called when the Pedalboard section becomes visible. */
   boardShown(): void;
+  /** Names of what has changes not saved to a file: tabs, and "the pedalboard". */
+  unsaved(): string[];
 }
 
 export function initBuilder(nav: { showBoard(): void; showBuilder(): void }): BuilderApi {
@@ -818,6 +820,11 @@ export function initBuilder(nav: { showBoard(): void; showBuilder(): void }): Bu
       void host.beforeOpen(null).then(() => { editor.load(JSON.parse(JSON.stringify(doc))); editor.selectIds([]); });
     },
     boardShown: () => board?.shown(),
+    // Tabs with changes not saved to a file (the active tab's state lives in the file bar), and the board.
+    unsaved: () => [
+      ...tabs.filter(t => (t === active ? files.state().dirty : t.dirty)).map(nameOf),
+      ...(board?.unsaved() ? ['the pedalboard'] : []),
+    ],
     shown: () => {
       editor.render();
       if (active.needsFit) { editor.fit(); active.needsFit = false; }

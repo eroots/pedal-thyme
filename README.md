@@ -23,10 +23,12 @@ images.
 1. Download `pedal-lab.html` from the latest [release](../../releases/latest).
 2. Double-click it. It opens in your browser; there's nothing to install.
 
-Chrome or Edge is recommended: they can save straight back into a folder of schematics. Firefox
-works too, but saves by downloading a new file each time.
+**Browsers:** Chrome or Edge is recommended, as they can save straight back into a folder of
+schematics. Firefox and Safari save by downloading a new file each time instead, and need to be
+recent (Firefox 115 or later, Safari 16.4 or later). A private window may not keep your open tabs
+or amp captures between sessions; saved files are always the reliable copy.
 
-Then read the **[user guide](docs/user-guide.md)**. The quickest way in: open the **Pedal Builder**,
+Then read the **[user guide](docs/user-guide.md)**, which is also in the app under **Help**. The quickest way in: open the **Pedal Builder**,
 pick **New ▾ → Tube Screamer-style overdrive**, turn the Drive knob in the Front panel, and press
 **Render** in the Sound panel.
 

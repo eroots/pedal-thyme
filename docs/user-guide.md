@@ -1,7 +1,8 @@
 # Pedal Lab user guide
 
 Pedal Lab has three sections, chosen with the buttons at the top right: the **Playground**, the
-**Pedal Builder** and the **Pedalboard**.
+**Pedal Builder** and the **Pedalboard**. This guide is also built into the app: press **Help** at the
+top right.
 
 The header bar holds settings shared by all three:
 
@@ -172,7 +173,8 @@ The picture is saved with the schematic.
   - schematic image (`.svg` or `.png`).
 
 Saved files are the reliable copy of your work. The browser's storage is a convenience and can be
-cleared by the browser.
+cleared by the browser. If you close or reload the page while a tab or the pedalboard has unsaved
+changes, the browser asks first.
 
 ### Response
 

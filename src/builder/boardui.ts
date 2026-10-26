@@ -50,6 +50,8 @@ export interface BoardUi {
   changed(id?: string): void;
   /** Open a board file (from the Builder's Open or Folder menu too). */
   open(text: string, handle: FileSystemFileHandle | null): Promise<void>;
+  /** Does the board have changes that aren't saved to a file? */
+  unsaved(): boolean;
 }
 
 export function initBoard(host: BoardHost, show: () => void): BoardUi {
@@ -481,5 +483,6 @@ export function initBoard(host: BoardHost, show: () => void): BoardUi {
       if (!id || board.pedals.some(p => p.tab === id)) { sound.invalidate(); schedule(); }
     },
     open,
+    unsaved: () => board.dirty && board.pedals.length > 0,
   };
 }

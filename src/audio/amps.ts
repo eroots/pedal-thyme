@@ -31,6 +31,8 @@ export async function addAmp(file: File): Promise<AmpEntry> {
   const entry: AmpEntry = { id: `amp${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`, name, gearType: info.gearType, inputLevelDbu: info.inputLevelDbu, sampleRate: info.sampleRate, text };
   const list = await listAmps();
   await idbSet(KEY, [...list, entry]);
+  // Storage can be unavailable (a private window; some browsers for a page opened from a file).
+  if (!(await listAmps()).some(a => a.id === entry.id)) throw new Error('this browser won’t let the page keep it (storage is blocked, e.g. in a private window)');
   return entry;
 }
 

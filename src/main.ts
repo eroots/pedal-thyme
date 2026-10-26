@@ -1,6 +1,7 @@
 import './styles.css';
 import { initBuilder } from './builder/ui';
 import { initPlayground } from './playground/ui';
+import { initHelp } from './ui/help';
 
 type Section = 'playground' | 'builder' | 'board';
 const SECTIONS: Section[] = ['playground', 'builder', 'board'];
@@ -9,6 +10,14 @@ const SECTION_KEY = 'pedal-filter-lab.section';
 // Which release this is (the app never checks online, so people can compare it with the latest release).
 const versionEl = document.getElementById('appVersion');
 if (versionEl) versionEl.textContent = `v${__APP_VERSION__}`;
+
+initHelp();
+
+// Leaving with work that isn't saved to a file: the open tabs are kept in the browser's storage, but
+// that can be cleared (private windows, clean-up tools), so the browser asks first.
+window.addEventListener('beforeunload', e => {
+  if (builder.unsaved().length) { e.preventDefault(); e.returnValue = ''; }
+});
 
 const builder = initBuilder({ showBoard: () => show('board'), showBuilder: () => show('builder') });
 initPlayground({

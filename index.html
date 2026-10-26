@@ -23,8 +23,14 @@
       <option value="10-50000">10 Hz – 50 kHz</option>
       <option value="1-100000">1 Hz – 100 kHz</option>
     </select></label>
+    <button id="helpBtn" class="help-btn" title="The user guide">Help</button>
   </div>
 </header>
+
+<dialog id="helpDlg" class="help" aria-labelledby="helpTitle">
+  <div class="help-head"><h2 id="helpTitle">User guide</h2><button id="helpClose" aria-label="Close the user guide">Close</button></div>
+  <div class="help-body" id="helpBody"></div>
+</dialog>
 
 <div class="layout" id="playground">
   <nav id="topoList" aria-label="Filter topologies"></nav>

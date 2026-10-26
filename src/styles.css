@@ -70,6 +70,31 @@ header.top {
 .settings { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; color: var(--muted); font-size: 13px; }
 .settings label { display: flex; gap: 6px; align-items: center; }
 .settings select { padding: 3px 6px; }
+.help-btn { padding: 3px 10px; }
+
+/* ---------- Help (the user guide) ---------- */
+dialog.help {
+  width: min(900px, calc(100vw - 32px)); height: min(85vh, 1000px); padding: 0;
+  border: 1px solid var(--line); border-radius: 10px; background: var(--panel); color: var(--ink);
+  display: none; flex-direction: column;
+}
+dialog.help[open] { display: flex; }
+dialog.help::backdrop { background: rgba(0, 0, 0, .45); }
+.help-head { display: flex; align-items: center; justify-content: space-between; padding: 10px 20px; border-bottom: 1px solid var(--line); }
+.help-head h2 { margin: 0; font-size: 16px; }
+.help-body { overflow: auto; padding: 4px 24px 24px; line-height: 1.55; font-size: 14px; }
+.help-body h1 { font-size: 22px; margin: 18px 0 10px; }
+.help-body h2 { font-size: 18px; margin: 26px 0 8px; }
+.help-body h3 { font-size: 15px; margin: 20px 0 6px; }
+.help-body h1, .help-body h2, .help-body h3 { scroll-margin-top: 8px; }
+.help-body ul, .help-body ol { padding-left: 22px; margin: 6px 0; }
+.help-body li > p { margin: 4px 0; }
+.help-body hr { border: none; border-top: 1px solid var(--line); margin: 22px 0; }
+.help-body table { border-collapse: collapse; margin: 8px 0 12px; font-size: 13px; }
+.help-body th, .help-body td { border: 1px solid var(--line); padding: 5px 9px; text-align: left; vertical-align: top; }
+.help-body th { background: var(--panel-2); }
+.help-body code { font-family: var(--mono); font-size: 12.5px; background: var(--panel-2); padding: 1px 4px; border-radius: 4px; }
+.help-body a { color: var(--accent); }
 .layout { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 16px; padding: 16px 20px 40px; max-width: 1600px; margin: 0 auto; }
 nav#topoList { position: sticky; top: 70px; align-self: start; }
 nav .group { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 14px 8px 4px; }

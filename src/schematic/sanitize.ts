@@ -58,7 +58,7 @@ function wire(w: unknown): SchWire {
 function note(n: unknown): SchNote {
   const q = (n && typeof n === 'object' ? n : {}) as Record<string, unknown>;
   if (typeof q.id !== 'string') throw new Error('A text note in the file is malformed.');
-  return tidy<SchNote>({ id: q.id, x: num(q.x, 'A text note position'), y: num(q.y, 'A text note position'), text: String(q.text ?? ''), anchor: oneOf(q.anchor, ANCHORS) });
+  return tidy<SchNote>({ id: q.id, x: num(q.x, 'A text note position'), y: num(q.y, 'A text note position'), text: String(q.text ?? ''), anchor: oneOf(q.anchor, ANCHORS), width: (optNum(q.width) ?? 0) > 0 ? optNum(q.width) : undefined });
 }
 
 /** A schematic rebuilt from untrusted data. Throws a readable error if it isn't one. */

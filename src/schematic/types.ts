@@ -57,7 +57,11 @@ export interface SchPart {
 }
 
 export interface SchWire { id: string; pts: [number, number][] }
-export interface SchNote { id: string; x: number; y: number; text: string; anchor?: 'start' | 'middle' | 'end' }
+export interface SchNote {
+  id: string; x: number; y: number; text: string; anchor?: 'start' | 'middle' | 'end';
+  /** Wrap the text to this width (drawing units); unset: one line per line of text. */
+  width?: number;
+}
 
 export interface Schematic {
   version: 1;

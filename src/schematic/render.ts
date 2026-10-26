@@ -2,7 +2,7 @@
 // text (refs, values, op-amp signs, jack names) is placed in world coordinates so it stays upright.
 import { dirToWorld, key, onSegment, svgTransform, toWorld, type Pt } from './geometry';
 import { PARTS, boxOf, labelLen, opAmpView, partPins, probeColor } from './library';
-import type { LabelSide, SchPart, Schematic } from './types';
+import type { LabelSide, SchNote, SchPart, Schematic } from './types';
 
 export interface RenderOptions {
   /** Accessible name for the drawing. */
@@ -18,6 +18,48 @@ export interface RenderOptions {
 }
 
 export interface Bounds { x0: number; y0: number; x1: number; y1: number }
+
+/* ---------- Text notes ---------- */
+/** Spacing of a note's lines (its text is 9 px). */
+export const NOTE_LINE = 11;
+let measurer: CanvasRenderingContext2D | null | undefined;
+/** Width of a note's text in drawing units: measured in the browser, estimated elsewhere (tests). */
+export function noteTextWidth(s: string): number {
+  if (measurer === undefined) {
+    try { measurer = typeof document === 'undefined' ? null : document.createElement('canvas').getContext('2d'); } catch { measurer = null; }
+    if (measurer) measurer.font = '9px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
+  }
+  return measurer ? measurer.measureText(s).width : s.length * 5.2;
+}
+/** A note's lines: its own line breaks, and (with a width) words wrapped to fit, long words split. */
+export function noteLines(n: SchNote): string[] {
+  const paras = n.text.split('\n');
+  if (!n.width) return paras;
+  const width = n.width, out: string[] = [];
+  const fits = (s: string) => noteTextWidth(s) <= width;
+  for (const para of paras) {
+    let line = '';
+    for (const word of para.split(/ +/)) {
+      const joined = line ? `${line} ${word}` : word;
+      if (fits(joined) || !line) line = joined;
+      else { out.push(line); line = word; }
+      // A word wider than the note: break it where it fills a line.
+      while (!fits(line) && line.length > 1) {
+        let k = line.length - 1;
+        while (k > 1 && !fits(line.slice(0, k))) k--;
+        out.push(line.slice(0, k));
+        line = line.slice(k);
+      }
+    }
+    out.push(line);
+  }
+  return out;
+}
+/** A note's extent: left edge and width (its set width, or its longest line's). */
+export function noteBox(n: SchNote, lines = noteLines(n)): { x0: number; w: number } {
+  const w = n.width ?? Math.max(12, ...lines.map(noteTextWidth)), anchor = n.anchor || 'middle';
+  return { x0: anchor === 'start' ? n.x : anchor === 'end' ? n.x - w : n.x - w / 2, w };
+}
 
 const esc = (s: string) => s.replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]!));
 const LABEL_POS: Record<LabelSide, { dx: number; dy1: number; dy2: number; anchor: string }> = {
@@ -166,15 +208,18 @@ export function renderSchematicBody(sch: Schematic, opt: RenderOptions = {}): { 
   }
   for (const { at, n } of ptsAt.values()) if (n >= 3) out.push(`<circle class="dot" cx="${at[0]}" cy="${at[1]}" r="2.7"/>`);
 
-  // Notes.
+  // Notes: one line per line of text, or wrapped to the note's width.
   for (const n of sch.notes || []) {
-    const t = text(n.x, n.y, n.text, 'tiny', n.anchor || 'middle');
+    const anchor = n.anchor || 'middle', lines = noteLines(n);
+    const t = lines.map((s, i) => text(n.x, n.y + i * NOTE_LINE, s, 'tiny', anchor)).join('');
     if (!opt.editor) { out.push(t); continue; }
-    // In the editor a note is an object: selectable, with a generous hit area around its text.
-    const w = Math.max(12, n.text.length * 5.2), anchor = n.anchor || 'middle';
-    const x0 = anchor === 'start' ? n.x : anchor === 'end' ? n.x - w : n.x - w / 2;
+    // In the editor a note is an object: selectable, with a generous hit area around its text, and
+    // (when selected) a handle on the side away from its alignment to drag its width.
+    const { x0, w } = noteBox(n, lines), h = (lines.length - 1) * NOTE_LINE + 14;
     const cls = `note${sel.has(n.id) ? ' sel' : ''}${hl.has(n.id) ? ' hl' : ''}`;
-    out.push(`<g class="${cls}" data-note="${esc(n.id)}"><rect class="note-hit" x="${x0 - 3}" y="${n.y - 10}" width="${w + 6}" height="14" rx="2"/>${t}</g>`);
+    const hx = anchor === 'end' ? x0 - 3 : x0 + w + 3;
+    const handle = sel.has(n.id) ? `<rect class="note-handle" data-note-handle="${esc(n.id)}" x="${hx - 3}" y="${n.y - 10 + h / 2 - 6}" width="6" height="12" rx="1.5"><title>Drag to set the width: the text wraps to fit</title></rect>` : '';
+    out.push(`<g class="${cls}" data-note="${esc(n.id)}"><rect class="note-hit" x="${x0 - 3}" y="${n.y - 10}" width="${w + 6}" height="${h}" rx="2"/>${t}${handle}</g>`);
   }
 
   if (!isFinite(bounds.x0)) { bounds.x0 = 0; bounds.y0 = 0; bounds.x1 = 100; bounds.y1 = 60; }

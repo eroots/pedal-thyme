@@ -43,7 +43,7 @@ body {
   background: var(--bg); color: var(--ink);
   font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 }
-button, input, select { font: inherit; color: inherit; }
+button, input, select, textarea { font: inherit; color: inherit; }
 button {
   background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px;
   padding: 5px 10px; cursor: pointer;
@@ -53,10 +53,10 @@ button.primary { background: var(--accent); border-color: var(--accent); color: 
 button.primary:hover { filter: brightness(1.07); }
 button.link { background: none; border: none; padding: 2px 4px; color: var(--muted); }
 button.link:hover { color: var(--ink); }
-input[type=text], select {
+input[type=text], select, textarea {
   background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px;
 }
-input[type=text]:focus, select:focus { outline: 2px solid var(--accent-soft); border-color: var(--accent); }
+input[type=text]:focus, select:focus, textarea:focus { outline: 2px solid var(--accent-soft); border-color: var(--accent); }
 input.invalid { border-color: var(--bad); outline-color: rgba(201, 42, 42, .2); }
 
 /* ---------- Layout ---------- */
@@ -287,6 +287,7 @@ nav.sections button.active { background: var(--accent); color: var(--accent-ink)
 #bCanvas .note.sel text { fill: var(--accent); }
 #bCanvas .note.sel .note-hit { stroke: var(--accent); stroke-width: 1; stroke-dasharray: 3 2; vector-effect: non-scaling-stroke; }
 #bCanvas .note.hl text { fill: var(--bad); }
+#bCanvas .note-handle { fill: var(--accent); stroke: none; cursor: ew-resize; }
 .b-canvas-wrap[data-mode="text"] { cursor: text; }
 #bCanvas .trace-layer { pointer-events: none; }
 #bCanvas .trace-frame { fill: none; stroke: none; }
@@ -335,6 +336,8 @@ nav.sections button.active { background: var(--accent); color: var(--accent-ink)
 .prop > span:first-child { color: var(--muted); }
 .prop input[type=text] { width: 100%; font-family: var(--mono); }
 .prop select { width: 100%; }
+.prop textarea { width: 100%; resize: vertical; }
+.prop:has(textarea) { align-items: start; }
 .prop output { color: var(--accent); font-family: var(--mono); }
 .prop input[type=range] { width: 100%; accent-color: var(--accent); }
 .valrow { display: flex; gap: 4px; align-items: center; }

@@ -13,7 +13,7 @@ import type { Pt } from '../schematic/geometry';
 import type { PartKind, Rot, Schematic } from '../schematic/types';
 import {
   addNote, addPart, addWire, copySelection, cutWiresUnder, deleteSelection, deleteWireSegment, isConnection, makePart, mirrorParts, moveNotes, moveSelection,
-  nearestAnchor, partBox, paste, rotateSelection, snapPt, wireSegmentAt, type Clip,
+  nearestAnchor, partBox, paste, rotateSelection, snapPt, updateNote, wireSegmentAt, type Clip,
 } from './doc';
 
 export type Mode = 'select' | 'wire' | 'place' | 'delete' | 'text' | 'copy';
@@ -62,7 +62,8 @@ export class Editor {
   private drag: null | { kind: 'move'; start: Pt; orig: Schematic; moved: boolean; stretch: boolean }
     | { kind: 'box'; start: Pt; now: Pt; add: boolean; del?: boolean }
     | { kind: 'pan'; sx: number; sy: number; vx: number; vy: number }
-    | { kind: 'trace'; start: Pt; x0: number; y0: number } = null;
+    | { kind: 'trace'; start: Pt; x0: number; y0: number }
+    | { kind: 'noteWidth'; id: string; orig: Schematic; moved: boolean } = null;
   private spaceDown = false;
   /** Document state before the current run of previews, if any. */
   private base: Schematic | null = null;
@@ -514,6 +515,13 @@ export class Editor {
 
     // Select mode.
     const t = e.target as Element;
+    // A selected note's width handle.
+    const handle = t.closest<SVGElement>('[data-note-handle]')?.dataset.noteHandle;
+    if (handle) {
+      this.drag = { kind: 'noteWidth', id: handle, orig: this.doc, moved: false };
+      try { this.svg.setPointerCapture(e.pointerId); } catch { /* pointer already gone */ }
+      return;
+    }
     const id = this.hitId(t);
     if (id) {
       if (e.shiftKey) { if (this.sel.has(id)) this.sel.delete(id); else this.sel.add(id); }
@@ -550,6 +558,15 @@ export class Editor {
       return;
     }
     if (d?.kind === 'box') { d.now = p; this.render(); return; }
+    if (d?.kind === 'noteWidth') {
+      // Width from the note's anchor to the pointer (both sides for centred text), on the grid.
+      const n = d.orig.notes?.find(q => q.id === d.id);
+      if (!n) return;
+      const a = n.anchor || 'middle', span = a === 'end' ? n.x - p[0] : a === 'middle' ? 2 * Math.abs(p[0] - n.x) : p[0] - n.x;
+      const width = Math.max(30, Math.round(span / 10) * 10);
+      if (width !== (this.doc.notes?.find(q => q.id === d.id)?.width)) { d.moved = true; this.preview(updateNote(d.orig, d.id, { width })); }
+      return;
+    }
     this.hover = this.mode === 'wire' ? this.wireTarget(p) : null;
     if (this.mode === 'delete') {
       const t = e.target as Element;
@@ -566,6 +583,8 @@ export class Editor {
     if (this.svg.hasPointerCapture(e.pointerId)) this.svg.releasePointerCapture(e.pointerId);
     if (d?.kind === 'trace') {
       this.onTrace?.();
+    } else if (d?.kind === 'noteWidth') {
+      if (d.moved) this.commit(this.doc);
     } else if (d?.kind === 'move' && d.moved) {
       // A part dropped onto a wire is inserted into it (the wire under it goes).
       this.commit(cutWiresUnder(this.doc, this.selParts()));

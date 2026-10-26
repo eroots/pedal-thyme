@@ -85,7 +85,7 @@ from the **Supply rail** parts in the drawing.
 | Rotate / mirror | Ctrl+R / Ctrl+E. |
 | Delete | Del deletes the selection. With nothing selected it enters delete mode, where each click deletes what's under it. |
 | Undo / redo | Ctrl+Z / Ctrl+Y (or Ctrl+Shift+Z). |
-| Text note | **Text** (T), then click where the note goes. |
+| Text note | **Text** (T), then click where the note goes and type it in Properties (Enter for a new line). Select a note and drag the handle on its edge to make it wider or narrower: the text wraps to fit. |
 | Probe | **Probe** (X), then click a wire or pin: that net gets its own curve on the Response plot. |
 | Pan and zoom | Mouse wheel zooms. Space+drag or middle-drag pans. F fits the drawing to the view. |
 | DC bias | **DC bias** (B) labels every net with its DC voltage. |

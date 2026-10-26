@@ -10,7 +10,7 @@ import { extract, type Extraction } from '../schematic/extract';
 import { PARTS, opAmpPinMap, opAmpView } from '../schematic/library';
 import { onSegment, samePt, type Pt } from '../schematic/geometry';
 import { renderSchematic, renderSchematicBody } from '../schematic/render';
-import type { PartKind, SchPart, Schematic } from '../schematic/types';
+import type { PartKind, SchNote, SchPart, Schematic } from '../schematic/types';
 import { S } from '../playground/state';
 import { canGang, gangOf, partBox, reshapePart, setGang, updateNote, updatePart } from './doc';
 import { Editor, PART_KEYS, type DragMode, type Mode } from './editor';
@@ -393,9 +393,10 @@ export function initBuilder(nav: { showBoard(): void; showBuilder(): void }): Bu
       const n = notes[0];
       const opt = (v: string, label: string) => `<option value="${v}" ${(n.anchor || 'middle') === v ? 'selected' : ''}>${label}</option>`;
       el.innerHTML = `<h2>Text note</h2>
-        <label class="prop"><span>Text</span><input type="text" data-notefield="text" value="${esc(n.text)}" spellcheck="true"></label>
+        <label class="prop"><span>Text</span><textarea data-notefield="text" rows="3" spellcheck="true">${esc(n.text)}</textarea></label>
         <label class="prop"><span>Align</span><select data-notefield="anchor">${opt('start', 'Left')}${opt('middle', 'Centre')}${opt('end', 'Right')}</select></label>
-        <p class="hint">Drag the text to move it. Notes don't affect the circuit.</p>
+        <label class="prop"><span>Width</span><input type="text" data-notefield="width" value="${n.width ?? ''}" placeholder="None (no wrapping)" spellcheck="false"></label>
+        <p class="hint">Drag the text to move it, and the handle on its edge to make it wider or narrower: the text wraps to fit. Clear Width to stop wrapping. Enter starts a new line; Ctrl+Enter finishes. Notes don't affect the circuit.</p>
         <div class="btnrow"><button data-act="delete">Delete</button></div>`;
       el.dataset.id = n.id;
       return;
@@ -641,9 +642,17 @@ export function initBuilder(nav: { showBoard(): void; showBuilder(): void }): Bu
   }
   // Text notes: live preview while typing, one undo step per edit.
   const noteEdit = (el: HTMLInputElement, live: boolean) => {
-    const id = propEl.dataset.id, f = el.dataset.notefield as 'text' | 'anchor';
+    const id = propEl.dataset.id, f = el.dataset.notefield as 'text' | 'anchor' | 'width';
     if (!id || !(editor.doc.notes ?? []).some(n => n.id === id)) return;
-    const next = updateNote(editor.doc, id, f === 'text' ? { text: el.value } : { anchor: el.value as 'start' | 'middle' | 'end' });
+    let patch: Partial<SchNote>;
+    if (f === 'width') {
+      // Empty: no wrapping. Otherwise a width in drawing units (the grid is 10).
+      const s = el.value.trim(), v = s ? Number(s) : undefined, ok = v === undefined || (isFinite(v) && v >= 10);
+      el.classList.toggle('invalid', !ok);
+      if (!ok) return;
+      patch = { width: v === undefined ? undefined : Math.round(v) };
+    } else patch = f === 'text' ? { text: el.value } : { anchor: el.value as 'start' | 'middle' | 'end' };
+    const next = updateNote(editor.doc, id, patch);
     if (live) editor.preview(next); else editor.commit(next);
   };
   propEl.addEventListener('input', e => { const el = e.target as HTMLInputElement; if (el.dataset.notefield === 'text') noteEdit(el, true); });
@@ -656,7 +665,7 @@ export function initBuilder(nav: { showBoard(): void; showBuilder(): void }): Bu
   propEl.addEventListener('keydown', e => {
     const el = e.target as HTMLInputElement;
     if (e.key === 'Enter' && el.dataset.field) { applyField(el, false); editor.commit(editor.doc); }
-    if (e.key === 'Enter' && el.dataset.notefield) { noteEdit(el, false); $('#bCanvasWrap').focus(); }
+    if (e.key === 'Enter' && el.dataset.notefield && (el.tagName !== 'TEXTAREA' || e.ctrlKey)) { noteEdit(el, false); $('#bCanvasWrap').focus(); }
   });
   propEl.addEventListener('click', e => {
     const b = (e.target as HTMLElement).closest<HTMLElement>('button');

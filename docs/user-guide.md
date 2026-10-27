@@ -111,6 +111,8 @@ Click a part to edit it in the **Properties** panel on the right. Double-click f
 - **Potentiometers and variable resistors:**
   - Total value, taper (A log, B linear, C reverse log), rotation and a Reverse option;
   - Each one gets a knob in the **Front panel**;
+  - **Knob name** (e.g. "Drive") labels it on the Front panel, in the Sweep menu and on the
+    schematic ("VR1 Drive"); switches have one too;
   - **Ganged with** joins two pots (or rheostats) into one dual-gang pot: they share a knob and
     turn together.
 - **Switches:** SPST, SPDT and on-off-on. Click the switch in the Front panel to change it.

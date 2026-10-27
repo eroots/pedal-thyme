@@ -59,16 +59,16 @@ const fileName = (): Plugin => ({
   apply: 'build',
   enforce: 'post',
   closeBundle() {
-    const from = new URL('./dist/index.html', import.meta.url), to = new URL('./dist/pedal-lab.html', import.meta.url);
+    const from = new URL('./dist/index.html', import.meta.url), to = new URL('./dist/pedal-thyme.html', import.meta.url);
     if (existsSync(from)) renameSync(from, to);
     const hash = createHash('sha256').update(readFileSync(to)).digest('hex');
-    writeFileSync(new URL('./dist/pedal-lab.html.sha256', import.meta.url), `${hash}  pedal-lab.html\n`);
+    writeFileSync(new URL('./dist/pedal-thyme.html.sha256', import.meta.url), `${hash}  pedal-thyme.html\n`);
   },
 });
 
 const pkg = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8')) as { version: string };
 
-// The production build inlines everything into dist/pedal-lab.html, so it opens by double-click (file://).
+// The production build inlines everything into dist/pedal-thyme.html, so it opens by double-click (file://).
 export default defineConfig({
   plugins: [csp(), viteSingleFile(), notices(), fileName()],
   define: { __APP_VERSION__: JSON.stringify(pkg.version) },

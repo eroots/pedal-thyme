@@ -1,4 +1,4 @@
-# Pedal Lab
+# Pedal Thyme
 
 Design guitar-pedal circuits, see what they do to your tone, and hear them, all in one web page
 that runs offline on your own computer.
@@ -21,7 +21,7 @@ images.
 
 ## Getting started
 
-1. Download `pedal-lab.html` from the latest [release](../../releases/latest).
+1. Download `pedal-thyme.html` from the latest [release](../../releases/latest).
 2. Double-click it. It opens in your browser; there's nothing to install.
 
 **Browsers:** Chrome or Edge is recommended, as they can save straight back into a folder of
@@ -46,15 +46,15 @@ pick **New ▾ → Tube Screamer-style overdrive**, turn the Drive knob in the F
 
 ## Checking a download
 
-Each release lists the SHA-256 checksum of `pedal-lab.html` (also attached as
-`pedal-lab.html.sha256`). To check your copy is the released file, compare it with the output of:
-- Windows (PowerShell): `Get-FileHash pedal-lab.html`
-- macOS: `shasum -a 256 pedal-lab.html`
-- Linux: `sha256sum pedal-lab.html`
+Each release lists the SHA-256 checksum of `pedal-thyme.html` (also attached as
+`pedal-thyme.html.sha256`). To check your copy is the released file, compare it with the output of:
+- Windows (PowerShell): `Get-FileHash pedal-thyme.html`
+- macOS: `shasum -a 256 pedal-thyme.html`
+- Linux: `sha256sum pedal-thyme.html`
 
 ## Updating
 
-Download the new `pedal-lab.html` and replace the old one (same name, same folder). Your open tabs
+Download the new `pedal-thyme.html` and replace the old one (same name, same folder). Your open tabs
 and pedalboard carry over, and files saved with older versions keep opening: every release is
 tested against files saved by the earlier ones. The version number is shown at the bottom of the
 page.
@@ -104,7 +104,7 @@ You need [Node.js](https://nodejs.org/) (the LTS version).
 npm install
 npm run dev      # development server at http://localhost:5173
 npm test         # unit tests
-npm run build    # dist/pedal-lab.html: the single file you share
+npm run build    # dist/pedal-thyme.html: the single file you share
 ```
 
 See the [developer guide](docs/development.md) for how the code is organised and how to make a
@@ -124,4 +124,4 @@ bottom of the page), your browser, and, if it's about a particular circuit, its 
 
 ## Licence
 
-Pedal Lab is released under the [MIT License](LICENSE).
+Pedal Thyme is released under the [MIT License](LICENSE).

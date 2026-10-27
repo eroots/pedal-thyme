@@ -1,5 +1,5 @@
 name: Bug report
-description: Something in Pedal Lab doesn't work, or gives a result that looks wrong.
+description: Something in Pedal Thyme doesn't work, or gives a result that looks wrong.
 labels: [bug]
 body:
   - type: markdown
@@ -9,7 +9,7 @@ body:
   - type: input
     id: version
     attributes:
-      label: Pedal Lab version
+      label: Pedal Thyme version
       description: Shown at the bottom of the page, e.g. v0.1.0.
       placeholder: v0.1.0
     validations:

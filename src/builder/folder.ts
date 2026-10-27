@@ -140,7 +140,7 @@ export async function saveAsDialog(suggestedName: string, data: string, startIn?
     const pick = (window as unknown as { showSaveFilePicker(o: object): Promise<FileSystemFileHandle> }).showSaveFilePicker;
     const fh = await pick.call(window, {
       id: 'pedal-filter-lab', suggestedName, ...(startIn ? { startIn } : {}),
-      types: [{ description: 'Pedal Lab schematic', accept: { 'application/json': ['.json'] } }],
+      types: [{ description: 'Pedal Thyme schematic', accept: { 'application/json': ['.json'] } }],
     });
     await writeHandle(fh, data);
     return fh;

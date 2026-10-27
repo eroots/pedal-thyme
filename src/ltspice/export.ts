@@ -266,7 +266,7 @@ export function exportAsc(doc: Schematic, opt: AscExportOptions = {}): string {
     : [];
   const directive = [`.ac dec 100 ${spiceNum(opt.fmin ?? 10)} ${spiceNum(opt.fmax ?? 100e3)}`, ...knobLines, ...meas, ...lib].join('\\n');
   out.push(`TEXT ${x0} ${y1 + 64} Left 2 !${directive}`);
-  const comments = [opt.title ? `${opt.title} (exported from Pedal Lab)` : 'Exported from Pedal Lab', ...(knobs.length ? ['Knobs: ' + knobs.join('; ')] : []), ...unexported, ...(opt.notes ?? [])];
+  const comments = [opt.title ? `${opt.title} (exported from Pedal Thyme)` : 'Exported from Pedal Thyme', ...(knobs.length ? ['Knobs: ' + knobs.join('; ')] : []), ...unexported, ...(opt.notes ?? [])];
   comments.forEach((c, i) => out.push(`TEXT ${x0} ${y0 - 64 - 32 * (comments.length - 1 - i)} Left 2 ;${c.replace(/\n/g, ' ')}`));
   for (const n of doc.notes ?? []) { const [x, y] = up([n.x, n.y]); out.push(`TEXT ${x} ${y} Left 2 ;${n.text.replace(/\n/g, ' ')}`); }
   return out.join('\n') + '\n';

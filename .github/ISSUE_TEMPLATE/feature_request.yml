@@ -1,5 +1,5 @@
 name: Suggestion
-description: An idea for something Pedal Lab could do, or do better.
+description: An idea for something Pedal Thyme could do, or do better.
 labels: [enhancement]
 body:
   - type: textarea

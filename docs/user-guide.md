@@ -1,6 +1,6 @@
-# Pedal Lab user guide
+# Pedal Thyme user guide
 
-Pedal Lab has three sections, chosen with the buttons at the top right: the **Playground**, the
+Pedal Thyme has three sections, chosen with the buttons at the top right: the **Playground**, the
 **Pedal Builder** and the **Pedalboard**. This guide is also built into the app: press **Help** at the
 top right.
 

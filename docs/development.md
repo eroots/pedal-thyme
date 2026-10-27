@@ -1,6 +1,6 @@
 # Developer guide
 
-Pedal Lab is written in TypeScript and built with Vite into a single self-contained HTML file. There
+Pedal Thyme is written in TypeScript and built with Vite into a single self-contained HTML file. There
 is no server and no framework: the UI is plain DOM, SVG and canvas.
 
 ## Setup
@@ -12,10 +12,10 @@ npm install
 npm run dev        # development server at http://localhost:5173 (hot reload)
 npm test           # unit tests (Vitest)
 npm run typecheck  # tsc --noEmit
-npm run build      # type-checks, then writes dist/pedal-lab.html
+npm run build      # type-checks, then writes dist/pedal-thyme.html
 ```
 
-`npm run build` produces `dist/pedal-lab.html`, with everything inlined: scripts, styles, web
+`npm run build` produces `dist/pedal-thyme.html`, with everything inlined: scripts, styles, web
 workers and PDF.js. The source entry stays `index.html`; a small plugin in `vite.config.ts` renames
 the output.
 
@@ -91,13 +91,13 @@ Cross-checks against LTspice 24:
 - **Small-signal transient vs AC:** within 0.25 dB for every template.
 - **1 kHz, 100 mV transient vs LTspice `.four`:**
 
-  | Template | THD, Pedal Lab / LTspice | Notes |
+  | Template | THD, Pedal Thyme / LTspice | Notes |
   |---|---|---|
   | TS | 20.95 / 21.04 % | Same fundamental |
   | MOSFET booster | 0.26 / 0.28 % | Same fundamental |
   | Fuzz Face | 129 / 136 % | Fundamental within 0.2 % |
   | Zendrive | similar | Fundamental 1.4 dB apart |
-  | RAT | | Fundamental 0.9 dB apart; Pedal Lab models the LM308's slew limit and the exported macromodel doesn't |
+  | RAT | | Fundamental 0.9 dB apart; Pedal Thyme models the LM308's slew limit and the exported macromodel doesn't |
 
 - **NAM player:** the weight counts match each file's layout. Each file's 3- and 8-channel
   submodels agree to an ESR of 0.0005–0.03. A sample-exact comparison with the NAM plugin hasn't
@@ -145,13 +145,13 @@ migration rather than breaking old files.
    pedalboard, and anything else people save.
 4. Commit, tag (`git tag v<version>`) and push the commit and the tag.
 5. The **Release** workflow (`.github/workflows/release.yml`) checks the tag matches `package.json`,
-   runs the tests, builds, and creates a **draft** release with `pedal-lab.html` and
-   `pedal-lab.html.sha256` attached and the checksum in its notes. Add release notes and publish it.
+   runs the tests, builds, and creates a **draft** release with `pedal-thyme.html` and
+   `pedal-thyme.html.sha256` attached and the checksum in its notes. Add release notes and publish it.
 
 The **Tests** workflow (`.github/workflows/ci.yml`) type-checks, tests and builds every push to `main`
 and every pull request.
 
-`npm run build` writes the checksum beside the app (`dist/pedal-lab.html.sha256`). Use the one the
+`npm run build` writes the checksum beside the app (`dist/pedal-thyme.html.sha256`). Use the one the
 Release workflow makes: a build on another computer can differ (line endings, for example).
 
 ## Third-party code

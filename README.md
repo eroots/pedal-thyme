@@ -3,10 +3,13 @@
 Design guitar-pedal circuits, see what they do to your tone, and hear them, all in one web page
 that runs offline on your own computer.
 
-- **Playground:** filters, shelves, mid scoops, gyrator EQ bands and amp tone stacks, ready to tweak.
+This project largely reflects the way I use simulation software. As such I can't promise that it will be able to do everything for everyone, but hopefully it will be useful for someone.
+
+- **Playground:** A subcircuit playground, designed to help you choose the right values for a given task.
+  Filters, shelves, mid scoops, gyrator EQ bands and amp tone stacks, ready to tweak.
   Turn the knobs, sweep a pot, add a guitar pickup and an amp input, or ask it to pick standard
   part values that hit a target frequency.
-- **Pedal Builder:** draw a pedal's schematic (from scratch, from ready-made blocks such as buffers and
+- **Pedal Builder:** Draw a pedal's schematic (from scratch, from ready-made blocks such as buffers and
   clipping stages or blocks you've saved yourself, or by tracing a picture or PDF), and simulate it:
   - the frequency response at any point in the circuit, with a knob for every pot;
   - the DC voltages at every node (bias);

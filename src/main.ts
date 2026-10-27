@@ -2,6 +2,9 @@ import './styles.css';
 import { initBuilder } from './builder/ui';
 import { initPlayground } from './playground/ui';
 import { initHelp } from './ui/help';
+import logo from './ui/logo/logo.svg?raw';
+import icon from './ui/logo/icon.svg?raw';
+import name from './ui/logo/name.svg?raw';
 
 type Section = 'playground' | 'builder' | 'board';
 const SECTIONS: Section[] = ['playground', 'builder', 'board'];
@@ -10,6 +13,12 @@ const SECTION_KEY = 'pedal-filter-lab.section';
 // Which release this is (the app never checks online, so people can compare it with the latest release).
 const versionEl = document.getElementById('appVersion');
 if (versionEl) versionEl.textContent = `v${__APP_VERSION__}`;
+
+// The logo and name (drawn in the logo's typeface, made by scripts/make-logo.py), and the tab icon.
+document.getElementById('brandLogo')!.innerHTML = logo;
+document.getElementById('brandName')!.innerHTML = name;
+const tabIcon = Object.assign(document.createElement('link'), { rel: 'icon', type: 'image/svg+xml', href: `data:image/svg+xml,${encodeURIComponent(icon)}` });
+document.head.append(tabIcon);
 
 initHelp();
 

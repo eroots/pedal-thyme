@@ -31,7 +31,8 @@ the output.
 | `src/builder/` | Pedal Builder and Pedalboard: document operations, wire router, canvas editor, tabs, files and folder, trace overlay, simulation and sound panels |
 | `src/ltspice/` | LTspice `.asc` import and export, and symbol pin tables generated from LTspice's library |
 | `src/audio/` | Test signals, spectrum and THD analysis, WAV export, render worker, rail-clipping checks, the NAM capture player and its library |
-| `src/ui/` | Shared UI pieces (Bode plot, oscilloscope, downloads) |
+| `src/ui/` | Shared UI pieces (Bode plot, oscilloscope, downloads, help), and `logo/`: the logo, the name and the tab icon as SVG |
+| `assets/logo.svg` | The logo artwork as exported from CorelDRAW. `python scripts/make-logo.py` (needs fontTools and Windows' Bahnschrift) remakes `src/ui/logo/` from it: lettering turned into shapes, colours taken from the page |
 | `tests/` | Unit tests. `legacy.ts` keeps the original closed-form H(s) of the Playground topologies as oracles for their netlists; `fixtures/compat/` holds files saved by each release |
 | `third-party/` | Licence texts of bundled or adapted third-party code |
 

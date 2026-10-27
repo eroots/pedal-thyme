@@ -4,6 +4,7 @@ import { TAU, db } from '../src/core/units';
 import { Circuit } from '../src/engine/mna';
 import { BUF, C, GND, L, OA, POT, R, RHEO, type Netlist } from '../src/engine/netlist';
 import { toSpice } from '../src/engine/spice';
+import { taper } from '../src/core/pots';
 
 const s = (f: number) => new Cx(0, TAU * f);
 const circ = (elements: Netlist['elements'], input = 'in', output = 'out') => new Circuit({ elements, input, output });
@@ -132,10 +133,26 @@ describe('SPICE export', () => {
   });
 });
 
+describe('W taper', () => {
+  it('is an S-curve: 0 and 1 at the ends, half-way at mid-rotation, steep at the ends and flat in the middle', () => {
+    expect(taper(0, 'W')).toBeCloseTo(0, 12);
+    expect(taper(1, 'W')).toBeCloseTo(1, 12);
+    expect(taper(0.5, 'W')).toBeCloseTo(0.5, 12);
+    expect(taper(0.25, 'W')).toBeCloseTo(0.375, 12);
+    for (let r = 0; r <= 1; r += 0.05) {
+      expect(taper(r, 'W') + taper(1 - r, 'W')).toBeCloseTo(1, 12); // symmetrical
+      expect(taper(r + 0.01, 'W')).toBeGreaterThan(taper(r, 'W')); // always rising
+    }
+    const slope = (r: number) => (taper(r + 0.01, 'W') - taper(r, 'W')) / 0.01;
+    expect(slope(0)).toBeGreaterThan(2 * slope(0.495));
+    expect(slope(0.99)).toBeGreaterThan(2 * slope(0.495));
+  });
+});
+
 describe('reversed pots', () => {
   it('a reversed pot equals the same pot with lugs 1 and 3 swapped (taper stays with the track)', () => {
     const f = s(1000);
-    for (const tp of ['A', 'B', 'C'] as const) for (const rot of [0.1, 0.5, 0.8]) {
+    for (const tp of ['A', 'B', 'C', 'W'] as const) for (const rot of [0.1, 0.5, 0.8]) {
       const rev = circ([R('R1', 'in', 'a', 10e3), { ...POT('VR1', 'a', 'out', GND, 100e3, rot, tp), reverse: true } as Netlist['elements'][number]]);
       const swapped = circ([R('R1', 'in', 'a', 10e3), POT('VR1', GND, 'out', 'a', 100e3, rot, tp)]);
       close(rev.transfer(f), swapped.transfer(f), 1e-9);

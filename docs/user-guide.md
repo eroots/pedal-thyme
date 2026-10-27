@@ -110,7 +110,7 @@ Click a part to edit it in the **Properties** panel on the right. Double-click f
 
 - **Resistors, capacitors, inductors:** Value, with ‹ › stepping through the E-series.
 - **Potentiometers and variable resistors:**
-  - Total value, taper (A log, B linear, C reverse log), rotation and a Reverse option;
+  - Total value, taper (A log, B linear, C reverse log, W S-curve: steep at both ends and flat around the middle), rotation and a Reverse option;
   - Each one gets a knob in the **Front panel**;
   - **Knob name** (e.g. "Drive") labels it on the Front panel, in the Sweep menu and on the
     schematic ("VR1 Drive"); switches have one too;

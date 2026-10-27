@@ -104,7 +104,7 @@ export function sweepTargets(t: Topology): SweepTarget[] {
     ...t.parts.map(x => ({ id: 'part:' + x.key, kind: 'part' as const, key: x.key, label: x.pot ? `${x.key} — pot track value` : `${x.key} value (rheostat / part swap)` })),
   ];
 }
-export const SWEEP_TAPERS: Record<SweepTaper, string> = { L: 'Log-spaced', B: 'Linear pot (B)', A: 'Audio pot (A)', C: 'Reverse log (C)' };
+export const SWEEP_TAPERS: Record<SweepTaper, string> = { L: 'Log-spaced', B: 'Linear pot (B)', A: 'Audio pot (A)', C: 'Reverse log (C)', W: 'S-curve pot (W)' };
 
 export function sweepSteps(t: Topology, p: TopoState): SweepStep[] {
   const sw = p.sweep, tgt = sweepTargets(t).find(x => x.id === sw.key);

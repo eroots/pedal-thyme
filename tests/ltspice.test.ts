@@ -40,6 +40,8 @@ describe('LTspice file basics', () => {
     expect(evalValue('{Rtot*(1-pos)+1k}', params)).toBeCloseTo(76e3, 9);
     expect(evalValue('{1/(2*pi*f0*10n)}', params)).toBeCloseTo(1 / (2 * Math.PI * 1e3 * 10e-9), 6);
     expect(evalValue('{nope}', params)).toBeNull();
+    expect(evalValue('{if(pos<0.5,1k,2k)}', params)).toBe(1e3); // pos = 0.25
+    expect(evalValue('{if(2>=2,3,4)+(1>2)}', params)).toBe(3);
   });
   it('places pins like LTspice (rotation clockwise; mirrored = rotated, then x flipped)', () => {
     // From a real LTspice file: res at (464,48) R90 meets a wire at (368,64); cap at (512,48) R90 meets one at (512,64).
@@ -220,6 +222,14 @@ describe('LTspice pots (no pot in LTspice: resistors driven by a position parame
         expect(q!.props?.turn).toBeCloseTo(p.props?.turn ?? 0.5, 4);
       }
     }
+  });
+  it('a W-taper pot survives export → import', () => {
+    const doc = TEMPLATES.find(t => t.id === 'ts')!.build();
+    const vr = doc.parts.find(p => p.kind === 'POT')!;
+    vr.props = { ...vr.props, taper: 'W', turn: 0.3 };
+    const q = importAsc(exportAsc(doc)).schematic.parts.find(p => p.ref === vr.ref)!;
+    expect(q.props?.taper).toBe('W');
+    expect(q.props?.turn).toBeCloseTo(0.3, 4);
   });
   it('exports a .param per knob, the taper as a formula and a commented .step', () => {
     const asc = exportAsc(TEMPLATES.find(t => t.id === 'ts')!.build());

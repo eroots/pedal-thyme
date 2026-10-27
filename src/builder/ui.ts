@@ -1,7 +1,7 @@
 // Pedal Builder UI: palette, toolbar, properties and ERC list; wires up the simulation panel and front panel,
 // and the tabs (several schematics open at once; see tabs.ts).
 import { stepSeries } from '../core/eseries';
-import { TAPERS } from '../core/pots';
+import { TAPERS, type TaperKey } from '../core/pots';
 import { fmtEng, parseEng } from '../core/units';
 import { dcOp, type DeviceOp, type OpPoint } from '../engine/dc';
 import { DIODE_MODELS, OPAMP_MODELS, opAmpModel } from '../engine/models';
@@ -625,7 +625,7 @@ export function initBuilder(nav: { showBoard(): void; showBuilder(): void }): Bu
       patch = { props: { turn: +el.value / 100 } };
       const out = el.closest('.prop')?.querySelector('output');
       if (out) out.textContent = `${el.value}%`;
-    } else if (f === 'taper') patch = { props: { taper: el.value as 'A' | 'B' | 'C' } };
+    } else if (f === 'taper') patch = { props: { taper: el.value as TaperKey } };
     else if (f === 'model') patch = { props: { model: el.value } };
     else if (f === 'closed') patch = { props: { closed: el.value === '1' } };
     else if (f === 'pos') patch = { props: { pos: el.value as 'a' | 'b' | 'off' } };

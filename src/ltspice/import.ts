@@ -504,7 +504,7 @@ export function importAsc(text: string, asyTexts: Record<string, string> = {}, n
     const freshRef = () => { while (usedRefs.has(`VR${vr}`)) vr++; usedRefs.add(`VR${vr}`); return `VR${vr}`; };
     /** The app's taper matching fraction(x) at a few points, or null. */
     const fitTaper = (fraction: (x: number) => number): TaperKey | null =>
-      (['B', 'A', 'C'] as TaperKey[]).find(k => [0.25, 0.5, 0.75].every(x => Math.abs(fraction(x) - TAPERS[k].f(x)) < 0.01)) ?? null;
+      (['B', 'A', 'C', 'W'] as TaperKey[]).find(k => [0.25, 0.5, 0.75].every(x => Math.abs(fraction(x) - TAPERS[k].f(x)) < 0.01)) ?? null;
     const taperNote = (ref: string, k: TaperKey | null, q: string) => {
       if (!k) note(`${ref}: its "${q}" formula isn't a standard taper; imported as linear (B). Set the taper in Properties.`);
     };

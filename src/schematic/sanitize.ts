@@ -7,7 +7,7 @@ import type { LabelSide, PartProps, Rot, SchNote, SchPart, SchWire, Schematic } 
 
 const ROTS: Rot[] = [0, 90, 180, 270];
 const SIDES: LabelSide[] = ['t', 'b', 'l', 'r'];
-const TAPER_KEYS = ['A', 'B', 'C'] as const;
+const TAPER_KEYS = ['A', 'B', 'C', 'W'] as const;
 const ANCHORS = ['start', 'middle', 'end'] as const;
 
 const num = (v: unknown, what: string): number => {

@@ -187,12 +187,21 @@ export function evalValue(s: string, params: Map<string, number>): number | null
   try { return new Expr(m[1], params).parse(); } catch { return null; }
 }
 
-/** Recursive-descent evaluator for .param expressions: + − * / ** ^, parentheses, params and a few functions. */
+/** Recursive-descent evaluator for .param expressions: + − * / ** ^, comparisons, parentheses, params and a few functions (if() too). */
 class Expr {
   private i = 0;
   constructor(private readonly s: string, private readonly params: Map<string, number>) {}
-  parse(): number { const v = this.sum(); this.ws(); if (this.i < this.s.length) throw new Error('trailing'); return v; }
+  parse(): number { const v = this.cmp(); this.ws(); if (this.i < this.s.length) throw new Error('trailing'); return v; }
   private ws() { while (this.s[this.i] === ' ' || this.s[this.i] === '\t') this.i++; }
+  /** a < b, a > b, a <= b, a >= b: 1 or 0 (LTspice's true and false). */
+  private cmp(): number {
+    const v = this.sum(); this.ws();
+    const op = this.s.slice(this.i).match(/^(<=|>=|<|>)/)?.[1];
+    if (!op) return v;
+    this.i += op.length;
+    const w = this.sum();
+    return +(op === '<' ? v < w : op === '>' ? v > w : op === '<=' ? v <= w : v >= w);
+  }
   private sum(): number {
     let v = this.prod();
     for (;;) { this.ws(); const c = this.s[this.i]; if (c === '+') { this.i++; v += this.prod(); } else if (c === '-') { this.i++; v -= this.prod(); } else return v; }
@@ -218,7 +227,7 @@ class Expr {
   }
   private atom(): number {
     this.ws();
-    if (this.s[this.i] === '(') { this.i++; const v = this.sum(); this.ws(); if (this.s[this.i++] !== ')') throw new Error(')'); return v; }
+    if (this.s[this.i] === '(') { this.i++; const v = this.cmp(); this.ws(); if (this.s[this.i++] !== ')') throw new Error(')'); return v; }
     const rest = this.s.slice(this.i);
     const n = rest.match(/^(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?(?:meg|mil|[fpnuµμmkgt])?[a-z]*/i);
     if (n) { this.i += n[0].length; return spiceNumber(n[0])!; }
@@ -229,12 +238,13 @@ class Expr {
     this.ws();
     if (this.s[this.i] === '(') {
       this.i++;
-      const args = [this.sum()];
-      for (this.ws(); this.s[this.i] === ','; this.ws()) { this.i++; args.push(this.sum()); }
+      const args = [this.cmp()];
+      for (this.ws(); this.s[this.i] === ','; this.ws()) { this.i++; args.push(this.cmp()); }
       if (this.s[this.i++] !== ')') throw new Error(')');
       const f: Record<string, (...a: number[]) => number> = {
         sqrt: Math.sqrt, abs: Math.abs, exp: Math.exp, ln: Math.log, log: Math.log, log10: Math.log10,
         min: Math.min, max: Math.max, pow: Math.pow, pwr: Math.pow, sin: Math.sin, cos: Math.cos,
+        if: (c, a, b) => (c ? a : b),
         limit: (x, a, b) => Math.min(Math.max(x, Math.min(a, b)), Math.max(a, b)),
       };
       if (!f[name]) throw new Error('fn');

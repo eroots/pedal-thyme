@@ -51,10 +51,11 @@ const man = (a: LPt, b: LPt) => Math.abs(a[0] - b[0]) + Math.abs(a[1] - b[1]);
 /** A pot's knob parameter; a gang (dual-gang pot) shares one, so its pots turn together in LTspice too. */
 const knobParam = (p: SchPart): string => (p.props?.gang ? `gang_${p.props.gang.replace(/[^\w]/g, '_')}_pos` : `${(p.ref || p.id).replace(/[^\w]/g, '_')}_pos`);
 
-/** A taper as an LTspice expression of knob parameter q (matches TAPERS: A = (81^q − 1)/80). */
+/** A taper as an LTspice expression of knob parameter q (matches TAPERS: A = (81^q − 1)/80, W's halves (9^x − 1)/8). */
 function taperExpr(tp: string, q: string): string {
   if (tp === 'A') return `(pow(81,${q})-1)/80`;
   if (tp === 'C') return `(1-(pow(81,1-${q})-1)/80)`;
+  if (tp === 'W') return `if(${q}<0.5,0.5-(pow(9,1-2*${q})-1)/16,0.5+(pow(9,2*${q}-1)-1)/16)`;
   return q;
 }
 

@@ -12,8 +12,11 @@ import { probeColor } from '../schematic/library';
 import type { SchPart, Schematic } from '../schematic/types';
 import { gangOf, updatePart } from './doc';
 
-/** A pot's or switch's name on the front panel: its ref, or all its gang's refs ("VR1+VR2"). */
-export const knobName = (doc: Schematic, p: SchPart): string => gangOf(doc, p.id).map(q => q.ref || q.id).join('+');
+/** A pot's or switch's name on the front panel: its knob name if it (or its gang) has one, else its ref or its gang's refs ("VR1+VR2"). */
+export const knobName = (doc: Schematic, p: SchPart): string => {
+  const gang = gangOf(doc, p.id);
+  return gang.map(q => q.props?.knob).find(Boolean) ?? gang.map(q => q.ref || q.id).join('+');
+};
 
 export interface Curve { mag: number[]; ph: number[] }
 export interface ProbeCurve extends Curve { ref: string; color: string; net: Node }

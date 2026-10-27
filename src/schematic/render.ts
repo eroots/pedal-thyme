@@ -231,7 +231,7 @@ export function renderSchematicBody(sch: Schematic, opt: RenderOptions = {}): { 
       const side = labelSide(p), L = LABEL_POS[side], pad = spec.labelPad || 0;
       const dx = L.dx + (side === 'r' ? pad : side === 'l' ? -pad : 0), dy = side === 't' ? -pad : side === 'b' ? pad : 0;
       const val = spec.valueText ? spec.valueText(p) : '';
-      if (p.ref) g += text(p.x + dx, p.y + L.dy1 + dy, p.ref, 'pn', L.anchor);
+      if (p.ref) g += text(p.x + dx, p.y + L.dy1 + dy, p.props?.knob ? `${p.ref} ${p.props.knob}` : p.ref, 'pn', L.anchor);
       if (val) g += text(p.x + dx, p.y + dy + (p.ref ? L.dy2 : L.dy1 + 7), val, 'pv', L.anchor);
     }
     const cls = `comp${hl.has(p.id) ? ' hl' : ''}${sel.has(p.id) ? ' sel' : ''}`;

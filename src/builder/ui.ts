@@ -433,6 +433,7 @@ export function initBuilder(nav: { showBoard(): void; showBuilder(): void }): Bu
     };
     let h = `<h2>${esc(spec.label)}</h2>`;
     if (spec.elements(p, () => '0').length && p.kind !== 'SUPPLY') h += row('Reference', `<input type="text" data-field="ref" value="${esc(p.ref || '')}" spellcheck="false">`);
+    if (['POT', 'RHEO', 'SW', 'SPDT', 'ONOFFON'].includes(p.kind)) h += row('Knob name', `<input type="text" data-field="knob" value="${esc(p.props?.knob || '')}" placeholder="e.g. Drive" maxlength="40" spellcheck="false" title="Shown on the front panel and beside the reference on the schematic">`);
     if (spec.unit && p.kind !== 'SUPPLY') {
       const stepper = p.kind === 'R' || p.kind === 'C' || p.kind === 'POT' || p.kind === 'RHEO';
       h += row('Value', `<span class="valrow">${stepper ? '<button data-step="-1" aria-label="Previous standard value">‹</button>' : ''}<input type="text" data-field="value" value="${esc(fmtEng(p.value))}" spellcheck="false">${stepper ? '<button data-step="1" aria-label="Next standard value">›</button>' : ''}<span class="unit">${spec.unit}</span></span>`);
@@ -629,6 +630,7 @@ export function initBuilder(nav: { showBoard(): void; showBuilder(): void }): Bu
     else if (f === 'closed') patch = { props: { closed: el.value === '1' } };
     else if (f === 'pos') patch = { props: { pos: el.value as 'a' | 'b' | 'off' } };
     else if (f === 'name') patch = { props: { name: el.value.trim() } };
+    else if (f === 'knob') patch = { props: { knob: el.value.trim() || undefined } };
     else if (f === 'sweep') patch = { props: { sweep: el.checked || undefined } };
     else if (f === 'reverse') patch = { props: { reverse: el.checked || undefined } };
     else if (f === 'ib') {

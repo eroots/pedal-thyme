@@ -21,6 +21,8 @@ export interface PartProps {
   closed?: boolean;
   /** SPDT position (on-off-on switches also have a centre 'off'). */
   pos?: 'a' | 'b' | 'off';
+  /** Pots and switches: the knob's name on the front panel and schematic (e.g. "Drive"). */
+  knob?: string;
   /** Net name for LABEL and SUPPLY parts (e.g. "VREF", "9V"). */
   name?: string;
   /** Pots: lugs 1 and 3 swapped (variable resistor: lugs 2+3), so turning up moves the other way. */

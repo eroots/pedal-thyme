@@ -27,6 +27,15 @@
   </div>
 </header>
 
+<dialog id="blockDlg" class="block-dlg" aria-labelledby="blockDlgTitle">
+  <form method="dialog">
+    <h2 id="blockDlgTitle">Save as a block</h2>
+    <p class="hint" id="blockDlgWhat"></p>
+    <label class="prop"><span>Name</span><input type="text" id="blockName" maxlength="80" required spellcheck="false"></label>
+    <label class="prop"><span>Description</span><input type="text" id="blockDesc" maxlength="300" placeholder="Optional: what it is, values to change …"></label>
+    <div class="block-dlg-actions"><button type="button" id="blockCancel">Cancel</button><button value="save" class="primary">Save block</button></div>
+  </form>
+</dialog>
 <dialog id="helpDlg" class="help" aria-labelledby="helpTitle">
   <div class="help-head"><h2 id="helpTitle">User guide</h2><button id="helpClose" aria-label="Close the user guide">Close</button></div>
   <div class="help-body" id="helpBody"></div>
@@ -166,7 +175,7 @@
     <div class="b-toolbar b-filebar card">
       <input type="text" id="bName" placeholder="Untitled pedal" aria-label="Pedal name" spellcheck="false">
       <details class="menu" id="bNewMenu"><summary>New ▾</summary><div class="menu-items" id="bTemplates"></div></details>
-      <details class="menu" id="bBlocksMenu"><summary title="Drop a ready-made stage (a buffer, a clipping stage …) into this schematic">Blocks ▾</summary><div class="menu-items" id="bBlocks"></div></details>
+      <details class="menu" id="bBlocksMenu"><summary title="Drop a ready-made stage (a buffer, a clipping stage …) into this schematic">Blocks ▾</summary><div class="menu-items blocks-menu" id="bBlocks"></div></details>
       <label class="btn" title="Open a saved pedal (.pfl.json), or import an LTspice schematic (.asc — select its .asy symbol files too for third-party parts such as pots)">Open<input type="file" id="bOpen" accept=".json,application/json,.asc,.asy" multiple hidden></label>
       <details class="menu" id="bFolderMenu"><summary title="Your folder of schematics: open them from here; Save writes back to them">Folder ▾</summary><div class="menu-items folder-menu" id="bFolder"></div></details>
       <input type="file" id="bFolderInput" webkitdirectory multiple hidden>

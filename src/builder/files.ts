@@ -12,6 +12,8 @@ import type { SchPart, Schematic } from '../schematic/types';
 import { isTrace, type Trace } from './trace';
 
 export const PROJECT_KIND = 'pedal-filter-lab/builder-project';
+/** A saved block (see userblocks.ts); Open reads one as a pedal so it can be edited. */
+export const BLOCK_KIND = 'pedal-filter-lab/block';
 
 /** Simulation settings saved with a project (mirrors the simulation panel). */
 export interface ProjectSim {
@@ -48,7 +50,9 @@ export function parseProject(text: string): Project {
   try { data = JSON.parse(text); } catch { throw new Error('This file is not valid JSON.'); }
   const d = data as Partial<Project> & Partial<Schematic>;
   // The schematic is rebuilt with checked types (a file is untrusted input).
-  const schematic = sanitizeSchematic(d.kind === PROJECT_KIND ? d.schematic : d);
+  const isBlock = (d.kind as string) === BLOCK_KIND;
+  const schematic = sanitizeSchematic(d.kind === PROJECT_KIND || isBlock ? d.schematic : d);
+  if (isBlock) return makeProject(typeof d.name === 'string' ? d.name : 'Block', schematic);
   if (d.kind !== PROJECT_KIND) return makeProject('Imported pedal', schematic);
   const v = d.view as Project['view'] | undefined;
   const view = v && [v.x, v.y, v.zoom].every(n => typeof n === 'number' && isFinite(n)) && v.zoom > 0 ? { x: v.x, y: v.y, zoom: v.zoom } : undefined;

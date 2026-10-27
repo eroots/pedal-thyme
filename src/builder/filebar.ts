@@ -11,6 +11,7 @@ import type { TraceMenu } from './trace';
 import type { SimPanel } from './simpanel';
 import { BLOCKS } from './blocks';
 import { TEMPLATES } from './templates';
+import { blockFile, listUserBlocks, parseBlockFile, removeUserBlock, saveUserBlock, type UserBlock } from './userblocks';
 import { isBoardText } from './board';
 import { ProjectFolder, allowed, canSaveAs, canWriteFolders, saveAsDialog, writeHandle, type FolderEntry } from './folder';
 
@@ -77,15 +78,75 @@ export function initFileBar(editor: Editor, sim: SimPanel, trace: TraceMenu, hos
     });
   });
 
-  // Blocks: a ready-made stage follows the cursor until a click drops it into this schematic.
-  $('#bBlocks').innerHTML = BLOCKS.map(b =>
-    `<button data-block="${b.id}"><b>${esc(b.name)}</b><span>${esc(b.description)}</span></button>`).join('')
-    + '<p class="hint">Blocks use VREF (half the supply): add the Bias supply block if your circuit has none. Wire up the block’s “in” and “out” ends after dropping it.</p>';
-  $('#bBlocks').addEventListener('click', e => {
-    const b = (e.target as Element).closest<HTMLButtonElement>('[data-block]');
+  // Blocks: a ready-made stage (built in, or one of the user's own) follows the cursor until a click
+  // drops it into this schematic.
+  const blocksEl = $<HTMLDivElement>('#bBlocks');
+  let mine: UserBlock[] = [];
+  async function renderBlocks(): Promise<void> {
+    mine = await listUserBlocks();
+    const own = mine.length
+      ? mine.map(b => `<div class="ublock"><button data-ublock="${b.id}"><b>${esc(b.name)}</b>${b.description ? `<span>${esc(b.description)}</span>` : ''}</button>` +
+          `<button class="ub-act" data-ub-export="${b.id}" title="Save “${esc(b.name)}” as a file (to back it up or share it)">⤓</button>` +
+          `<button class="ub-act" data-ub-remove="${b.id}" title="Remove “${esc(b.name)}” from your blocks">×</button></div>`).join('')
+      : '<p class="hint">Select part of a schematic and save it here to reuse it in other pedals.</p>';
+    const sel = editor.selection();
+    blocksEl.innerHTML = BLOCKS.map(b =>
+      `<button data-block="${b.id}"><b>${esc(b.name)}</b><span>${esc(b.description)}</span></button>`).join('')
+      + '<p class="hint">Blocks use VREF (half the supply): add the Bias supply block if your circuit has none. Wire up the block’s “in” and “out” ends after dropping it.</p>'
+      + `<p class="menu-group">Your blocks</p>${own}`
+      + `<div class="folder-actions"><button data-ub="save" ${sel ? '' : 'disabled title="Select the parts and wires to save first"'}>Save selection as block…</button>`
+      + '<label class="btn" title="Add a block from a .pfl-block.json file (or a whole saved pedal)">Import…<input type="file" id="bBlockFile" accept=".json,application/json" hidden></label></div>';
+  }
+  $<HTMLDetailsElement>('#bBlocksMenu').addEventListener('toggle', e => { if ((e.target as HTMLDetailsElement).open) void renderBlocks(); });
+
+  const blockDlg = $<HTMLDialogElement>('#blockDlg');
+  $('#blockCancel').addEventListener('click', () => blockDlg.close(''));
+  function saveBlockDialog(): void {
+    const clip = editor.selection();
+    if (!clip) return;
+    const n = clip.parts.length, w = clip.wires.length;
+    $('#blockDlgWhat').textContent = `${n} part${n === 1 ? '' : 's'} and ${w} wire${w === 1 ? '' : 's'}, kept in this browser. Add notes such as “in” and “out” to the selection to mark where it connects.`;
+    $('#blockName').value = '';
+    $('#blockDesc').value = '';
+    blockDlg.onclose = async () => {
+      const name = $('#blockName').value.trim();
+      if (blockDlg.returnValue !== 'save' || !name) return;
+      if (mine.some(b => b.name.toLowerCase() === name.toLowerCase()) && !confirm(`You already have a block called “${name}”. Replace it?`)) return;
+      try { await saveUserBlock(name, $('#blockDesc').value.trim(), clip); } catch (err) { alert(`Couldn’t save the block: ${(err as Error).message}`); return; }
+      if ($<HTMLDetailsElement>('#bBlocksMenu').open) await renderBlocks();
+    };
+    blockDlg.returnValue = '';
+    blockDlg.showModal();
+  }
+
+  blocksEl.addEventListener('click', async e => {
+    const t = e.target as Element;
+    const b = t.closest<HTMLButtonElement>('button');
     if (!b) return;
-    closeMenus();
-    editor.placeBlock(BLOCKS.find(x => x.id === b.dataset.block)!.build());
+    if (b.dataset.block) { closeMenus(); editor.placeBlock(BLOCKS.find(x => x.id === b.dataset.block)!.build()); return; }
+    const own = mine.find(x => x.id === (b.dataset.ublock ?? b.dataset.ubExport ?? b.dataset.ubRemove));
+    if (b.dataset.ublock && own) { closeMenus(); editor.placeBlock(own.clip); }
+    else if (b.dataset.ubExport && own) download(`${safeFileName(own.name)}.pfl-block.json`, blockFile(own), 'application/json');
+    else if (b.dataset.ubRemove && own) {
+      if (!confirm(`Remove the block “${own.name}”? Export it first if you might want it again.`)) return;
+      await removeUserBlock(own.id);
+      await renderBlocks();
+    } else if (b.dataset.ub === 'save') { closeMenus(); saveBlockDialog(); }
+  });
+  blocksEl.addEventListener('change', async e => {
+    const input = e.target as HTMLInputElement;
+    if (input.id !== 'bBlockFile') return;
+    const file = input.files?.[0];
+    input.value = '';
+    if (!file) return;
+    try {
+      const b = parseBlockFile(await file.text(), file.name);
+      if (mine.some(x => x.name.toLowerCase() === b.name.toLowerCase()) && !confirm(`You already have a block called “${b.name}”. Replace it?`)) return;
+      await saveUserBlock(b.name, b.description, b.clip);
+      await renderBlocks();
+    } catch (err) {
+      alert(`Couldn’t import ${file.name}: ${(err as Error).message}`);
+    }
   });
 
   // Import notes (LTspice substitutions and the like).

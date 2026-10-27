@@ -223,6 +223,8 @@ export class Editor {
   get placingBlock(): boolean { return this.carryOnce && !!this.carry; }
 
   private copySel(): Clip { return copySelection(this.doc, this.selParts(), this.selWires(), this.selNotes()); }
+  /** A copy of the selected items (for saving as a block), or null when nothing is selected. */
+  selection(): Clip | null { return this.sel.size ? this.copySel() : null; }
 
   /** Top-left grid point of the selection, where the cursor holds a copy of it. */
   private selCorner(): Pt {

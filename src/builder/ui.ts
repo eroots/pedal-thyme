@@ -352,7 +352,7 @@ export function initBuilder(nav: { showBoard(): void; showBuilder(): void }): Bu
       ? 'Delete mode: click a part or wire segment to delete it, or drag a box to delete everything inside. Esc or right-click to stop.'
       : mode === 'wire'
       ? 'Click to start a wire, click to bend it; it finishes on a pin or another wire (or double-click / right-click). Esc cancels.'
-      : mode === 'copy' && editor.placingBlock ? 'Click where the block should go (its references are renumbered to fit this circuit), then wire up its “in” and “out” ends. Esc cancels.'
+      : mode === 'copy' && editor.placingBlock ? 'Click where the block should go (its references are renumbered to fit this circuit), then wire it into the circuit (built-in blocks mark their “in” and “out” ends). Esc cancels.'
       : mode === 'copy' ? 'Copy mode: click a part, wire or note to pick up a copy, then click to drop it (as many times as you like). Right-click to pick something else, Esc to stop.'
       : mode === 'text' ? 'Click where the text note should go, then type it in Properties. Esc cancels.'
       : mode === 'place' ? `Click to place a ${PARTS[kind!].label.toLowerCase()}. Right-click or Ctrl+R rotates, Ctrl+E mirrors, Esc stops placing.`

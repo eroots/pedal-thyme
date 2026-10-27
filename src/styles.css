@@ -540,3 +540,20 @@ details.menu[open] > summary { border-color: var(--accent); color: var(--accent)
 .pb-issues { border: none; border-radius: 10px; padding: 1px 7px; font-size: 11px; font-weight: 700; cursor: pointer; white-space: nowrap; }
 .pb-issues.error { background: var(--bad); color: var(--panel); }
 .pb-issues.warn { background: var(--warn); color: var(--panel); }
+
+/* ---------- Blocks menu (your own blocks) and the Save as a block dialog ---------- */
+.blocks-menu { max-height: min(75vh, 640px); overflow-y: auto; }
+.blocks-menu .hint { margin: 2px 9px 6px; font-size: 12px; }
+.blocks-menu .menu-group { margin: 8px 9px 2px; padding-top: 6px; border-top: 1px solid var(--line); font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+.ublock { display: flex; align-items: stretch; gap: 1px; }
+.ublock > button:first-child { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.menu-items .ublock button.ub-act { flex: none; justify-content: center; align-items: center; padding: 4px 8px; color: var(--muted); }
+.menu-items .ublock button.ub-act:hover { color: var(--ink); }
+.blocks-menu .folder-actions label.btn { border: none; background: none; padding: 7px 9px; border-radius: 5px; }
+.blocks-menu .folder-actions label.btn:hover { background: var(--panel-2); }
+.menu-items button:disabled { opacity: .5; cursor: default; background: none; }
+dialog.block-dlg { width: min(440px, calc(100vw - 32px)); border: 1px solid var(--line); border-radius: 10px; background: var(--panel); color: var(--ink); padding: 16px 20px; }
+dialog.block-dlg::backdrop { background: rgba(0, 0, 0, .45); }
+dialog.block-dlg h2 { margin: 0 0 6px; font-size: 16px; }
+dialog.block-dlg .hint { margin: 0 0 12px; font-size: 12.5px; }
+.block-dlg-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }

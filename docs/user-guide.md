@@ -164,6 +164,17 @@ so they don't clash with the parts already there. Then wire up its **in** and **
 panel lists them until they're connected). If your circuit has no VREF yet, add the Bias supply
 block too.
 
+**Your own blocks.** Select part of a schematic (parts, wires and any notes, such as "in" and "out"
+labels to show where it connects), then choose **Blocks ▾ → Save selection as block…** and give it a
+name. It's listed under **Your blocks** in every pedal from then on, and drops in the same way.
+- Your blocks are kept in this browser, like amp captures. Saving a block with a name you already use
+  replaces it (the app asks first).
+- **⤓** saves a block as a `.pfl-block.json` file, to back it up or share it; **×** removes it.
+- **Import…** adds a block from a `.pfl-block.json` file. It also takes a saved pedal (`.pfl.json`),
+  which becomes one block.
+- To change a block, **Open** its `.pfl-block.json` (it opens like a pedal), edit it, select everything
+  (Ctrl+A) and save it again under the same name.
+
 ### Tracing a schematic from a picture or PDF
 
 **Trace ▾ → Load image or PDF…** puts a picture under the canvas to draw over:

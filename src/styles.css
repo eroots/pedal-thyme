@@ -129,7 +129,7 @@ main { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
 
 /* ---------- Schematic ---------- */
 .schem { width: 100%; height: auto; max-height: 280px; display: block; }
-.schem line, .schem polyline, .schem polygon { stroke: var(--schem); stroke-width: 1.6; fill: none; stroke-linejoin: round; stroke-linecap: round; }
+.schem line, .schem polyline, .schem polygon, .schem path.wire { stroke: var(--schem); stroke-width: 1.6; fill: none; stroke-linejoin: round; stroke-linecap: round; }
 .schem .plate { stroke-width: 2.6; }
 .schem .dot { fill: var(--schem); }
 .schem .term { fill: var(--panel); stroke: var(--schem); stroke-width: 1.6; }

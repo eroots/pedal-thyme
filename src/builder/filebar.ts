@@ -181,7 +181,7 @@ export function initFileBar(editor: Editor, sim: SimPanel, trace: TraceMenu, hos
       editor.load(r.schematic);
       setName(file.name.replace(/\.asc$/i, ''));
       const n = r.stats.parts;
-      showNotice(`Imported ${file.name}: ${n} part${n === 1 ? '' : 's'}${r.stats.skipped ? `, ${r.stats.skipped} skipped` : ''}. Save keeps it as a new .pfl.json; the .asc is left as it is.`, r.report);
+      showNotice(`Imported ${file.name}: ${n} part${n === 1 ? '' : 's'}${r.stats.skipped ? `, ${r.stats.skipped} skipped` : ''}. Check it against the original: parts and wires may have shifted to fit our symbols. Save keeps it as a new .pfl.json; the .asc is left as it is.`, r.report);
       await folder.setCurrent(null);
       dirty = true;
     } else {

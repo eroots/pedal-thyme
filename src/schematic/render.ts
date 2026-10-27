@@ -2,7 +2,7 @@
 // text (refs, values, op-amp signs, jack names) is placed in world coordinates so it stays upright.
 import { dirToWorld, key, onSegment, svgTransform, toWorld, type Pt } from './geometry';
 import { PARTS, boxOf, labelLen, opAmpView, partPins, probeColor } from './library';
-import type { LabelSide, SchNote, SchPart, Schematic } from './types';
+import type { LabelSide, SchNote, SchPart, SchWire, Schematic } from './types';
 
 export interface RenderOptions {
   /** Accessible name for the drawing. */
@@ -90,6 +90,58 @@ export function renderSchematic(sch: Schematic, opt: RenderOptions = {}): string
 }
 
 /** The drawing's SVG content, its bounds and the (estimated) extent of every text label. */
+/* ---------- Wire hops ---------- */
+/** Radius of the hop a wire makes over one it crosses without connecting. */
+export const HOP_R = 5;
+
+/**
+ * Crossings to hop: for each wire, its segment index and the points where it crosses a vertical
+ * segment of another wire (or of itself) strictly inside both segments. Wires only connect where one
+ * ends, so these never connect. Only horizontal segments hop; diagonal segments are left alone.
+ */
+export function wireHops(wires: SchWire[]): Map<string, { seg: number; at: Pt }[]> {
+  const vert: { a: Pt; b: Pt; id: string; seg: number }[] = [];
+  for (const w of wires) for (let i = 1; i < w.pts.length; i++) {
+    const a = w.pts[i - 1], b = w.pts[i];
+    if (a[0] === b[0] && a[1] !== b[1]) vert.push({ a, b, id: w.id, seg: i });
+  }
+  const out = new Map<string, { seg: number; at: Pt }[]>();
+  if (!vert.length) return out;
+  for (const w of wires) for (let i = 1; i < w.pts.length; i++) {
+    const a = w.pts[i - 1], b = w.pts[i];
+    if (a[1] !== b[1] || a[0] === b[0]) continue;
+    const [x0, x1] = a[0] < b[0] ? [a[0], b[0]] : [b[0], a[0]];
+    for (const v of vert) {
+      const [y0, y1] = v.a[1] < v.b[1] ? [v.a[1], v.b[1]] : [v.b[1], v.a[1]];
+      const x = v.a[0], y = a[1];
+      // Strictly inside both, with room for the hop on the horizontal one.
+      if (x - HOP_R <= x0 || x + HOP_R >= x1 || y <= y0 || y >= y1) continue;
+      out.set(w.id, [...(out.get(w.id) ?? []), { seg: i, at: [x, y] }]);
+    }
+  }
+  return out;
+}
+
+/** SVG path for a wire with hops: a semicircle over each crossing, bulging upwards. */
+export function hopPath(pts: Pt[], hops: { seg: number; at: Pt }[]): string {
+  let d = `M${pts[0][0]},${pts[0][1]}`;
+  for (let i = 1; i < pts.length; i++) {
+    const a = pts[i - 1], b = pts[i], dir = Math.sign(b[0] - a[0]);
+    const xs = hops.filter(h => h.seg === i).map(h => h.at[0]).sort((p, q) => (p - q) * dir);
+    // Crossings closer than a hop's width share one wider hop (SVG widens the arc to fit).
+    const runs: [number, number][] = [];
+    for (const x of xs) {
+      const last = runs[runs.length - 1];
+      if (last && (x - last[1]) * dir < 2 * HOP_R) last[1] = x; else runs.push([x, x]);
+    }
+    for (const [first, lastX] of runs) {
+      d += ` L${first - HOP_R * dir},${a[1]} A${HOP_R},${HOP_R} 0 0 ${dir > 0 ? 1 : 0} ${lastX + HOP_R * dir},${a[1]}`;
+    }
+    d += ` L${b[0]},${b[1]}`;
+  }
+  return d;
+}
+
 export function renderSchematicBody(sch: Schematic, opt: RenderOptions = {}): { body: string; bounds: Bounds; textBoxes: [number, number, number, number][] } {
   const out: string[] = [];
   const bounds = { x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity };
@@ -111,10 +163,14 @@ export function renderSchematicBody(sch: Schematic, opt: RenderOptions = {}): { 
   };
   const hl = new Set(opt.highlight || []), sel = opt.selected || new Set<string>();
 
-  // Wires.
+  // Wires. Where two wires cross without connecting (neither ends there), the horizontal one hops
+  // over the vertical one.
+  const hops = wireHops(sch.wires);
   for (const w of sch.wires) {
     const pts = w.pts.map(p => p.join(',')).join(' ');
-    out.push(`<polyline class="wire${sel.has(w.id) ? ' sel' : ''}" data-wire="${esc(w.id)}" points="${pts}"/>`);
+    const cls = `wire${sel.has(w.id) ? ' sel' : ''}`;
+    const h = hops.get(w.id);
+    out.push(h ? `<path class="${cls}" data-wire="${esc(w.id)}" d="${hopPath(w.pts, h)}"/>` : `<polyline class="${cls}" data-wire="${esc(w.id)}" points="${pts}"/>`);
     if (opt.editor) out.push(`<polyline class="wire-hit" data-wire="${esc(w.id)}" points="${pts}"/>`);
     w.pts.forEach(p => grow(p));
   }

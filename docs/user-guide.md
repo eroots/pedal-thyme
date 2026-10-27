@@ -96,7 +96,8 @@ from the **Supply rail** parts in the drawing.
 Part keys: R resistor, C capacitor, L inductor, D diode, P potentiometer, O op-amp, Q NPN
 transistor, J N-channel JFET, G ground, X probe.
 
-Wires connect where they end on a pin or another wire; a junction dot shows each connection. A
+Wires connect where they end on a pin or another wire; a junction dot shows each connection.
+Wires that just cross don't connect, and are drawn with a small hop to show it. A
 part dropped onto a wire cuts it, so the part is wired in series. Net labels with the same name are
 connected, so a **Net label** called `VREF` (or `9V`) joins everything that carries it.
 
@@ -269,6 +270,10 @@ The toolbar shows a summary. Fix the errors before trusting the simulation.
   - For third-party symbols such as pots, select their `.asy` files at the same time.
   - The layout is kept and the connectivity is checked against LTspice's own rules.
   - An import report lists anything that was substituted (models, sources, unsupported parts).
+  - **Double-check the result.** Our symbols are a different size from LTspice's, so parts shift a
+    little and wires are stretched or rerouted to meet them; the drawing can come out a bit mangled
+    (a wire doubling back, a part turned the other way). Compare it with the original, tidy it up,
+    and check the values and models in the report.
 - **Export:** Export ▾ → LTspice schematic writes an `.asc` with the same layout, nets, models and
   op-amp macromodels, ready to simulate.
 
@@ -324,7 +329,9 @@ loading is usually why. Real pedals often have an input buffer that schematics l
 - Part models are simplified. Diodes marked ≈ in the Model list use approximate values, and the
   LM386's bandwidth doesn't fall as its gain is turned up.
 - The supply is ideal (no battery sag), and noise and hum aren't simulated.
-- LTspice export leaves out the LM386, which LTspice has no model for.
+- LTspice import can rearrange the drawing a little (our symbols are a different size), so check
+  imported schematics against the original. LTspice export leaves out the LM386, which LTspice has
+  no model for.
 - Only 48 kHz amp captures load.
 - Tabs, your blocks and amp captures are kept by this browser on this computer. Save pedals and
   export blocks to files to keep them safe.

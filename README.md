@@ -82,8 +82,11 @@ not as a guarantee of how a particular build will sound.
   - the LM386's bandwidth doesn't fall as its gain is turned up, as a real one's does.
 - **Ideal supply, no noise:** the supply is a perfect voltage source (no battery sag), and the
   noise and hum a real build picks up aren't simulated.
+- **LTspice import** works, but the drawing can come out a little mangled: our part symbols are a
+  different size from LTspice's, so parts shift slightly and wires are stretched or rerouted to meet
+  them. The connections are checked against LTspice's, and anything it couldn't place is listed after
+  importing, but double-check the imported schematic (parts, values and wiring) against the original.
 - **LTspice export** leaves out the LM386 (LTspice has no model for it) and lists what it skipped.
-  Import handles the usual parts and symbols; anything it can't place is listed after importing.
 - **Amp captures:** only 48 kHz `.nam` files load. The amp sound isn't checked sample-for-sample
   against Neural Amp Modeler's own player, though it follows the same model.
 - **Stored in one browser:** open tabs, your blocks and amp captures are kept by the browser you

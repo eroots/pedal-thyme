@@ -1,5 +1,5 @@
 // Files saved by released versions must keep opening. Each release adds its own files under
-// tests/fixtures/compat/<version>/ (schematics, a pedalboard, LTspice files); this test opens every one
+// tests/fixtures/compat/<version>/ (schematics, a pedalboard, blocks, LTspice files); this test opens every one
 // of them with the current code and checks it loads, has no wiring errors and simulates.
 import { describe, expect, it } from 'vitest';
 import { Cx } from '../src/core/complex';
@@ -8,6 +8,7 @@ import { isBoardText, parseBoard } from '../src/builder/board';
 import { parseProject, type Project } from '../src/builder/files';
 import { acModel } from '../src/engine/linearize';
 import { importAsc } from '../src/ltspice/import';
+import { parseBlockFile } from '../src/builder/userblocks';
 import { extract } from '../src/schematic/extract';
 
 const files = import.meta.glob<string>('./fixtures/compat/*/*', { query: '?raw', import: 'default', eager: true });
@@ -38,8 +39,12 @@ describe('files saved by earlier releases still open', () => {
         b.pedals.forEach(p => works(p.project));
         return;
       }
+      if (/\.pfl-block\.json$/i.test(path)) expect(parseBlockFile(text, path).clip.parts.length).toBeGreaterThan(0);
       const p = parseProject(text);
       expect(p.schematic.parts.length).toBeGreaterThan(0);
+      // Knob names (0.2) are kept.
+      const knobs = (s: Project['schematic']) => s.parts.map(q => q.props?.knob).filter(Boolean);
+      expect(knobs(p.schematic)).toEqual([...text.matchAll(/"knob": "([^"]*)"/g)].map(m => m[1]));
       works(p);
     });
   }

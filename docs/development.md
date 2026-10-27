@@ -142,7 +142,7 @@ migration rather than breaking old files.
 
 1. Set `version` in `package.json` (it's shown in the app's footer).
 2. Run `npm test`, then `npm run build`.
-3. Add files saved with this release to `tests/fixtures/compat/v<version>/`: a schematic, a
+3. Add files saved with this release to `tests/fixtures/compat/v<version>/`: a schematic, a block, a
    pedalboard, and anything else people save.
 4. Commit, tag (`git tag v<version>`) and push the commit and the tag.
 5. The **Release** workflow (`.github/workflows/release.yml`) checks the tag matches `package.json`,

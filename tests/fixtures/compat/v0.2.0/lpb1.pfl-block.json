@@ -1,0 +1,245 @@
+{
+  "kind": "pedal-filter-lab/block",
+  "version": 1,
+  "name": "LPB-1 booster",
+  "description": "The whole booster, saved as a block.",
+  "schematic": {
+    "version": 1,
+    "parts": [
+      {
+        "id": "in1",
+        "kind": "IN",
+        "x": 0,
+        "y": 0,
+        "rot": 0
+      },
+      {
+        "id": "C1",
+        "kind": "C",
+        "ref": "C1",
+        "x": 40,
+        "y": 0,
+        "rot": 0,
+        "value": 1e-7
+      },
+      {
+        "id": "Q1",
+        "kind": "NPN",
+        "ref": "Q1",
+        "x": 150,
+        "y": 0,
+        "rot": 0,
+        "labelSide": "r",
+        "props": {
+          "model": "2N3904"
+        }
+      },
+      {
+        "id": "supply2",
+        "kind": "SUPPLY",
+        "x": 120,
+        "y": -90,
+        "rot": 0,
+        "value": 9,
+        "props": {
+          "name": "9V"
+        }
+      },
+      {
+        "id": "R1",
+        "kind": "R",
+        "ref": "R1",
+        "x": 120,
+        "y": -60,
+        "rot": 90,
+        "value": 430000,
+        "labelSide": "l"
+      },
+      {
+        "id": "RC",
+        "kind": "R",
+        "ref": "RC",
+        "x": 160,
+        "y": -60,
+        "rot": 90,
+        "value": 10000,
+        "labelSide": "r"
+      },
+      {
+        "id": "R2",
+        "kind": "R",
+        "ref": "R2",
+        "x": 120,
+        "y": 30,
+        "rot": 90,
+        "value": 43000,
+        "labelSide": "l"
+      },
+      {
+        "id": "gnd3",
+        "kind": "GND",
+        "x": 120,
+        "y": 60,
+        "rot": 0
+      },
+      {
+        "id": "RE",
+        "kind": "R",
+        "ref": "RE",
+        "x": 160,
+        "y": 60,
+        "rot": 90,
+        "value": 390,
+        "labelSide": "r"
+      },
+      {
+        "id": "gnd4",
+        "kind": "GND",
+        "x": 160,
+        "y": 90,
+        "rot": 0
+      },
+      {
+        "id": "C2",
+        "kind": "C",
+        "ref": "C2",
+        "x": 230,
+        "y": -30,
+        "rot": 0,
+        "value": 1e-7
+      },
+      {
+        "id": "VR1",
+        "kind": "POT",
+        "ref": "VR1",
+        "x": 300,
+        "y": 0,
+        "rot": 270,
+        "value": 100000,
+        "mirror": true,
+        "props": {
+          "sweep": true,
+          "knob": "Volume",
+          "turn": 0.7,
+          "taper": "A"
+        }
+      },
+      {
+        "id": "gnd5",
+        "kind": "GND",
+        "x": 300,
+        "y": 30,
+        "rot": 0
+      },
+      {
+        "id": "out6",
+        "kind": "OUT",
+        "x": 370,
+        "y": 0,
+        "rot": 0
+      }
+    ],
+    "wires": [
+      {
+        "id": "w1",
+        "pts": [
+          [
+            0,
+            0
+          ],
+          [
+            10,
+            0
+          ]
+        ]
+      },
+      {
+        "id": "w2",
+        "pts": [
+          [
+            70,
+            0
+          ],
+          [
+            120,
+            0
+          ]
+        ]
+      },
+      {
+        "id": "w3",
+        "pts": [
+          [
+            120,
+            -90
+          ],
+          [
+            160,
+            -90
+          ]
+        ]
+      },
+      {
+        "id": "w4",
+        "pts": [
+          [
+            120,
+            -30
+          ],
+          [
+            120,
+            0
+          ]
+        ]
+      },
+      {
+        "id": "w5",
+        "pts": [
+          [
+            160,
+            -30
+          ],
+          [
+            200,
+            -30
+          ]
+        ]
+      },
+      {
+        "id": "w6",
+        "pts": [
+          [
+            260,
+            -30
+          ],
+          [
+            300,
+            -30
+          ]
+        ]
+      },
+      {
+        "id": "w7",
+        "pts": [
+          [
+            330,
+            0
+          ],
+          [
+            370,
+            0
+          ]
+        ]
+      }
+    ],
+    "notes": [
+      {
+        "id": "n1",
+        "x": 40,
+        "y": 130,
+        "text": "About 25 dB of clean boost. Turn on DC bias (B) to see the collector sit around 5 V.",
+        "anchor": "start"
+      }
+    ]
+  }
+}

@@ -85,7 +85,7 @@ export function initFrontPanel(root: HTMLElement, editor: DocHost): FrontPanel {
 
   /** Rebuild when the set of controls changes; otherwise just update dials and labels. */
   function sync(doc: Schematic): void {
-    const sig = controlsOf(doc).map(p => `${p.id}:${p.kind}:${p.ref}:${p.props?.gang ?? ''}`).join('|');
+    const sig = controlsOf(doc).map(p => `${p.id}:${p.kind}:${p.ref}:${p.props?.gang ?? ''}:${p.props?.knob ?? ''}`).join('|');
     if (sig !== signature) { signature = sig; build(doc); } else refresh(doc);
   }
 

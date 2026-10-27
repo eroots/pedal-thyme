@@ -152,6 +152,8 @@ export function importAsc(text: string, asyTexts: Record<string, string> = {}, n
   // Pin groups of the parts as LTspice drew them (pots below replace resistor pairs, but LTspice's
   // wire-cutting rule applies to the resistors as drawn).
   const origGroups = comps.map(c => Object.values(c.lt));
+  // Wire joining a pot's two halves, now inside our pot symbol (see wiperTap).
+  const hiddenSpans: [LPt, LPt][] = [];
   untanglePots();
 
   // Voltage sources: the signal source becomes the input jack, grounded DC sources become supply rails.
@@ -217,6 +219,7 @@ export function importAsc(text: string, asyTexts: Record<string, string> = {}, n
   // LTspice's wires, split at every tap (minus the bits hidden under parts), so each connection is at a wire end.
   const pinGroups = [...origGroups, ...otherPins(asc.symbols, asy)];
   for (const [a, b] of ltPieces(asc.wires, asc.flags.map(f => f.at), pinGroups)) {
+    if (hiddenSpans.some(([p, q]) => onSeg(a, p, q) && onSeg(b, p, q))) continue;
     const net = nets.netOf(a), sa = sc(a), sb = sc(b);
     if (same(sa, sb)) continue;
     addWire([sa, sb], net); mark(sa, net); mark(sb, net);
@@ -269,6 +272,20 @@ export function importAsc(text: string, asyTexts: Record<string, string> = {}, n
     mark(at, net);
   }
 
+  // Where each net leads from a pin's target: the unit vector towards the rest of the net (its wire
+  // ends, markers and other parts' pins). A pot drawn in LTspice as two resistors has its wiper on the
+  // line between them; ours sits to one side, and distance alone can't tell which. It should be the
+  // side its wiring goes (a cap hanging below, the output off to the right), or the wire doubles back.
+  const netPts = new Map<string, Pt[]>();
+  for (const [key, ns] of points) for (const n of ns) { const [x, y] = key.split(',').map(Number); netPts.set(n, [...(netPts.get(n) ?? []), [x, y]]); }
+  const towardsNet = (T: Pt, net: string, own: Pt[]): Pt => {
+    const ps = (netPts.get(net) ?? []).filter(p => !same(p, T) && !own.some(o => same(o, p)));
+    if (!ps.length) return [0, 0];
+    const dx = ps.reduce((s, p) => s + p[0], 0) / ps.length - T[0], dy = ps.reduce((s, p) => s + p[1], 0) / ps.length - T[1];
+    const d = Math.hypot(dx, dy);
+    return d > 0 ? [dx / d, dy / d] : [0, 0];
+  };
+
   // Components: best orientation and position, then stubs.
   const pinTargets: { part: SchPart; pin: string; net: string; target: Pt }[] = [];
   for (const c of comps) {
@@ -283,6 +300,8 @@ export function importAsc(text: string, asyTexts: Record<string, string> = {}, n
     const names = Object.keys(c.map.pins).filter(n => spec.pins.some(p => p.name === n));
     const T = names.map(n => sc(c.lt[n])), N = names.map(n => nets.netOf(c.lt[n]));
     const cx = T.reduce((s, p) => s + p[0], 0) / T.length, cy = T.reduce((s, p) => s + p[1], 0) / T.length;
+    // Only a pot rebuilt from two resistors needs it (its wiper); elsewhere distance decides well.
+    const U = T.map((t, i) => (kind === 'POT' && c.preset && names[i] === 'w' ? towardsNet(t, N[i], T) : [0, 0] as Pt));
     let best: { part: SchPart; score: number } | null = null;
     for (const mirror of [false, true]) for (const rot of ROTS) {
       const O = names.map(n => toWorld({ x: 0, y: 0, rot, mirror }, spec.pins.find(p => p.name === n)!.at));
@@ -291,7 +310,11 @@ export function importAsc(text: string, asyTexts: Record<string, string> = {}, n
         const x = snap(cx - ox) + dx, y = snap(cy - oy) + dy;
         const Q = O.map(o => [o[0] + x, o[1] + y] as Pt);
         let score = Q.reduce((s, q, i) => s + man(q, T[i]), 0) + (mirror ? 1 : 0);
-        Q.forEach((q, i) => { if (foreignAt(q, N[i])) score += 10000; });
+        Q.forEach((q, i) => {
+          if (foreignAt(q, N[i])) score += 10000;
+          // A wiper set off away from where its net goes makes its wire double back over the pot.
+          score += 0.5 * Math.max(0, -((q[0] - T[i][0]) * U[i][0] + (q[1] - T[i][1]) * U[i][1]));
+        });
         const part: SchPart = { id: '', kind, x, y, rot, ...(mirror ? { mirror: true } : {}) };
         score += overlap(worldBox(part)) * 0.5;
         if (!best || score < best.score) best = { part, score };
@@ -488,6 +511,32 @@ export function importAsc(text: string, asyTexts: Record<string, string> = {}, n
     const replaced = new Set<Comp>();
     const added: Comp[] = [];
     const byParam = new Map<string, string[]>();
+    // LTspice's wires as pieces between taps (the resistors still as drawn).
+    const pieces = ltPieces(asc.wires, asc.flags.map(f => f.at), comps.map(c => Object.values(c.lt)));
+    /**
+     * The wiper's point for a pot whose two halves end at A and B (on the wiper net). When a straight
+     * wire joins them, that span becomes hidden (it's inside our pot) and the wiper goes to the tap where
+     * the rest of the net leaves it (if there's just the one); otherwise it stays at A.
+     */
+    function wiperTap(A: LPt, B: LPt, net: string): LPt {
+      if (A[0] === B[0] && A[1] === B[1]) return A;
+      if (A[0] !== B[0] && A[1] !== B[1]) return A;
+      const inSpan = (p: LPt) => onSeg(p, A, B);
+      const along = pieces.filter(([p, q]) => inSpan(p) && inSpan(q));
+      const covered = along.reduce((s, [p, q]) => s + Math.abs(p[0] - q[0]) + Math.abs(p[1] - q[1]), 0);
+      if (covered < Math.abs(A[0] - B[0]) + Math.abs(A[1] - B[1]) || nets.netOf(A) !== net) return A;
+      // Taps: span points where another wire, a flag or another part's pin joins.
+      const taps = [
+        ...pieces.filter(([p, q]) => inSpan(p) !== inSpan(q)).map(([p, q]) => (inSpan(p) ? p : q)),
+        ...asc.flags.map(f => f.at).filter(inSpan),
+        ...comps.flatMap(c => Object.values(c.lt)).filter(p => inSpan(p) && !same(p, A) && !same(p, B)),
+      ];
+      // With taps at two points, the span joins them: it has to stay.
+      const at = taps.filter((p, i) => taps.findIndex(q => same(p, q)) === i);
+      if (at.length > 1) return A;
+      hiddenSpans.push([A, B]);
+      return at[0] ?? A;
+    }
     for (const a of knobs.filter(k => k.up)) {
       if (replaced.has(a.c)) continue;
       // The two halves meet at exactly one node, the wiper. One half may have both ends on that node:
@@ -512,12 +561,15 @@ export function importAsc(text: string, asyTexts: Record<string, string> = {}, n
       const taperKey = fitTaper(x => a.at(x) / a.total);
       taperNote(ref, taperKey, a.q);
       const turn = Math.min(1, Math.max(0, params.get(a.q)!));
+      // The wiper's wiring usually leaves from a tap on the wire joining the two resistors. That wire
+      // is inside our pot, so it's hidden, and the tap is where the wiper goes.
+      const wiper = wiperTap(a.c.lt[aw], b.c.lt[b1 === wNet ? '1' : '2'], wNet);
       added.push({
         s: a.c.s, ref,
         map: { kind: 'POT', pins: { '1': [0, 0], w: [0, 0], '3': [0, 0] } },
         // Our own exports name the pin-1 half "_a": if that's the falling half, the pot was reversed —
         // keep its lugs where they were and mark it reversed rather than flipping the symbol.
-        lt: reversed ? { '1': b.c.lt[bEnd], w: a.c.lt[aw], '3': a.c.lt[aEnd] } : { '1': a.c.lt[aEnd], w: a.c.lt[aw], '3': b.c.lt[bEnd] },
+        lt: reversed ? { '1': b.c.lt[bEnd], w: wiper, '3': a.c.lt[aEnd] } : { '1': a.c.lt[aEnd], w: wiper, '3': b.c.lt[bEnd] },
         preset: { value: +a.total.toPrecision(6), props: { taper: taperKey ?? 'B', turn, ...(reversed ? { reverse: true } : {}), ...(steps.has(a.q) ? { sweep: true } : {}) } },
       });
       replaced.add(a.c).add(b.c);

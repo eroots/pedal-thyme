@@ -8,6 +8,8 @@ import { decodeLtspice, evalValue, ltNets, ltTransform, parseAsc, readParams, sp
 import { exportAsc } from '../src/ltspice/export';
 import { importAsc } from '../src/ltspice/import';
 import { extract } from '../src/schematic/extract';
+import { toWorld } from '../src/schematic/geometry';
+import { partPins } from '../src/schematic/library';
 import type { Schematic } from '../src/schematic/types';
 import { TOPOS } from '../src/topologies';
 
@@ -268,6 +270,50 @@ TEXT 0 360 Left 2 !.param Rpot=100k pos=0.3${extra}
     // Same response as the two fixed resistors: 10k into (70k ∥ … ) — VR1b (30k) to ground is the wiper leg here.
     const h = acModel(extract(r.schematic).netlist).circuit.transfer(new Cx(0, TAU * 1000)).abs();
     expect(h).toBeCloseTo(100e3 / (10e3 + 100e3), 4);
+  });
+  it('puts a hand-drawn pot’s wiper on the side its wiring goes, without the joining wire across it', () => {
+    // A tone pot as two horizontal resistors joined by a wire, with a cap hanging from the middle of
+    // that wire (as in many hand-drawn LTspice schematics).
+    const r = importAsc(`Version 4
+SHEET 1 880 680
+WIRE 32 64 -32 64
+WIRE 32 96 32 64
+WIRE 112 64 32 64
+WIRE 224 64 192 64
+WIRE 256 64 224 64
+WIRE 224 112 224 64
+WIRE 400 64 336 64
+FLAG -32 64 in
+FLAG 32 176 0
+FLAG 224 176 0
+FLAG 400 64 out
+SYMBOL voltage 32 80 R0
+SYMATTR InstName V1
+SYMATTR Value AC 1
+SYMBOL res 208 48 R90
+SYMATTR InstName VR2a
+SYMATTR Value {10k*t+1}
+SYMBOL res 352 48 R90
+SYMATTR InstName VR2b
+SYMATTR Value {10k*(1-t)+1}
+SYMBOL cap 208 112 R0
+SYMATTR InstName C1
+SYMATTR Value 100n
+TEXT 0 360 Left 2 !.param t=0.5
+`);
+    expect(r.stats.layout).toBe('attached');
+    expect(r.stats.attachIssues).toEqual([]);
+    const pot = r.schematic.parts.find(p => p.kind === 'POT')!;
+    const pin = (n: string) => toWorld(pot, partPins(pot).find(p => p.name === n)!.at);
+    const [l1, w, l3] = [pin('1'), pin('w'), pin('3')];
+    expect(l1[1]).toBe(l3[1]);
+    expect(w[1]).toBeGreaterThan(l1[1]); // wiper down, towards C1
+    // No wire runs along the pot between its lugs.
+    const [x0, x1] = [Math.min(l1[0], l3[0]), Math.max(l1[0], l3[0])];
+    const across = r.schematic.wires.some(wr => wr.pts.some((p, i) => i > 0 && p[1] === l1[1] && wr.pts[i - 1][1] === l1[1] &&
+      Math.max(p[0], wr.pts[i - 1][0]) > x0 && Math.min(p[0], wr.pts[i - 1][0]) < x1));
+    expect(across).toBe(false);
+    expect(errors(r.schematic)).toEqual([]);
   });
   it('turns a lone {R*pos} / {R*(1-pos)} resistor into a variable resistor with the right knob sense', () => {
     const up = importAsc(`Version 4

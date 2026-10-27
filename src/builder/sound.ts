@@ -68,6 +68,8 @@ interface Result {
   fading: boolean;
   label: string;
   rails: [number, number];
+  /** Whether the circuit has op-amps (only then is their clipping range worth mentioning). */
+  opAmps: boolean;
   ms: number;
   /** The amp capture the runs were played through, if any. */
   amp?: { id: string; name: string; trim: number } | null;
@@ -273,15 +275,16 @@ export function initSoundPanel(ctx: () => SoundContext, P = 'sd'): SoundPanel {
     $<HTMLProgressElement>(`#${P}Prog`).hidden = true;
     $<HTMLButtonElement>(`#${P}Render`).disabled = false;
   }
-  async function renderJobs(jobs: Job[], term: Term | null, tail: number, onProgress: (f: number) => void): Promise<{ runs: Run[]; rails: [number, number] }> {
+  async function renderJobs(jobs: Job[], term: Term | null, tail: number, onProgress: (f: number) => void): Promise<{ runs: Run[]; rails: [number, number]; opAmps: boolean }> {
     const oversample = +$(`#${P}Os`).value, frac = jobs.map(() => 0);
     const runs: Run[] = new Array(jobs.length);
-    let rails: [number, number] = [0, 0], next = 0;
+    let rails: [number, number] = [0, 0], next = 0, opAmps = false;
     const one = (k: number) => new Promise<void>((resolve, reject) => {
       const j = jobs[k], w = new RenderWorker();
       workers.add(w);
       // Every op-amp's output is watched too, to point out rail clipping.
       const swings = opAmpSwings(j.netlist);
+      if (swings.length) opAmps = true;
       const nets = [...new Set([...j.probes.map(p => p.net), ...swings.map(s => s.net)])];
       const req: RenderRequest = { netlist: j.netlist, input: j.input, fs: FS, oversample, term, probes: nets };
       w.onmessage = (e: MessageEvent<RenderMessage>) => {
@@ -303,7 +306,7 @@ export function initSoundPanel(ctx: () => SoundContext, P = 'sd'): SoundPanel {
     });
     const lanes = Math.max(1, Math.min(jobs.length, (navigator.hardwareConcurrency || 4) - 1, 6));
     await Promise.all(Array.from({ length: lanes }, async () => { while (next < jobs.length) await one(next++); }));
-    return { runs, rails };
+    return { runs, rails, opAmps };
   }
 
   $(`#${P}Render`).addEventListener('click', async () => {
@@ -341,9 +344,9 @@ export function initSoundPanel(ctx: () => SoundContext, P = 'sd'): SoundPanel {
     msg(jobs.length > 1 ? `Simulating ${jobs.length} versions…` : 'Simulating…');
     const t0 = performance.now();
     try {
-      const { runs, rails } = await renderJobs(jobs, c.term, base.tail, f => { prog.value = f; });
+      const { runs, rails, opAmps } = await renderJobs(jobs, c.term, base.tail, f => { prog.value = f; });
       if (!busy) return; // cancelled (e.g. switched tabs)
-      const r: Result = { runs, sweep: kind, sineHz: base.sineHz, tail: base.tail, periodic: base.periodic, fading: base.fading, label: base.label, rails, ms: 0 };
+      const r: Result = { runs, sweep: kind, sineHz: base.sineHz, tail: base.tail, periodic: base.periodic, fading: base.fading, label: base.label, rails, opAmps, ms: 0 };
       if (ampOf()) {
         msg(`Playing it through ${esc(ampOf()!.name)}…`);
         prog.value = 0;
@@ -455,7 +458,7 @@ export function initSoundPanel(ctx: () => SoundContext, P = 'sd'): SoundPanel {
       : '';
     const warn = unconverged ? ` <span class="warnc">${unconverged} steps didn't fully converge; treat the result as approximate.</span>` : '';
     msg(`${stale ? '<span class="warnc">The circuit has changed: Render again.</span> ' : ''}${esc(r.label)}${many ? ` (${esc(run.label)})` : ''}: output swings ${st.pp.toFixed(2)} V peak-to-peak${dcNote}. ` +
-      `Op-amps clip between ${r.rails[0].toFixed(1)} and ${r.rails[1].toFixed(1)} V less their headroom. Rendered in ${r.ms < 1000 ? `${Math.round(r.ms)} ms` : `${(r.ms / 1000).toFixed(1)} s`}.${warn}` +
+      `${r.opAmps ? `Op-amps clip between ${r.rails[0].toFixed(1)} and ${r.rails[1].toFixed(1)} V less their headroom. ` : ''}Rendered in ${r.ms < 1000 ? `${Math.round(r.ms)} ms` : `${(r.ms / 1000).toFixed(1)} s`}.${warn}` +
       (r.amp ? ` ▶ and Download play it through <b>${esc(r.amp.name)}</b>${r.amp.trim ? ` (${r.amp.trim > 0 ? '+' : ''}${r.amp.trim} dB into it)` : ''}; the plots show the pedal's own output.` : '') +
       (r.ampNote ? `<span class="pb-warn">⚠ ${esc(r.ampNote)}</span>` : '') + railNote);
   }

@@ -71,6 +71,7 @@ or a template:
 - LPB-1-style booster;
 - MOSFET booster;
 - Zendrive-style overdrive;
+- Big Muff π-style fuzz;
 - Fuzz Face-style fuzz.
 
 Every pedal needs an **input jack**, an **output jack** and a **ground**. Op-amps take their supply

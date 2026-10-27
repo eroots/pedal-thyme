@@ -37,8 +37,8 @@ function tubeScreamer(): Schematic {
     .wire([300, 230], [360, 230]).part('D', 'D1', 390, 230, 0, undefined, { props: { model: '1N914' } }).wire([420, 230], [500, 230])
     .wire([300, 290], [360, 290]).part('D', 'D2', 390, 290, 180, undefined, { props: { model: '1N914' } }).wire([420, 290], [500, 290])
     .wire([500, 40], [500, 290]).wire([400, 40], [520, 40]);
-  // Tone (treble cut via a pot in series with the tone cap) and volume.
-  b.R('R5', 550, 40, 0, 10e3).wire([580, 40], [740, 40]).C('C5', 600, 70, 90, 22e-9, { label: 'l' })
+  // Tone (treble cut via a pot in series with the tone cap), then 1 µF (the stage sits at VREF) into the volume pot.
+  b.R('R5', 550, 40, 0, 10e3).wire([580, 40], [650, 40]).C('C7', 680, 40, 0, 1e-6).wire([710, 40], [740, 40]).C('C5', 600, 70, 90, 22e-9, { label: 'l' })
     .RHEO('VR2', 600, 130, 90, 20e3, 0.5, 'B', knob('Tone')).GND(600, 160)
     .POT('VR3', 740, 70, 270, 100e3, 0.7, 'A', { mirror: true, ...knob('Volume') }).GND(740, 100)
     .wire([770, 70], [820, 70]).OUT(820, 70);
@@ -162,13 +162,78 @@ function zendrive(): Schematic {
     .wire([300, 320], [360, 320]).part('NMOS', 'Q2', 390, 310, 90, undefined, { mirror: true, label: 'b', props: { model: '2N7000' } })
     .wire([390, 280], [360, 280], [360, 320]).wire([420, 320], [500, 320])
     .wire([500, 40], [500, 320]).wire([400, 40], [520, 40]);
-  // Tone (treble cut) and volume.
-  b.R('R5', 550, 40, 0, 10e3).wire([580, 40], [740, 40]).C('C5', 600, 70, 90, 22e-9, { label: 'l' })
+  // Tone (treble cut), then 1 µF (the stage sits at VREF) into the volume pot.
+  b.R('R5', 550, 40, 0, 10e3).wire([580, 40], [650, 40]).C('C7', 680, 40, 0, 1e-6).wire([710, 40], [740, 40]).C('C5', 600, 70, 90, 22e-9, { label: 'l' })
     .RHEO('VR2', 600, 130, 90, 20e3, 0.5, 'B', knob('Tone')).GND(600, 160)
     .POT('VR3', 740, 70, 270, 100e3, 0.7, 'A', { mirror: true, ...knob('Volume') }).GND(740, 100)
     .wire([770, 70], [820, 70]).OUT(820, 70);
   biasSupply(b, 40, 160, ['R6', 'R7', 'C6']);
   b.note(300, 405, 'Q1/Q2: diode-connected 2N7000 clippers; render the Sound to hear them clip.', 'start');
+  return b.build();
+}
+
+/**
+ * One Big Muff gain stage at x: an NPN with collector-to-base feedback (470k ∥ 470 pF, 100k base to
+ * ground), fed through RG and a 1 µF cap from (x − 60, 100). Clipping stages add anti-parallel 1N914s
+ * in series with 1 µF from collector to base. The collector's output leaves at (x + 190, 100).
+ */
+function muffStage(b: SchBuilder, x: number, n: number, rg: number, clip: boolean): void {
+  const r = (k: number) => `R${n * 10 + k}`, c = (k: number) => `C${n * 10 + k}`;
+  b.R(r(1), x - 30, 100, 0, rg).wire([x, 100], [x + 10, 100]).C(c(1), x + 40, 100, 0, 1e-6);
+  Q(b, 'NPN', `Q${n}`, x + 100, 100, '2N5088', { label: 'r' });
+  // Base: 100k to ground; feedback 470k ∥ 470 pF up to the collector column.
+  b.R(r(2), x + 70, 130, 90, 100e3, { label: 'l' }).GND(x + 70, 160)
+    .wire([x + 70, 100], [x + 70, clip ? -120 : -10])
+    .R(r(3), x + 100, 40, 0, 470e3).C(c(2), x + 100, -10, 0, 470e-12)
+    .wire([x + 130, -10], [x + 130, 70]);
+  if (clip) {
+    b.C(c(3), x + 130, -40, 90, 1e-6, { label: 'r' })
+      .part('D', `D${n * 2 - 3}`, x + 100, -70, 0, undefined, { props: { model: '1N914' } })
+      .part('D', `D${n * 2 - 2}`, x + 100, -120, 180, undefined, { props: { model: '1N914' } })
+      .wire([x + 130, -70], [x + 130, -120]);
+  }
+  // Collector: 47k to 9 V; emitter: 100 Ω to ground.
+  b.wire([x + 110, 70], [x + 190, 70], [x + 190, 100])
+    .R(r(4), x + 170, 40, 90, 47e3, { label: 'r' }).part('SUPPLY', undefined, x + 170, 10, 0, 9, { props: { name: '9V' } })
+    .R(r(5), x + 110, 160, 90, 100, { label: 'r' }).GND(x + 110, 190);
+}
+
+/**
+ * Big Muff π-style fuzz, with the early version's values as analysed in J.L., "A case study:
+ * Re-engineering the Big Muff π" (2014): an input stage, two clipping stages, the passive tone
+ * control and a four-resistor output stage. Pots are the usual 100k.
+ */
+function bigMuff(): Schematic {
+  const b = sch();
+  b.IN(0, 100).wire([0, 100], [40, 100]);
+  // Input stage, then 1 µF into the Sustain pot (a divider), whose wiper feeds the first clipping stage.
+  muffStage(b, 100, 1, 39e3, false);
+  b.C('C14', 320, 100, 0, 1e-6).wire([350, 100], [370, 100])
+    .POT('VR1', 370, 130, 270, 100e3, 0.6, 'A', { mirror: true, ...knob('Sustain') }).GND(370, 160)
+    .wire([400, 130], [420, 130], [420, 100]);
+  muffStage(b, 480, 2, 10e3, true);
+  // Q2's collector straight into the next stage, whose 1 µF blocks the DC.
+  b.wire([670, 100], [730, 100]);
+  muffStage(b, 790, 3, 10e3, true);
+  // Tone: 4.7 nF into 27k (bass cut) on top, 27k into 10 nF (treble cut) below; the pot blends them.
+  b.C('C34', 1010, 100, 0, 1e-6)
+    .C('C5', 1070, 100, 0, 4.7e-9).R('R6', 1100, 130, 90, 27e3, { label: 'l' }).GND(1100, 160)
+    .wire([1040, 100], [1040, 200]).R('R7', 1070, 200, 0, 27e3).C('C6', 1100, 230, 90, 10e-9, { label: 'l' }).GND(1100, 260)
+    .wire([1100, 100], [1180, 100])
+    .POT('VR2', 1180, 130, 270, 100e3, 0.5, 'B', { mirror: true, ...knob('Tone') })
+    .wire([1180, 160], [1180, 200], [1100, 200])
+    .wire([1210, 130], [1230, 130], [1230, 100]);
+  // Output stage: base divider from 9 V, 10k collector, 2.2k emitter; then Volume.
+  b.C('C41', 1260, 100, 0, 1e-6).wire([1290, 100], [1330, 100]);
+  Q(b, 'NPN', 'Q4', 1360, 100, '2N5088', { label: 'r' });
+  b.R('R41', 1330, 70, 90, 470e3, { label: 'l' }).part('SUPPLY', undefined, 1330, 40, 0, 9, { props: { name: '9V' } })
+    .R('R42', 1330, 130, 90, 100e3, { label: 'l' }).GND(1330, 160)
+    .R('R43', 1370, 40, 90, 10e3, { label: 'r' }).part('SUPPLY', undefined, 1370, 10, 0, 9, { props: { name: '9V' } })
+    .R('R44', 1370, 160, 90, 2.2e3, { label: 'r' }).GND(1370, 190)
+    .wire([1370, 70], [1430, 70]).C('C42', 1460, 70, 0, 1e-6).wire([1490, 70], [1520, 70])
+    .POT('VR3', 1520, 100, 270, 100e3, 0.75, 'A', { mirror: true, ...knob('Volume') }).GND(1520, 130)
+    .wire([1550, 100], [1590, 100]).OUT(1590, 100);
+  b.note(100, 260, 'Values from an early Big Muff π (they vary a lot between versions). Two clipping stages with diodes in the feedback: render the Sound to hear it.', 'start');
   return b.build();
 }
 
@@ -179,5 +244,6 @@ export const TEMPLATES: Template[] = [
   { id: 'lpb1', name: 'LPB-1-style booster', description: 'One NPN common-emitter stage with divider bias: clean boost.', build: lpb1 },
   { id: 'mosboost', name: 'MOSFET booster (2N7000)', description: 'Common-source 2N7000 with drain-feedback bias: clean boost.', build: mosBooster },
   { id: 'zendrive', name: 'Zendrive-style overdrive', description: 'Op-amp gain stage clipped by two diode-connected 2N7000s, voice, tone and volume.', build: zendrive },
+  { id: 'bigmuff', name: 'Big Muff π-style fuzz', description: 'Input stage, two diode-clipping stages, the scooped tone control and an output stage.', build: bigMuff },
   { id: 'fuzz', name: 'Fuzz Face-style fuzz', description: 'Two silicon NPN transistors with DC feedback, fuzz and volume pots.', build: fuzzFace },
 ];

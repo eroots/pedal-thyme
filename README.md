@@ -71,6 +71,25 @@ are macromodels (gain, bandwidth, slew rate, output swing, input bias current), 
 use Ebers–Moll and square-law models. Treat the results as a good guide to how a design behaves,
 not as a guarantee of how a particular build will sound.
 
+## Known limits
+
+- **Desktop only.** The app is built for a mouse and keyboard on a computer screen; it isn't
+  designed for phones or tablets.
+- **Browsers:** Chrome and Edge are the main targets. Firefox (115+) and Safari (16.4+) should work,
+  but save by downloading instead of writing into a folder, and have had less testing.
+- **Simplified part models** (see [Accuracy](#accuracy)):
+  - some diodes, such as the 1N34A and 1S1588, use approximate values, marked as such in the app;
+  - the LM386's bandwidth doesn't fall as its gain is turned up, as a real one's does.
+- **Ideal supply, no noise:** the supply is a perfect voltage source (no battery sag), and the
+  noise and hum a real build picks up aren't simulated.
+- **LTspice export** leaves out the LM386 (LTspice has no model for it) and lists what it skipped.
+  Import handles the usual parts and symbols; anything it can't place is listed after importing.
+- **Amp captures:** only 48 kHz `.nam` files load. The amp sound isn't checked sample-for-sample
+  against Neural Amp Modeler's own player, though it follows the same model.
+- **Stored in one browser:** open tabs, your blocks and amp captures are kept by the browser you
+  use, on that computer. Clearing its site data removes them, and a private window may not keep
+  them at all. Save pedals and export blocks to files to keep them safe.
+
 ## Amp captures
 
 No amp captures are included. To play the sound through an amp, download Neural Amp Modeler
@@ -97,6 +116,11 @@ The built file includes [PDF.js](https://mozilla.github.io/pdf.js/) (Apache Lice
 capture player is written after
 [NeuralAmpModelerCore](https://github.com/sdatkinson/NeuralAmpModelerCore) (MIT). Both licence texts
 are in the app under **Third-party licences** at the bottom of the page, and in `third-party/`.
+
+## Reporting a problem
+
+Use [GitHub Issues](../../issues/new/choose). The bug report form asks for the version (shown at the
+bottom of the page), your browser, and, if it's about a particular circuit, its `.pfl.json` file.
 
 ## Licence
 

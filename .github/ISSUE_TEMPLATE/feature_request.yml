@@ -1,0 +1,11 @@
+name: Suggestion
+description: An idea for something Pedal Lab could do, or do better.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would you like?
+      description: What you're trying to do, and how the app could help. Examples of pedals or parts it would apply to are useful.
+    validations:
+      required: true

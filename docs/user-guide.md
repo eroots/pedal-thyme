@@ -28,6 +28,7 @@ Anywhere a value is typed, engineering notation works: `4.7k`, `4k7`, `22n`, `2n
   - [LTspice](#ltspice)
 - [Pedalboard](#pedalboard)
 - [Tips and troubleshooting](#tips-and-troubleshooting)
+- [Known limits](#known-limits)
 
 ---
 
@@ -314,3 +315,16 @@ loading is usually why. Real pedals often have an input buffer that schematics l
 - **The sound renders slowly:** use cycles instead of seconds for sines, a lower Quality, or a
   shorter clip.
 - **Saving a copy elsewhere:** Save as… always lets you choose a new file.
+- **Found a bug?** Report it on the project's GitHub Issues page. Include the version (bottom of the
+  page), your browser, and the pedal's `.pfl.json` if it's about a particular circuit.
+
+## Known limits
+
+- The app is designed for a computer with a mouse and keyboard, not phones or tablets.
+- Part models are simplified. Diodes marked ≈ in the Model list use approximate values, and the
+  LM386's bandwidth doesn't fall as its gain is turned up.
+- The supply is ideal (no battery sag), and noise and hum aren't simulated.
+- LTspice export leaves out the LM386, which LTspice has no model for.
+- Only 48 kHz amp captures load.
+- Tabs, your blocks and amp captures are kept by this browser on this computer. Save pedals and
+  export blocks to files to keep them safe.

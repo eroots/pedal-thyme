@@ -1,0 +1,65 @@
+name: Bug report
+description: Something in Pedal Lab doesn't work, or gives a result that looks wrong.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a problem. The more of the details below you can give, the quicker it can be found and fixed.
+  - type: input
+    id: version
+    attributes:
+      label: Pedal Lab version
+      description: Shown at the bottom of the page, e.g. v0.1.0.
+      placeholder: v0.1.0
+    validations:
+      required: true
+  - type: input
+    id: browser
+    attributes:
+      label: Browser and operating system
+      placeholder: e.g. Chrome 130 on Windows 11, Firefox 132 on macOS 15
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Which part of the app?
+      options:
+        - Pedal Builder (drawing, files, blocks)
+        - Pedal Builder (response, DC bias, Checks)
+        - Pedal Builder (Sound panel)
+        - Pedalboard
+        - Playground
+        - LTspice import or export
+        - Something else
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What you did, what you expected, and what you got instead. Screenshots help.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to make it happen again
+      placeholder: |
+        1. Open the attached pedal
+        2. Turn Drive to 10
+        3. …
+  - type: textarea
+    id: file
+    attributes:
+      label: The pedal file
+      description: |
+        If it's about a particular circuit, attach its `.pfl.json` (Save, then drag the file in here) or its `.asc` for an LTspice import.
+        Note that a `.pfl.json` includes any trace picture you've loaded under the drawing; remove it first (Trace ▾ → Remove picture) if it shouldn't be public.
+  - type: textarea
+    id: errors
+    attributes:
+      label: Error messages
+      description: Any message shown in the app, or in the browser's console (F12 → Console), if you know how to find it.
+      render: text

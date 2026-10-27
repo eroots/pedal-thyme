@@ -45,36 +45,36 @@ pins, wire endpoints and net labels) and runs the electrical rule check. Each pa
 
 **Small-signal analysis** (`src/engine/mna.ts`). Modified nodal analysis at each frequency:
 - R, C and L, independent and controlled sources;
-- pots and rheostats (value, taper, rotation);
-- switches;
-- ideal op-amps (nullors) and macromodels (open-loop gain, GBW pole, input and output resistance).
+- Pots and rheostats (value, taper, rotation);
+- Switches;
+- Ideal op-amps (nullors) and macromodels (open-loop gain, GBW pole, input and output resistance).
 
 **DC operating point** (`src/engine/dc.ts`). Newton–Raphson with junction limiting, falling back to
 gmin stepping, then source stepping. Op-amp input bias currents are included. `linearize.ts` then
 replaces each nonlinear device with its small-signal equivalent at that bias:
-- diodes become r_d;
+- Diodes become r_d;
 - BJTs become four VCCSs plus Cje and Cjc;
 - JFETs and MOSFETs become g_m, r_ds and their capacitances.
 
 **Time domain** (`src/engine/transient.ts`). The nodal DK method:
-- trapezoidal companion models at the audio rate × oversampling (2, 4 or 8×, with windowed-sinc
+- Trapezoidal companion models at the audio rate × oversampling (2, 4 or 8×, with windowed-sinc
   resampling);
-- everything linear is folded into a few matrices once;
-- each step is a small Newton solve over the controls of the nonlinear parts only (diodes, BJTs,
+- Everything linear is folded into a few matrices once;
+- Each step is a small Newton solve over the controls of the nonlinear parts only (diodes, BJTs,
   JFETs, MOSFETs and op-amps);
-- op-amps have a slew-limited input stage into a damped integrator, and an output that saturates
+- Op-amps have a slew-limited input stage into a damped integrator, and an output that saturates
   softly at the supply rails, less each model's headroom;
-- the run starts from the DC operating point;
-- rendering runs in web workers.
+- The run starts from the DC operating point;
+- Rendering runs in web workers.
 
 **Signal chains** (`src/engine/chain.ts`). Pedals are joined into one netlist: upstream pedals'
 nodes are prefixed, each output is wired to the next pedal's input (so inter-pedal loading is
 real), and each op-amp keeps its own pedal's supply rails.
 
 **Amp captures** (`src/audio/nam.ts`). A WaveNet player written after NeuralAmpModelerCore (MIT):
-- ungated layers, per-layer kernels and dilations, bottleneck, layer 1×1 and head kernel;
+- Ungated layers, per-layer kernels and dilations, bottleneck, layer 1×1 and head kernel;
 - SlimmableContainer files (the full-size model is used);
-- unsupported features (gating, FiLM, LSTM) are refused rather than guessed.
+- Unsupported features (gating, FiLM, LSTM) are refused rather than guessed.
 
 Pedal volts are scaled to the capture's digital level using its `input_level_dbu`.
 
@@ -82,14 +82,14 @@ Pedal volts are scaled to the capture's digital level using its `input_level_dbu
 
 Cross-checks against LTspice 24:
 
-- **Import connectivity:** checked against LTspice's own netlister on 158 example schematics
+- **Import connectivity:** Checked against LTspice's own netlister on 158 example schematics
   (3,969 pins), with no differences.
-- **Exported schematics:** every template and Playground circuit runs in LTspice without warnings.
+- **Exported schematics:** Every template and Playground circuit runs in LTspice without warnings.
   |H| at 100 Hz, 1 kHz and 10 kHz matches to 0.00 dB for passive, op-amp and MOSFET circuits.
   - BJT circuits differ by 0.6–3.5 dB, because LTspice's 2N3904 model has more parameters (Ikf,
     Ise/Ne, Rb …) than the Ebers–Moll model used here.
   - The TS differs by 0.15 dB at 10 kHz, from diode junction capacitance.
-- **Small-signal transient vs AC:** within 0.25 dB for every template.
+- **Small-signal transient vs AC:** Within 0.25 dB for every template.
 - **1 kHz, 100 mV transient vs LTspice `.four`:**
 
   | Template | THD, Pedal Thyme / LTspice | Notes |
@@ -100,7 +100,7 @@ Cross-checks against LTspice 24:
   | Zendrive | similar | Fundamental 1.4 dB apart |
   | RAT | | Fundamental 0.9 dB apart; Pedal Thyme models the LM308's slew limit and the exported macromodel doesn't |
 
-- **NAM player:** the weight counts match each file's layout. Each file's 3- and 8-channel
+- **NAM player:** The weight counts match each file's layout. Each file's 3- and 8-channel
   submodels agree to an ESR of 0.0005–0.03. A sample-exact comparison with the NAM plugin hasn't
   been done.
 
@@ -112,8 +112,8 @@ The built file is meant to be shared and to open files from strangers.
   other source is `'none'`.
 - **Untrusted files.** `src/schematic/sanitize.ts` rebuilds every schematic and board read from a
   file or storage, field by field with checked types. Unknown fields are dropped. All text is
-  escaped before it reaches the DOM. PDFs are rendered by PDF.js, which doesn't run their scripts, with XFA and WebAssembly
-  off.
+  escaped before it reaches the DOM. PDFs are rendered by PDF.js, which doesn't run their scripts,
+  with XFA and WebAssembly off.
 - **No bundled captures.** NAM files are loaded by the user and kept in IndexedDB.
 
 Keep these properties when adding features: no `innerHTML` with unescaped text, no network APIs,
@@ -147,7 +147,8 @@ migration rather than breaking old files.
 4. Commit, tag (`git tag v<version>`) and push the commit and the tag.
 5. The **Release** workflow (`.github/workflows/release.yml`) checks the tag matches `package.json`,
    runs the tests, builds, and creates a **draft** release with `pedal-thyme.html` and
-   `pedal-thyme.html.sha256` attached and the checksum in its notes. Add release notes and publish it.
+   `pedal-thyme.html.sha256` attached and the checksum in its notes (versions below 1.0 are marked
+   as pre-releases). Add release notes and publish it.
 
 The **Tests** workflow (`.github/workflows/ci.yml`) type-checks, tests and builds every push to `main`
 and every pull request.

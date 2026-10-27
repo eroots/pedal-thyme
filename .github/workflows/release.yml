@@ -1,5 +1,6 @@
 # Pushing a version tag (v0.1.0 …) tests and builds the app, then creates a draft GitHub release with
 # pedal-thyme.html and its SHA-256 checksum attached. Review the draft and publish it from the Releases page.
+# Versions below 1.0 are marked as pre-releases.
 name: Release
 
 on:
@@ -30,6 +31,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           hash=$(cut -d' ' -f1 dist/pedal-thyme.html.sha256)
-          gh release create "$GITHUB_REF_NAME" dist/pedal-thyme.html dist/pedal-thyme.html.sha256 \
+          pre=$(case "$GITHUB_REF_NAME" in v0.*) echo --prerelease;; esac)
+          gh release create "$GITHUB_REF_NAME" dist/pedal-thyme.html dist/pedal-thyme.html.sha256 $pre \
             --draft --title "Pedal Thyme $GITHUB_REF_NAME" \
             --notes "Download pedal-thyme.html and double-click it. SHA-256: \`$hash\`"

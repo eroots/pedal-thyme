@@ -11,12 +11,12 @@ This project largely reflects the way I use simulation software. As such I can't
   part values that hit a target frequency.
 - **Pedal Builder:** Draw a pedal's schematic (from scratch, from ready-made blocks such as buffers and
   clipping stages or blocks you've saved yourself, or by tracing a picture or PDF), and simulate it:
-  - the frequency response at any point in the circuit, with a knob for every pot;
-  - the DC voltages at every node (bias);
-  - the sound itself, clipping included. Render a sine, a plucked note, a chord or your own DI
+  - The frequency response at any point in the circuit, with a knob for every pot;
+  - The DC voltages at every node (bias);
+  - The sound itself, clipping included. Render a sine, a plucked note, a chord or your own DI
     recording, then look at the waveform and harmonics and listen to it against bypass. You can also
     play it through a Neural Amp Modeler capture of an amp.
-- **Pedalboard:** chain pedals in order, switch them on and off, and see and hear the whole board,
+- **Pedalboard:** Chain pedals in order, switch them on and off, and see and hear the whole board,
   including how each pedal loads the next.
 
 It imports and exports LTspice schematics, and exports SPICE netlists, parts lists and schematic
@@ -38,10 +38,10 @@ pick **New ▾ → Tube Screamer-style overdrive**, turn the Drive knob in the F
 
 ## Privacy and safety
 
-- **Offline:** everything is inside the one HTML file. Its Content Security Policy stops it loading
+- **Offline:** Everything is inside the one HTML file. Its Content Security Policy stops it loading
   or sending anything over the network, so it works without internet and can't send anything
   anywhere.
-- **Your work stays on your computer:** schematics are saved as files where you choose; open tabs
+- **Your work stays on your computer:** Schematics are saved as files where you choose; open tabs
   and the current pedalboard are also kept in the browser's storage between sessions.
 - **Files from other people** (schematics, pedalboards, LTspice files, PDFs) are treated as
   untrusted. Schematics are rebuilt field by field with checked types, all text is escaped before
@@ -65,8 +65,8 @@ page.
 ## Accuracy
 
 The engine is a circuit simulator in the same family as SPICE:
-- the frequency response is a small-signal analysis around the DC operating point;
-- the Sound panel is a full nonlinear time-domain simulation.
+- The frequency response is a small-signal analysis around the DC operating point;
+- The Sound panel is a full nonlinear time-domain simulation.
 
 Its results were cross-checked against LTspice; details are in the
 [developer guide](docs/development.md#accuracy). The part models are simplified, though: op-amps
@@ -78,21 +78,22 @@ not as a guarantee of how a particular build will sound.
 
 - **Desktop only.** The app is built for a mouse and keyboard on a computer screen; it isn't
   designed for phones or tablets.
-- **Browsers:** Chrome and Edge are the main targets. Firefox (115+) and Safari (16.4+) should work,
-  but save by downloading instead of writing into a folder, and have had less testing.
+- **Browsers:** Chrome and Edge are the main targets. Firefox (115+) works too, but saves by
+  downloading each file instead of writing into a folder. Safari (16.4+) should work the same way,
+  but hasn't been tested yet.
 - **Simplified part models** (see [Accuracy](#accuracy)):
-  - some diodes, such as the 1N34A and 1S1588, use approximate values, marked as such in the app;
-  - the LM386's bandwidth doesn't fall as its gain is turned up, as a real one's does.
-- **Ideal supply, no noise:** the supply is a perfect voltage source (no battery sag), and the
+  - Some diodes, such as the 1N34A and 1S1588, use approximate values, marked as such in the app;
+  - The LM386's bandwidth doesn't fall as its gain is turned up, as a real one's does.
+- **Ideal supply, no noise:** The supply is a perfect voltage source (no battery sag), and the
   noise and hum a real build picks up aren't simulated.
 - **LTspice import** works, but the drawing can come out a little mangled: our part symbols are a
   different size from LTspice's, so parts shift slightly and wires are stretched or rerouted to meet
   them. The connections are checked against LTspice's, and anything it couldn't place is listed after
   importing, but double-check the imported schematic (parts, values and wiring) against the original.
 - **LTspice export** leaves out the LM386 (LTspice has no model for it) and lists what it skipped.
-- **Amp captures:** only 48 kHz `.nam` files load. The amp sound isn't checked sample-for-sample
+- **Amp captures:** Only 48 kHz `.nam` files load. The amp sound isn't checked sample-for-sample
   against Neural Amp Modeler's own player, though it follows the same model.
-- **Stored in one browser:** open tabs, your blocks and amp captures are kept by the browser you
+- **Stored in one browser:** Open tabs, your blocks and amp captures are kept by the browser you
   use, on that computer. Clearing its site data removes them, and a private window may not keep
   them at all. Save pedals and export blocks to files to keep them safe.
 
@@ -136,8 +137,11 @@ written and reviewed here.
 
 ## Reporting a problem
 
-Use [GitHub Issues](../../issues/new/choose). The bug report form asks for the version (shown at the
-bottom of the page), your browser, and, if it's about a particular circuit, its `.pfl.json` file.
+For a security problem, don't open a public issue: see [SECURITY.md](SECURITY.md).
+
+For anything else, use [GitHub Issues](../../issues/new/choose). The bug report form asks for the
+version (shown at the bottom of the page), your browser, and, if it's about a particular circuit,
+its `.pfl.json` file.
 
 ## Licence
 

@@ -117,6 +117,17 @@ capture player is written after
 [NeuralAmpModelerCore](https://github.com/sdatkinson/NeuralAmpModelerCore) (MIT). Both licence texts
 are in the app under **Third-party licences** at the bottom of the page, and in `third-party/`.
 
+## Suggestions
+
+Ideas for improvements are welcome: open a [suggestion on GitHub Issues](../../issues/new/choose).
+I'll work through them as I'm able.
+
+You're also free to fork the project and make your own changes (it's MIT licensed, see
+[Licence](#licence)); [Building from source](#building-from-source) and the
+[developer guide](docs/development.md) explain how. Pull requests aren't accepted, though: the app
+is a file people download and run on their own computers, so for security every line of it is
+written and reviewed here.
+
 ## Reporting a problem
 
 Use [GitHub Issues](../../issues/new/choose). The bug report form asks for the version (shown at the

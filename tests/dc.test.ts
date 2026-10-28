@@ -3,7 +3,7 @@ import { Cx } from '../src/core/complex';
 import { TAU, db } from '../src/core/units';
 import { dcOp } from '../src/engine/dc';
 import { acModel, linearize } from '../src/engine/linearize';
-import { DIODE_MODELS } from '../src/engine/models';
+import { DIODE_MODELS, diodeVf } from '../src/engine/models';
 import { C, GND, OA, R, type Element, type Netlist } from '../src/engine/netlist';
 import { BJT_MODELS, JFET_MODELS, MOS_MODELS, VT, bjtIV, jfetIV } from '../src/engine/semis';
 import { toSpice } from '../src/engine/spice';
@@ -65,7 +65,15 @@ describe('DC operating point', () => {
       const m = DIODE_MODELS[model], vd = op.v('k');
       const id = m.is * (Math.exp(vd / (m.n * VT)) - 1);
       expect(Math.abs((9 - vd) / 1e3 - id)).toBeLessThan(1e-8);
+      expect(diodeVf(m, id)).toBeCloseTo(vd, 9); // the forward voltage shown in Properties is the simulated one
     }
+  });
+
+  it('BAT41 sits between germanium and silicon, inside its datasheet limit', () => {
+    const vf = (k: string) => diodeVf(DIODE_MODELS[k], 1e-3);
+    expect(vf('BAT41')).toBeLessThanOrEqual(0.45); // datasheet maximum at 1 mA
+    expect(vf('BAT41')).toBeGreaterThan(vf('1N34A'));
+    expect(vf('BAT41')).toBeLessThan(vf('1N4148'));
   });
 
   it('LPB-1 booster biases with Vc around mid-supply and ~25 dB gain', () => {

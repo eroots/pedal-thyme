@@ -82,7 +82,7 @@ not as a guarantee of how a particular build will sound.
   downloading each file instead of writing into a folder. Safari (16.4+) should work the same way,
   but hasn't been tested yet.
 - **Simplified part models** (see [Accuracy](#accuracy)):
-  - Some diodes, such as the 1N34A and 1S1588, use approximate values, marked as such in the app;
+  - Some diodes, such as the 1N34A, 1S1588 and BAT41, use approximate values, marked as such in the app;
   - The LM386's bandwidth doesn't fall as its gain is turned up, as a real one's does.
 - **Ideal supply, no noise:** The supply is a perfect voltage source (no battery sag), and the
   noise and hum a real build picks up aren't simulated.

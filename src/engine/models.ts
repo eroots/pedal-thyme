@@ -2,6 +2,7 @@
 // with input resistance between the inputs and an open-loop output resistance.
 // Values are typical datasheet figures. The small-signal (AC) analysis uses A0, GBW, Rin and Rout; the
 // time-domain simulation also limits the output slew rate and swing (headroom from each supply rail).
+import { VT } from './semis';
 
 export interface OpAmpModel {
   label: string;
@@ -61,9 +62,15 @@ export const DIODE_MODELS: Record<string, DiodeModel> = {
   // 1S1588: a Japanese 1N4148-type switching diode (Boss, Ibanez), modelled as a 1N4148 with a higher
   // forward drop (≈ 1 V at 10 mA, ≈ 0.8 V at the 0.1 mA typical of a clipping stage).
   '1S1588': { label: '1S1588 (silicon, Vf ≈ 1 V)', is: 2.58e-12, n: 1.752, cj: 3e-12, spice: 'D(Is=2.58p Rs=0.568 N=1.752 Cjo=3p M=0.4 tt=20n)', approx: true },
+  // BAT41: 100 V small-signal Schottky. No maker's SPICE model; fitted to the datasheet (Vf ≤ 0.45 V at
+  // 1 mA, ≈ 1 V at 200 mA, 2 pF): about 0.28 V at 0.1 mA and 0.38 V at 1 mA.
+  BAT41: { label: 'BAT41 (Schottky)', is: 1.8e-7, n: 1.7, cj: 2e-12, spice: 'D(Is=180n Rs=1.4 N=1.7 Cjo=2p M=0.3 BV=100)', approx: true },
   '1N34A': { label: '1N34A (germanium)', is: 2e-6, n: 1.3, cj: 1e-12, spice: 'D(Is=2u Rs=7 N=1.3 Cjo=1p)', approx: true },
   LED_RED: { label: 'Red LED', is: 1e-19, n: 1.6, cj: 20e-12, spice: 'D(Is=1e-19 N=1.6 Rs=4 Cjo=20p)', approx: true },
 };
 
 export const diodeModel = (key: string): DiodeModel => DIODE_MODELS[key] || DIODE_MODELS['1N4148'];
+
+/** Forward voltage at current i (A), as the simulator models the diode (thermal voltage at 300 K). */
+export const diodeVf = (m: Pick<DiodeModel, 'is' | 'n'>, i: number): number => m.n * VT * Math.log(i / m.is + 1);
 export const opAmpModel = (key: string): OpAmpModel => OPAMP_MODELS[key] || OPAMP_MODELS.ideal;

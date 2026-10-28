@@ -4,7 +4,7 @@ import { stepSeries } from '../core/eseries';
 import { TAPERS, type TaperKey } from '../core/pots';
 import { fmtEng, parseEng } from '../core/units';
 import { dcOp, type DeviceOp, type OpPoint } from '../engine/dc';
-import { DIODE_MODELS, OPAMP_MODELS, opAmpModel } from '../engine/models';
+import { DIODE_MODELS, OPAMP_MODELS, diodeModel, diodeVf, opAmpModel } from '../engine/models';
 import { BJT_MODELS, JFET_MODELS, MOS_MODELS } from '../engine/semis';
 import { extract, type ErcIssue, type Extraction } from '../schematic/extract';
 import { stuckOpAmps } from '../audio/rails';
@@ -474,7 +474,11 @@ export function initBuilder(nav: { showBoard(): void; showBuilder(): void }): Bu
     }
     const modelSelect = (models: Record<string, { label: string; approx?: boolean }>, filter: (m: any) => boolean = () => true) =>
       row('Model', `<select data-field="model">${Object.entries(models).filter(([, m]) => filter(m)).map(([k, m]) => `<option value="${k}" ${p.props?.model === k ? 'selected' : ''}>${esc(m.label)}${m.approx ? ' ≈' : ''}</option>`).join('')}</select>`);
-    if (p.kind === 'D' || p.kind === 'LED') h += modelSelect(DIODE_MODELS);
+    if (p.kind === 'D' || p.kind === 'LED') {
+      h += modelSelect(DIODE_MODELS);
+      const m = diodeModel(p.props?.model ?? '1N4148');
+      h += row('Forward V', `<span class="vf">${diodeVf(m, 1e-4).toFixed(2)} V at 0.1 mA · ${diodeVf(m, 1e-3).toFixed(2)} V at 1 mA · ${diodeVf(m, 1e-2).toFixed(2)} V at 10 mA</span>`);
+    }
     if (p.kind === 'NPN' || p.kind === 'PNP') h += modelSelect(BJT_MODELS, m => m.pol === p.kind.toLowerCase());
     if (p.kind === 'NJF' || p.kind === 'PJF') h += modelSelect(JFET_MODELS, m => m.pol === (p.kind === 'NJF' ? 'n' : 'p'));
     if (p.kind === 'NMOS' || p.kind === 'PMOS') h += modelSelect(MOS_MODELS, m => m.pol === (p.kind === 'NMOS' ? 'n' : 'p'));

@@ -120,7 +120,9 @@ Click a part to edit it in the **Properties** panel on the right. Double-click f
   - **Linked with** makes switches of the same kind the poles of one switch: two SPDTs make a
     DPDT, two SPSTs a DPST, three a 3PDT and so on. They share one toggle and switch together.
     Draw each pole where it sits in the circuit.
-- **Diodes and LEDs:** 1N4148, 1N914, 1S1588, 1N34A (germanium) and a red LED.
+- **Diodes and LEDs:** 1N4148, 1N914, 1S1588, BAT41 (Schottky), 1N34A (germanium) and a red LED.
+  Properties shows each one's forward voltage at 0.1, 1 and 10 mA (clipping stages mostly run at
+  0.1–1 mA).
 - **Transistors:**
   - NPN and PNP BJTs (2N3904, 2N5088, 2N5089, 2N3906, BC109, AC128);
   - JFETs (J201, 2N5457, MPF102, 2N5460);

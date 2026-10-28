@@ -6,7 +6,8 @@ import { fmtEng, parseEng } from '../core/units';
 import { dcOp, type DeviceOp, type OpPoint } from '../engine/dc';
 import { DIODE_MODELS, OPAMP_MODELS, opAmpModel } from '../engine/models';
 import { BJT_MODELS, JFET_MODELS, MOS_MODELS } from '../engine/semis';
-import { extract, type Extraction } from '../schematic/extract';
+import { extract, type ErcIssue, type Extraction } from '../schematic/extract';
+import { stuckOpAmps } from '../audio/rails';
 import { PARTS, opAmpPinMap, opAmpView } from '../schematic/library';
 import { onSegment, samePt, type Pt } from '../schematic/geometry';
 import { renderSchematic, renderSchematicBody } from '../schematic/render';
@@ -689,17 +690,39 @@ export function initBuilder(nav: { showBoard(): void; showBuilder(): void }): Bu
   });
 
   /* ---------- ERC ---------- */
+  /** The wiring checks, plus op-amps stuck at a rail by their DC bias (once the wiring has no errors). */
+  const checksMemo = new WeakMap<Extraction, ErcIssue[]>();
+  function checksOf(x: Extraction): ErcIssue[] {
+    let list = checksMemo.get(x);
+    if (list) return list;
+    list = x.issues;
+    if (!hasErrors(x) && x.netlist.elements.some(e => e.type === 'OA')) {
+      try {
+        const stuck = stuckOpAmps(x.netlist, biasOf(x) ?? dcOp(x.netlist));
+        list = [...list, ...stuck.map((s): ErcIssue => {
+          const part = editor.doc.parts.find(p => p.kind === 'OA' && p.ref && (s.name === p.ref || s.name === p.ref + 'A' || s.name === p.ref + 'B'));
+          return {
+            severity: 'warning', parts: part ? [part.id] : undefined,
+            message: `${s.name}'s output sits at ${s.v.toFixed(1)} V, at the end of its ${s.lo.toFixed(1)}–${s.hi.toFixed(1)} V swing: it's stuck against a supply rail, so it passes almost no signal and Sound renders near silence (the frequency plots don't show this). Check its bias: its + input usually sits at half the supply (e.g. VREF 4.5 V).`,
+          };
+        })];
+      } catch { /* no operating point: nothing to add */ }
+    }
+    checksMemo.set(x, list);
+    return list;
+  }
   function renderErc(): void {
-    const errs = ex.issues.filter(i => i.severity === 'error').length, warns = ex.issues.length - errs;
+    const issues = checksOf(ex);
+    const errs = issues.filter(i => i.severity === 'error').length, warns = issues.length - errs;
     $('#bErcStatus').innerHTML = errs ? `<span class="e-bad">${errs} error${errs > 1 ? 's' : ''}</span>` + (warns ? `, ${warns} warning${warns > 1 ? 's' : ''}` : '')
       : warns ? `<span class="warnc">${warns} warning${warns > 1 ? 's' : ''}</span>` : '<span class="e-good">No problems</span>';
-    $('#bErc').innerHTML = ex.issues.length
-      ? `<ul class="erc">${ex.issues.map((i, k) => `<li class="${i.severity}${i.parts?.length || i.at ? '' : ' static'}" data-k="${k}"${i.parts?.length || i.at ? ' title="Show on the schematic"' : ''}>${i.severity === 'error' ? '✕' : '!'} ${esc(i.message)}</li>`).join('')}</ul>`
+    $('#bErc').innerHTML = issues.length
+      ? `<ul class="erc">${issues.map((i, k) => `<li class="${i.severity}${i.parts?.length || i.at ? '' : ' static'}" data-k="${k}"${i.parts?.length || i.at ? ' title="Show on the schematic"' : ''}>${i.severity === 'error' ? '✕' : '!'} ${esc(i.message)}</li>`).join('')}</ul>`
       : '<p class="hint">The circuit is complete: every pin is connected and every net has a DC path to ground.</p>';
   }
   $('#bErc').addEventListener('click', e => {
     const li = (e.target as HTMLElement).closest<HTMLElement>('li[data-k]');
-    const issue = li && ex.issues[+li.dataset.k!];
+    const issue = li && checksOf(ex)[+li.dataset.k!];
     if (!issue || !editor.focusOn(issue.parts ?? [], issue.at, issue.severity)) return;
     document.querySelectorAll('#bErc li.active').forEach(x => x.classList.remove('active'));
     li!.classList.add('active');

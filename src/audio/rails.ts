@@ -29,3 +29,17 @@ export function hitsRails(y: ArrayLike<number>, s: OpAmpSwing, from = 0): boolea
   for (let i = from; i < y.length; i++) if (y[i] >= s.hi - tol || y[i] <= s.lo + tol) return true;
   return false;
 }
+
+/**
+ * Op-amps whose DC output sits at (or past) the edge of its swing: stuck against a rail, usually because
+ * the input is biased at a rail (e.g. VREF set to the full supply). They pass almost no signal, which the
+ * frequency plots (small-signal, around that operating point) don't show but a Sound render does.
+ * `op` is the DC operating point (the DC solve treats op-amps as linear, so a stuck output reads at or past its rail).
+ */
+export function stuckOpAmps(nl: Netlist, op: OpPoint): (OpAmpSwing & { v: number })[] {
+  if (!op.ok) return [];
+  return opAmpSwings(nl).flatMap(s => {
+    const v = op.v(s.net), tol = 0.03 * (s.hi - s.lo);
+    return s.hi > s.lo && (v >= s.hi - tol || v <= s.lo + tol) ? [{ ...s, v }] : [];
+  });
+}

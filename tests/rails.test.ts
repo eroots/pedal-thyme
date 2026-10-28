@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { hitsRails, opAmpSwings } from '../src/audio/rails';
+import { hitsRails, opAmpSwings, stuckOpAmps } from '../src/audio/rails';
+import { dcOp } from '../src/engine/dc';
+import { TEMPLATES } from '../src/builder/templates';
+import { extract } from '../src/schematic/extract';
 import { sine } from '../src/audio/signals';
 import type { Netlist } from '../src/engine/netlist';
 import { renderAudio } from '../src/engine/transient';
@@ -29,5 +32,23 @@ describe('op-amp rail clipping', () => {
     const quiet = run(0.01), hot = run(0.4);
     expect(hitsRails(quiet, s, tail(quiet))).toBe(false); // ±1 V around 4.5 V
     expect(hitsRails(hot, s, tail(hot))).toBe(true); // ±40 V wanted: squared off
+  });
+
+  it('flags an op-amp stuck at a rail by its DC bias (VREF at the full supply), not one biased at half', () => {
+    const biased = (vref: number, model: string): Netlist => {
+      const nl = stage(model);
+      return { ...nl, elements: nl.elements.map(e => (e.name === 'Vref' ? { ...e, dc: vref } as typeof e : e)) };
+    };
+    for (const model of ['ideal', 'TL072']) {
+      expect(stuckOpAmps(biased(4.5, model), dcOp(biased(4.5, model)))).toEqual([]);
+      expect(stuckOpAmps(biased(9, model), dcOp(biased(9, model))).map(s => s.name)).toEqual(['U2']);
+    }
+  });
+
+  it('no template has a stuck op-amp', () => {
+    for (const t of TEMPLATES) {
+      const nl = extract(t.build()).netlist;
+      expect(stuckOpAmps(nl, dcOp(nl)), t.id).toEqual([]);
+    }
   });
 });

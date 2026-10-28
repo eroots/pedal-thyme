@@ -263,7 +263,10 @@ The **Checks** panel lists problems with the drawing:
 - Unconnected pins;
 - Floating nets, or nets with no DC path to ground;
 - A missing input or output jack;
-- Shorted supplies.
+- Shorted supplies;
+- An op-amp whose bias holds its output against a supply rail (for example VREF set to the full
+  supply instead of half). It passes almost no signal: the frequency plots don't show this, but the
+  Sound render comes out nearly silent.
 
 The toolbar shows a summary. Fix the errors before trusting the simulation.
 
@@ -312,6 +315,8 @@ loading is usually why. Real pedals often have an input buffer that schematics l
 
 - **The response is flat or −∞ dB:** Look at the Checks panel. Usually the input or output jack
   isn't connected, a wire ends short of a pin, or an op-amp has no supply.
+- **The plot looks right but the Sound is silent or sputters:** Look at the Checks panel for an
+  op-amp stuck at a supply rail, and check the bias voltages (VREF is usually half the supply).
 - **The plot doesn't show clipping:** That's expected, because the response is small-signal.
   Render the Sound instead.
 - **A knob doesn't seem to do much:** Sweep it in the Sound panel and look at the harmonics. A

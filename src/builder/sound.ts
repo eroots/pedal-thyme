@@ -11,7 +11,8 @@ import type { NamMessage, NamRequest } from '../audio/nam.worker';
 import { addAmp, listAmps, removeAmp, type AmpEntry } from '../audio/amps';
 import { includesCab, voltsToDigital } from '../audio/nam';
 import type { RenderMessage, RenderRequest } from '../audio/render.worker';
-import { hitsRails, opAmpSwings } from '../audio/rails';
+import { hitsRails, opAmpSwings, stuckOpAmps } from '../audio/rails';
+import { dcOp } from '../engine/dc';
 import { E_MAJOR, fadingSine, normalize, pluck, sine } from '../audio/signals';
 import type { Netlist, Node } from '../engine/netlist';
 import { sweepColor } from '../playground/state';
@@ -52,6 +53,8 @@ interface Run {
   unconverged: number;
   /** Op-amps whose output reached their supply rails (over the steady part). */
   railClip: string[];
+  /** Op-amps stuck at a rail by their DC bias (they pass almost nothing). */
+  stuck: string[];
   /** Through the amp capture (digital, full scale ±1): the pedal's output, and the dry guitar (for Bypass). */
   ampOut?: Float32Array;
   ampDry?: Float32Array;
@@ -284,6 +287,8 @@ export function initSoundPanel(ctx: () => SoundContext, P = 'sd'): SoundPanel {
       workers.add(w);
       // Every op-amp's output is watched too, to point out rail clipping.
       const swings = opAmpSwings(j.netlist);
+      let stuck: string[] = [];
+      if (swings.length) try { stuck = stuckOpAmps(j.netlist, dcOp(j.netlist)).map(s => s.name.replace(/^u\d+:/, '')); } catch { /* no operating point */ }
       if (swings.length) opAmps = true;
       const nets = [...new Set([...j.probes.map(p => p.net), ...swings.map(s => s.net)])];
       const req: RenderRequest = { netlist: j.netlist, input: j.input, fs: FS, oversample, term, probes: nets };
@@ -296,6 +301,7 @@ export function initSoundPanel(ctx: () => SoundContext, P = 'sd'): SoundPanel {
         runs[k] = {
           label: j.label, r: j.r, input: j.input, out: out.get(j.netlist.output)!, unconverged: m.unconverged,
           probes: j.probes.map(p => ({ ref: p.ref, color: p.color, y: out.get(p.net)! })).filter(p => p.y),
+          stuck,
           railClip: swings.filter(s => { const y = out.get(s.net); return !!y && hitsRails(y, s, Math.max(0, y.length - tail)); })
             .map(s => s.name.replace(/^u\d+:/, '')),
         };
@@ -451,8 +457,11 @@ export function initSoundPanel(ctx: () => SoundContext, P = 'sd'): SoundPanel {
       : '';
     const dcNote = Math.abs(st.dc) > 0.05 ? ` around ${st.dc.toFixed(2)} V DC (no output coupling capacitor?)` : '';
     const unconverged = r.runs.reduce((a, x) => a + x.unconverged, 0);
-    const clip = run.railClip ?? [];
-    const railNote = clip.length
+    const clip = run.railClip ?? [], stuck = run.stuck ?? [];
+    const railNote = stuck.length
+      ? `<span class="pb-warn">⚠ ${esc(stuck.join(', '))} ${stuck.length > 1 ? 'are' : 'is'} stuck at a supply rail by ${stuck.length > 1 ? 'their' : 'its'} DC bias, so ${stuck.length > 1 ? 'they pass' : 'it passes'} almost no signal (the frequency plots don't show this). ` +
+        'Check the bias: an op-amp’s + input usually sits at half the supply (e.g. VREF 4.5 V). See Checks.</span>'
+      : clip.length
       ? `<span class="pb-warn">⚠ ${esc(clip.join(', '))} ${clip.length > 1 ? 'are' : 'is'} clipping at ${clip.length > 1 ? 'their' : 'its'} supply rails${many ? ` (${esc(run.label)})` : ''}: the op-amp squares the signal off, so any diode clipping after it only sees a squared-off wave and mostly sets the level. ` +
         'For diode clipping to shape the sound, the op-amp needs headroom: lower the drive or input level, or check that stage’s gain (and its feedback resistors).</span>'
       : '';

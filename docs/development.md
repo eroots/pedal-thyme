@@ -113,7 +113,8 @@ The built file is meant to be shared and to open files from strangers.
 - **Untrusted files.** `src/schematic/sanitize.ts` rebuilds every schematic and board read from a
   file or storage, field by field with checked types. Unknown fields are dropped. All text is
   escaped before it reaches the DOM. PDFs are rendered by PDF.js, which doesn't run their scripts,
-  with XFA and WebAssembly off.
+  with XFA and WebAssembly off. Its JavaScript image decoders (fax, JBIG2 and JPEG 2000 scans) are
+  bundled: the `pdf-decoders` plugin in `vite.config.ts` points PDF.js at them instead of a URL.
 - **No bundled captures.** NAM files are loaded by the user and kept in IndexedDB.
 
 Keep these properties when adding features: no `innerHTML` with unescaped text, no network APIs,
@@ -160,7 +161,7 @@ Release workflow makes: a build on another computer can differ (line endings, fo
 
 | Code | Licence | How it's used |
 |---|---|---|
-| [PDF.js](https://github.com/mozilla/pdf.js) (`pdfjs-dist`) | Apache 2.0 | Bundled into the built file, for the trace overlay |
+| [PDF.js](https://github.com/mozilla/pdf.js) (`pdfjs-dist`) | Apache 2.0 | Bundled into the built file, for the trace overlay, with its image decoders from PDFium (BSD 3-clause) and OpenJPEG (BSD 2-clause) |
 | [NeuralAmpModelerCore](https://github.com/sdatkinson/NeuralAmpModelerCore) | MIT | `src/audio/nam.ts` follows its WaveNet layout and arithmetic |
 
 Both licence texts are in `third-party/`, and the build puts them in the app's footer under

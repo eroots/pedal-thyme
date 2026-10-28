@@ -65,7 +65,8 @@ export const DIODE_MODELS: Record<string, DiodeModel> = {
   // BAT41: 100 V small-signal Schottky. No maker's SPICE model; fitted to the datasheet (Vf ≤ 0.45 V at
   // 1 mA, ≈ 1 V at 200 mA, 2 pF): about 0.28 V at 0.1 mA and 0.38 V at 1 mA.
   BAT41: { label: 'BAT41 (Schottky)', is: 1.8e-7, n: 1.7, cj: 2e-12, spice: 'D(Is=180n Rs=1.4 N=1.7 Cjo=2p M=0.3 BV=100)', approx: true },
-  '1N34A': { label: '1N34A (germanium)', is: 2e-6, n: 1.3, cj: 1e-12, spice: 'D(Is=2u Rs=7 N=1.3 Cjo=1p)', approx: true },
+  // 1N34A: germanium, ≈ 0.25 V at 1 mA (typical of measured parts; samples vary).
+  '1N34A': { label: '1N34A (germanium)', is: 5.9e-7, n: 1.3, cj: 1e-12, spice: 'D(Is=590n Rs=7 N=1.3 Cjo=1p)', approx: true },
   LED_RED: { label: 'Red LED', is: 1e-19, n: 1.6, cj: 20e-12, spice: 'D(Is=1e-19 N=1.6 Rs=4 Cjo=20p)', approx: true },
 };
 

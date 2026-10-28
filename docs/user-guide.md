@@ -158,6 +158,8 @@ Models marked ≈ are approximate.
 ### Circuit blocks
 
 **Blocks ▾** drops a ready-made stage into the schematic you're working on:
+- Basic power supply: a 9 V supply and VREF as an ideal 4.5 V supply (no divider). If the circuit
+  doesn't use one of them, Checks says its pin isn't connected: delete that one;
 - Bias supply (VREF): 9 V into a 10k/10k divider with 47 µF, making the 4.5 V VREF the other
   blocks use;
 - Op-amp input buffer (Klon-style), JFET buffer and BJT buffer;
@@ -166,8 +168,8 @@ Models marked ≈ are approximate.
 
 Choose one and it follows the cursor; click to drop it (Esc cancels). Its references are renumbered
 so they don't clash with the parts already there. Then wire up its **in** and **out** ends (the Checks
-panel lists them until they're connected). If your circuit has no VREF yet, add the Bias supply
-block too.
+panel lists them until they're connected). If your circuit has no VREF yet, add the Basic power
+supply or the Bias supply block too.
 
 **Your own blocks.** Select part of a schematic (parts, wires and any notes, such as "in" and "out"
 labels to show where it connects), then choose **Blocks ▾ → Save selection as block…** and give it a

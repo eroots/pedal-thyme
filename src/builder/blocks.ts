@@ -1,7 +1,7 @@
 // Circuit blocks: common stages to drop into any schematic (Blocks ▾). Each is a piece of schematic
 // without jacks: its input and output are open wire ends, labelled "in" and "out", to wire into the
 // circuit. Op-amp and transistor stages are biased from VREF (half the supply), like the templates;
-// add the Bias supply block if the circuit has no VREF yet. Refs are renumbered when a block is
+// add the Basic power supply or Bias supply block if the circuit has no VREF yet. Refs are renumbered when a block is
 // dropped, so they never clash with the circuit's.
 import { sch, type SchBuilder } from '../schematic/build';
 import type { Clip } from './doc';
@@ -23,6 +23,13 @@ function biasSupply(): Clip {
     .R('R1', 0, 30, 90, 10e3).R('R2', 0, 90, 90, 10e3).GND(0, 120)
     .wire([0, 60], [40, 60]).C('C1', 40, 90, 90, 47e-6).GND(40, 120);
   VREF(b, 40, 60, 0);
+  return clip(b);
+}
+
+/** Basic power supply: 9 V and an ideal VREF at 4.5 V (no divider), for the blocks that use VREF. */
+function powerSupply(): Clip {
+  const b = sch().part('SUPPLY', undefined, 0, 0, 0, 9, { props: { name: '9V' } })
+    .part('SUPPLY', undefined, 60, 0, 0, 4.5, { props: { name: 'VREF' } });
   return clip(b);
 }
 
@@ -91,6 +98,7 @@ function hardClip(): Clip {
 }
 
 export const BLOCKS: Block[] = [
+  { id: 'power', name: 'Basic power supply', description: '9 V and VREF at 4.5 V, as ideal supplies (no divider): the quickest way to power the other blocks.', build: powerSupply },
   { id: 'bias', name: 'Bias supply (VREF)', description: '9 V with a 10k/10k divider and 47 µF: the VREF (4.5 V) the other blocks use.', build: biasSupply },
   { id: 'opbuf', name: 'Op-amp input buffer (Klon-style)', description: '100 nF and 10k in, 1M to VREF, a TL072 follower.', build: opAmpBuffer },
   { id: 'jfetbuf', name: 'JFET buffer', description: 'J201 source follower: 1M to VREF, 10k source resistor, 1 µF and 100k out.', build: jfetBuffer },

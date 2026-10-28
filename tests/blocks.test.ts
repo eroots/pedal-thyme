@@ -11,7 +11,7 @@ import type { Schematic } from '../src/schematic/types';
 const block = (id: string) => BLOCKS.find(b => b.id === id)!.build();
 
 /** A block between an input and an output jack (on its "in" and "out" ends), with the bias supply below it. */
-function inCircuit(id: string): Schematic {
+function inCircuit(id: string, supply = 'bias'): Schematic {
   const clip = block(id);
   const end = (label: string) => clip.notes!.find(n => n.text === label)!;
   const i = end('in'), o = end('out');
@@ -20,7 +20,7 @@ function inCircuit(id: string): Schematic {
     parts: [{ id: 'in', kind: 'IN', x: i.x + 4, y: i.y + 6, rot: 0 }, { id: 'out', kind: 'OUT', x: o.x - 4, y: o.y + 6, rot: 0 }],
   };
   d = paste(d, clip, 0, 0).doc;
-  return paste(d, block('bias'), 0, 1000).doc;
+  return paste(d, block(supply), 0, 1000).doc;
 }
 
 describe('circuit blocks', () => {
@@ -30,7 +30,19 @@ describe('circuit blocks', () => {
     expect(dcOp({ ...extract(d).netlist, input: 'x', output: 'x' }).v('VREF')).toBeCloseTo(4.5, 3);
   });
 
-  for (const b of BLOCKS.filter(x => x.id !== 'bias')) {
+  it('the basic power supply makes 9 V and VREF at 4.5 V, and works in place of the bias supply', () => {
+    const d = paste({ version: 1, parts: [], wires: [] }, block('power'), 0, 0).doc;
+    const op = dcOp({ ...extract(d).netlist, input: 'x', output: 'x' });
+    expect(op.v('9V')).toBeCloseTo(9, 6);
+    expect(op.v('VREF')).toBeCloseTo(4.5, 6);
+    // The TS stage uses VREF only (its op-amp has no supply pins drawn), so the 9 V supply is flagged as unused.
+    const doc = inCircuit('tsclip', 'power'), ex = extract(doc);
+    expect(ex.issues.map(x => `${x.severity}: ${x.message}`)).toEqual(['warning: Supply rail pin v is not connected.']);
+    expect(doc.parts.find(p => p.id === ex.issues[0].parts![0])?.props?.name).toBe('9V');
+    expect(acModel(ex.netlist).circuit.solve(new Cx(0, TAU * 1000), {}).v(ex.netlist.output).abs()).toBeGreaterThan(0.5);
+  });
+
+  for (const b of BLOCKS.filter(x => x.id !== 'bias' && x.id !== 'power')) {
     it(`${b.name}: wires up cleanly, biases and passes signal`, () => {
       const ex = extract(inCircuit(b.id));
       expect(ex.issues.map(x => x.message)).toEqual([]);

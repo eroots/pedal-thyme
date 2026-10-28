@@ -164,5 +164,5 @@ Release workflow makes: a build on another computer can differ (line endings, fo
 | [PDF.js](https://github.com/mozilla/pdf.js) (`pdfjs-dist`) | Apache 2.0 | Bundled into the built file, for the trace overlay, with its image decoders from PDFium (BSD 3-clause) and OpenJPEG (BSD 2-clause) |
 | [NeuralAmpModelerCore](https://github.com/sdatkinson/NeuralAmpModelerCore) | MIT | `src/audio/nam.ts` follows its WaveNet layout and arithmetic |
 
-Both licence texts are in `third-party/`, and the build puts them in the app's footer under
+The licence texts are in `third-party/`, and the build puts them in the app's footer under
 **Third-party licences**.
